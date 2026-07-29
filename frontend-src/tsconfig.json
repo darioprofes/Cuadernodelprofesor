@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "types": [
+      "node",
+      "vite/client"
+    ],
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    // `strict` se dejó incompleto (todo salvo noImplicitAny) porque
+    // activarlo de golpe daba ~4650 errores. La causa real no eran miles de
+    // parámetros sin tipar: faltaban @types/react y @types/react-dom, así
+    // que React entero (JSX.IntrinsicElements, React.FC, eventos...) se
+    // resolvía como `any` implícito — de ahí cada <div> y cada `e => ...`
+    // contando como un error. Con esos tipos instalados, el recuento real
+    // bajó a 2 (bugs genuinos, no de tipado implícito, ya corregidos).
+    "strict": true
+  }
+}

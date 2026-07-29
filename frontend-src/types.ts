@@ -1,0 +1,360 @@
+
+export interface OperationalDescriptor {
+  id: string;
+  code: string;
+  description: string;
+}
+
+export interface KeyCompetence {
+  id: string;
+  code: string;
+  description: string;
+  descriptors: OperationalDescriptor[];
+}
+
+export interface EvaluationCriterion {
+  id: string;
+  code: string;
+  description: string;
+  competenceId: string; // Links to SpecificCompetence id
+  courseId: string; // Links to Course id
+  weight?: number; // % de peso anual dentro de la materia (motor de evaluación por
+                    // criterios); si ningún criterio del curso lo tiene definido, se
+                    // reparte a partes iguales automáticamente.
+  excludeFromWeighting?: boolean; // Con reparto manual activo, un criterio sin peso
+                    // cuenta como 0% de forma indistinguible de uno simplemente sin
+                    // rellenar todavía — este campo hace explícito que de verdad no debe
+                    // contar (en vez de que sea un olvido), y es la única alternativa
+                    // válida a rellenar el peso.
+}
+
+export interface SpecificCompetence {
+  id: string;
+  code: string;
+  description: string;
+  keyCompetenceDescriptorIds: string[]; // Links to OperationalDescriptor ids
+  courseId: string; // Links to Course id
+}
+
+export interface Tutor {
+  nombre?: string;
+  relacion?: string; // p.ej. "Madre", "Padre", "Tutor legal"
+  telefono?: string;
+  email?: string;
+}
+
+// Ficha de datos personales del alumno/a. Curso/Grupo no se guardan aquí:
+// ya viven en ClassData/Course y se muestran calculados para no duplicar
+// datos que puedan quedar desactualizados. Edad se calcula de
+// fechaNacimiento, tampoco se guarda.
+export interface Student {
+  id:string;
+  name: string;
+  acneae: string[]; // For educational needs tags: ['RE', 'ACS']
+  foto?: string; // data URL (base64), embebida en el propio blob SQLite
+  fechaNacimiento?: string; // YYYY-MM-DD
+  dni?: string;
+  telefonoUrgencias?: string;
+
+  tutor1?: Tutor;
+  tutor2?: Tutor;
+
+  domicilioDireccion?: string;
+  domicilioLocalidad?: string;
+  domicilioCodigoPostal?: string;
+  domicilioTelefono?: string;
+
+  centroProcedencia?: string;
+  haRepetidoCurso?: boolean;
+  materiasPendientes?: string;
+  programaEspecifico?: string; // p.ej. "Diversificación"
+
+  alergias?: string;
+  enfermedadesRelevantes?: string;
+  medicacionHabitual?: string;
+  intoleranciasAlimentarias?: string;
+  observacionesSanitarias?: string;
+
+  neae?: boolean; // Necesidades Específicas de Apoyo Educativo
+  neaeDetalle?: string;
+  medidasEducativas?: string;
+
+  autorizacionImagen?: boolean;
+  autorizacionSalidas?: boolean;
+
+  observacionesTutor?: string; // notas libres del profesor/a-tutor/a
+
+  // Posición en el Plano de la Clase (% del lienzo, 0-100). Ausente = todavía
+  // sin colocar, se muestra en una posición de rejilla por defecto hasta que
+  // se arrastra por primera vez.
+  planoX?: number;
+  planoY?: number;
+  planoColor?: 'azul' | 'rosa' | 'verde';
+}
+
+export interface LinkedCriterion {
+    criterionId: string;
+    ratio: number;
+    selectedDescriptorIds: string[];
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  weight: number;
+  evaluationPeriodId: string;
+  type?: 'normal' | 'recovery';
+}
+
+// --- Tipos de Instrumentos de Evaluación ---
+
+export interface EvaluationLevel {
+  id: string;
+  name: string; // e.g., 'Iniciado', 'En Proceso', 'Conseguido'
+  points: number; // e.g., 1, 2, 3
+}
+
+export interface BaseEvaluationItem {
+  id: string;
+  description: string;
+  weight: number;
+  linkedCriteriaIds: string[];
+}
+
+export interface Checklist {
+  id: string;
+  type: 'checklist';
+  name: string;
+  items: BaseEvaluationItem[];
+}
+
+export interface RatingScale {
+  id: string;
+  type: 'rating_scale';
+  name: string;
+  levels: EvaluationLevel[];
+  items: BaseEvaluationItem[];
+}
+
+export interface RubricItem extends BaseEvaluationItem {
+  levelDescriptions: Record<string, string>; // { levelId: 'Description for this specific level' }
+}
+
+export interface Rubric {
+  id: string;
+  type: 'rubric';
+  name: string;
+  levels: EvaluationLevel[];
+  items: RubricItem[];
+}
+
+export type EvaluationTool = Checklist | RatingScale | Rubric;
+
+// --- Fin de Tipos de Instrumentos ---
+
+// 5 niveles de importancia de una actividad como evidencia de un criterio
+// (motor de evaluación por criterios): factor multiplicador, no un reparto
+// que deba sumar nada, porque las evidencias de un criterio se acumulan
+// durante todo el curso sin un total fijo de antemano.
+export type ImportanciaActividad = 'muy_baja' | 'baja' | 'normal' | 'alta' | 'muy_alta';
+
+export interface Assignment {
+  id: string;
+  name: string;
+  categoryId: string;
+  evaluationPeriodId: string;
+  date?: string; // YYYY-MM-DD
+
+  evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric';
+  evaluationToolId?: string; // Links to an EvaluationTool's id
+
+  linkedCriteria: LinkedCriterion[]; // Usado solo para 'direct_grade'
+  programmingUnitId?: string; // Links to ProgrammingUnit id
+  recoversAssignmentIds?: string[];
+
+  // % de peso de esta tarea frente a las demás de su misma categoría (motor
+  // Categorías); ausente = reparto igual entre las que tampoco lo tengan.
+  pesoEnCategoria?: number;
+  // Importancia como evidencia (motor Criterios); ausente = 'normal' (×1).
+  importancia?: ImportanciaActividad;
+  // Modo avanzado: sustituye al factor preestablecido de `importancia`.
+  importanciaPersonalizada?: number;
+}
+
+export interface Grade {
+  studentId: string;
+  assignmentId: string;
+  criterionScores: Record<string, number | null>; // { criterionId: score }. Siempre se calcula y se guarda.
+  toolResults?: Record<string, boolean | string>; // { itemId: checked } for checklist, { itemId: levelId } for scale/rubric
+}
+
+export interface Course {
+    id: string;
+    level: string; // e.g., '3º ESO', '1º Bachillerato'
+    subject: string;
+    type?: 'academic' | 'other';
+    // Peso anual de los criterios de evaluación (motor de evaluación por
+    // criterios): ausente/false = reparto igual automático entre todos los
+    // criterios de la materia; true = reparto manual (el profesor introduce
+    // el peso de cada criterio, deben sumar 100%).
+    pesoCriteriosManual?: boolean;
+}
+
+export interface SessionDetail {
+    description: string;
+    color?: string;
+}
+
+export interface ProgrammingUnit {
+    id: string;
+    courseId: string;
+    name: string;
+    sessions: number;
+    startDate?: string; // YYYY-MM-DD. Optional fixed start date.
+    sessionDetails: SessionDetail[];
+    linkedCriteriaIds: string[];
+    linkedBasicKnowledgeIds: string[];
+}
+
+export interface ClassData {
+  id: string;
+  grupo?: string; // p.ej. "S4BD" — separado de la materia, que vive en Course.subject
+  courseId: string;
+  students: Student[];
+  categories: Category[];
+  assignments: Assignment[];
+  grades: Grade[];
+  schedule?: { day: number; periodIndex: number; aula?: string; nota?: string }[]; // 1 for Mon, 2 for Tue, ..., 5 for Fri
+  skippedDays?: string[]; // YYYY-MM-DD
+  // Icono de la tarjeta de la clase: clave de un icono empaquetado (ver
+  // classIcons.ts) o, si empieza por "data:", una imagen propia subida.
+  icono?: string;
+  // Tono de color (0-360) fijado a mano; ausente = se deriva del hash de la
+  // materia (ver getClassAccentColor en utils.ts).
+  colorAcento?: number;
+  // Posición de la mesa del profesor en el Plano de la Clase (% del lienzo).
+  mesaProfesorX?: number;
+  mesaProfesorY?: number;
+}
+
+export interface JournalEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  classId: string;
+  notes: string;
+}
+
+export interface Task {
+  id: string;
+  texto: string;
+  hecho: boolean;
+  fechaInicio?: string; // YYYY-MM-DD, "avisar desde"
+  fechaFin?: string; // YYYY-MM-DD, "vence el"
+}
+
+// Anotación libre de la Agenda (no evaluable, sin clase asociada): distinta
+// de Task (el checklist personal de Hoy) aunque antes compartían el mismo
+// almacenamiento — eran conceptualmente cosas distintas.
+export interface AgendaNote {
+  id: string;
+  fecha: string; // YYYY-MM-DD
+  texto: string;
+}
+
+// Acceso directo del header (icono + tooltip), inspirado en las secciones
+// de enlaces editables del panel ("La Marejada") — aquí solo el icono, sin
+// texto visible, y editable (añadir/modificar/borrar) desde la propia app.
+export interface Shortcut {
+  id: string;
+  label: string;
+  url: string;
+  icon?: string; // ruta a /shortcut-icons/... o data URL si es un icono propio
+}
+
+export interface Meeting {
+  id: string;
+  fecha: string; // YYYY-MM-DD
+  hora?: string; // HH:MM
+  tipo: 'tutoria' | 'departamento' | 'familia' | 'r_tutores';
+  conQuien?: string;
+  motivo?: string;
+  acuerdos?: string;
+  seguimiento?: string;
+}
+
+export interface BasicKnowledge {
+  id: string;
+  courseId: string;
+  code: string;
+  description: string;
+}
+
+export interface Holiday {
+  id: string;
+  name: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+}
+
+export interface EvaluationPeriod {
+  id: string;
+  name: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+}
+
+export interface GradeScaleRule {
+    min: number;
+    color: 'red' | 'orange' | 'yellow' | 'lime' | 'green' | 'emerald' | 'teal' | 'blue' | 'indigo' | 'violet' | 'gray';
+    label?: string;
+}
+
+export interface AcademicConfiguration {
+  academicYearStart: string; // YYYY-MM-DD
+  academicYearEnd: string; // YYYY-MM-DD
+  holidays: Holiday[];
+  evaluationPeriods: EvaluationPeriod[];
+  evaluationPeriodWeights?: Record<string, number>;
+  layoutMode?: 'mobile' | 'tablet' | 'desktop';
+  periods?: string[];
+  defaultStartView?: 'hoy' | 'calendar' | 'gradebook' | 'journal';
+  defaultCalendarView?: 'month' | 'week' | 'day';
+  gradeScale?: GradeScaleRule[];
+}
+
+export type View =
+  | 'hoy'
+  | 'horario'
+  | 'clases'
+  | 'gradebook'
+  | 'journal'
+  | 'meetings'
+  | 'exams'
+  | 'calendar'
+  | 'criteria'
+  | 'competences'
+  | 'key-competences'
+  | 'descriptors';
+
+// Estado completo de la app, serializado dentro del blob SQLite (ver
+// App.tsx::useDatabase). `schemaVersion` gobierna qué migraciones de
+// services/migrations.ts hay que aplicar al cargar un blob guardado con una
+// versión anterior de la app — ausente = versión 0 (blobs guardados antes de
+// que existiera este campo).
+export interface AppState {
+  schemaVersion: number;
+  classes: ClassData[];
+  keyCompetences: KeyCompetence[];
+  competences: SpecificCompetence[];
+  criteria: EvaluationCriterion[];
+  journalEntries: JournalEntry[];
+  courses: Course[];
+  programmingUnits: ProgrammingUnit[];
+  basicKnowledge: BasicKnowledge[];
+  academicConfiguration: AcademicConfiguration;
+  evaluationTools: EvaluationTool[];
+  tasks: Task[];
+  meetings: Meeting[];
+  agendaNotes: AgendaNote[];
+  shortcuts: Shortcut[];
+}

@@ -1,0 +1,45 @@
+Atribución
+==========
+
+Esta aplicación está basada en CuadernMestre v1.0, de elCordones
+(https://github.com/elCordones/CuadernMestre-v1.0), publicado bajo licencia
+Creative Commons Atribución-NoComercial 4.0 Internacional (CC BY-NC 4.0).
+
+Cambios realizados sobre el proyecto original:
+- Los datos ya no se guardan en IndexedDB del navegador que ejecuta la app,
+  sino en un servidor propio (Postgres), a través de un backend mínimo
+  (GET/PUT /api/db).
+- Se ha añadido la posibilidad de importar el horario semanal desde el PDF
+  oficial "Horario individual del profesorado" (SAUCE / Principado de
+  Asturias y formatos equivalentes), incluyendo la fusión automática de
+  grupos que comparten franja horaria y materia.
+
+Todo lo demás (interfaz, lógica de calificación, currículo LOMLOE,
+competencias, programación didáctica, diario de clase...) procede del
+proyecto original sin cambios sustanciales.
+
+Licencia
+========
+
+Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+
+Texto legal completo: https://creativecommons.org/licenses/by-nc/4.0/legalcode
+Resumen legible: https://creativecommons.org/licenses/by-nc/4.0/
+
+Resumen (no sustituye al texto legal):
+
+Usted es libre de:
+  - Compartir — copiar y redistribuir el material en cualquier medio o
+    formato.
+  - Adaptar — remezclar, transformar y crear a partir del material.
+
+Bajo los siguientes términos:
+  - Atribución — Debe dar crédito de manera adecuada, brindar un enlace a la
+    licencia, e indicar si se han realizado cambios. Puede hacerlo en
+    cualquier forma razonable, pero no de forma tal que sugiera que usted o
+    su uso tienen el apoyo de el/la licenciante.
+  - NoComercial — No puede hacer uso del material con propósitos
+    comerciales.
+  - No hay restricciones adicionales — No puede aplicar términos legales ni
+    medidas tecnológicas que restrinjan legalmente a otras a hacer cualquier
+    uso permitido por la licencia.

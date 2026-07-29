@@ -1,0 +1,1065 @@
+import React, { useState, useMemo } from 'react';
+import type { Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, BasicKnowledge } from '../types';
+
+type CurriculumItemType = 'ec' | 'sc' | 'kc' | 'sb' | 'od';
+type CurriculumItem = EvaluationCriterion | SpecificCompetence | KeyCompetence | BasicKnowledge | OperationalDescriptor;
+import { PencilIcon, TrashIcon, PlusIcon, ChevronRightIcon, ChevronDownIcon } from './Icons';
+import { CURRICULOS_OFICIALES, CURRICULOS_PROPIOS, TODOS_LOS_PRESETS } from '../curriculumPresets';
+import { compararCodigo } from '../utils';
+import Button from './Button';
+import IconButton from './IconButton';
+import Badge from './Badge';
+import { TYPOGRAPHY } from '../theme/typography';
+import Input from './Input';
+import Select from './Select';
+import Textarea from './Textarea';
+import { checkboxClassName } from '../theme/components/Input';
+import { linkClassName } from '../theme/components/Link';
+
+
+// Fuera del componente (no cierra sobre nada de React) para que los useMemo
+// que la usan puedan depender solo de cursoNumero, sin necesidad de incluir
+// la propia función como dependencia.
+const filtrarPorCurso = (cursoNumero: number | null, presets: typeof TODOS_LOS_PRESETS) =>
+    cursoNumero === null ? presets : presets.filter(p => p.curso === cursoNumero);
+
+const Accordion: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+    <details className="border border-slate-200 rounded-lg">
+        <summary className="p-3 cursor-pointer font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-t-lg">{title}</summary>
+        <div className="p-4 bg-white rounded-b-lg">
+            {children}
+        </div>
+    </details>
+);
+
+// Grupo colapsable más compacto que Accordion (para anidar dentro de uno):
+// con tantos criterios por materia, una lista plana se hace inmanejable —
+// agrupar por competencia específica y dejarlos cerrados por defecto ayuda
+// a encontrar lo que se busca sin desplazarse por decenas de filas.
+const CriterioGroup: React.FC<{ title: string; count: number; children: React.ReactNode }> = ({ title, count, children }) => (
+    <details className="group border border-slate-200 rounded-lg">
+        <summary className="flex items-center gap-2 p-2.5 cursor-pointer font-medium text-sm text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg [&::-webkit-details-marker]:hidden list-none">
+            <ChevronRightIcon className="w-4 h-4 text-slate-400 flex-shrink-0 group-open:hidden" />
+            <ChevronDownIcon className="w-4 h-4 text-slate-400 flex-shrink-0 hidden group-open:block" />
+            <span className="flex-grow truncate">{title}</span>
+            <span className="text-xs text-slate-400 flex-shrink-0">{count}</span>
+        </summary>
+        <div className="p-2 space-y-2 border-t border-slate-200">
+            {children}
+        </div>
+    </details>
+);
+
+// Helper function for robust stage detection
+const isBachilleratoStage = (level: string): boolean => /bach/i.test(level);
+
+// Redondea cada valor a 2 decimales ajustando el último para que la suma dé
+// exactamente `targetSum` (redondear cada uno por separado puede dejar la
+// suma en 99.99 o 100.01 en vez de 100 en punto).
+const roundToExactSum = (values: number[], targetSum: number): number[] => {
+    if (values.length === 0) return [];
+    const rounded = values.map(v => Math.round(v * 100) / 100);
+    const sumExceptLast = rounded.slice(0, -1).reduce((a, b) => a + b, 0);
+    rounded[rounded.length - 1] = Math.round((targetSum - sumExceptLast) * 100) / 100;
+    return rounded;
+};
+
+interface CurriculumManagerProps {
+    courses: Course[];
+    setCourses: (updater: React.SetStateAction<Course[]>) => void;
+    keyCompetences: KeyCompetence[];
+    setKeyCompetences: (updater: React.SetStateAction<KeyCompetence[]>) => void;
+    specificCompetences: SpecificCompetence[];
+    setSpecificCompetences: (updater: React.SetStateAction<SpecificCompetence[]>) => void;
+    evaluationCriteria: EvaluationCriterion[];
+    setEvaluationCriteria: (updater: React.SetStateAction<EvaluationCriterion[]>) => void;
+    basicKnowledge: BasicKnowledge[];
+    setBasicKnowledge: (updater: React.SetStateAction<BasicKnowledge[]>) => void;
+}
+
+// Recibe {...props} desde SettingsModal (todas las props de Ajustes), pero
+// solo usa este subconjunto — de ahí que el tipo no sea "SettingsModalProps"
+// completo, sino justo lo que se destructura aquí abajo.
+const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
+    const { courses, setCourses, keyCompetences, setKeyCompetences, specificCompetences, setSpecificCompetences, evaluationCriteria, setEvaluationCriteria, basicKnowledge, setBasicKnowledge } = props;
+    const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id || '');
+    // Elemento recién creado (criterio, competencia específica/clave o
+    // descriptor): se abre directamente en modo edición para que se rellenen
+    // código/descripción sin un paso extra de "editar". Solo uno pendiente a
+    // la vez, es suficiente para el flujo de "añadir uno y rellenarlo".
+    const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
+
+    const handleAddCriterion = (competenceId: string) => {
+        const newId = `ec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const newCriterion: EvaluationCriterion = {
+            id: newId,
+            code: '',
+            description: '',
+            competenceId,
+            courseId: selectedCourseId,
+        };
+        setEvaluationCriteria((prev: EvaluationCriterion[]) => [...prev, newCriterion]);
+        setNewlyAddedId(newId);
+    };
+
+    // `type` es una etiqueta externa (no un discriminante propio del ítem, a
+    // diferencia de EvaluationTool.type), así que no hay forma de que TS
+    // enlace automáticamente cada rama con su tipo concreto — de ahí el
+    // único cast por rama, cada uno garantizado por el propio `case`.
+    const handleUpdate = (type: CurriculumItemType, item: CurriculumItem) => {
+        switch (type) {
+            case 'ec': {
+                const criterion = item as EvaluationCriterion;
+                setEvaluationCriteria(prev => prev.map(i => i.id === criterion.id ? criterion : i));
+                break;
+            }
+            case 'sc': {
+                const competence = item as SpecificCompetence;
+                setSpecificCompetences(prev => prev.map(i => i.id === competence.id ? competence : i));
+                break;
+            }
+            case 'kc': {
+                const keyCompetence = item as KeyCompetence;
+                setKeyCompetences(prev => prev.map(i => i.id === keyCompetence.id ? keyCompetence : i));
+                break;
+            }
+            case 'sb': {
+                const basic = item as BasicKnowledge;
+                setBasicKnowledge(prev => prev.map(i => i.id === basic.id ? basic : i));
+                break;
+            }
+            case 'od': {
+                // Los descriptores viven anidados dentro de su competencia clave
+                // (KeyCompetence.descriptors), no en un array propio.
+                const descriptor = item as OperationalDescriptor;
+                setKeyCompetences(prev => prev.map(kc => ({
+                    ...kc,
+                    descriptors: (kc.descriptors || []).map(d => d.id === descriptor.id ? descriptor : d),
+                })));
+                break;
+            }
+        }
+    };
+
+    const handleDelete = (type: CurriculumItemType, id: string) => {
+        if (!window.confirm("¿Seguro que quieres eliminar este elemento? Esta acción no se puede deshacer.")) {
+            return;
+        }
+
+        switch (type) {
+            case 'ec':
+                setEvaluationCriteria((prev: EvaluationCriterion[]) => prev.filter(c => c.id !== id));
+                break;
+            case 'sc': {
+                const isDependency = evaluationCriteria.some((ec: EvaluationCriterion) => ec.competenceId === id);
+                if (isDependency) {
+                    alert("No se puede eliminar esta competencia específica porque hay criterios de evaluación que dependen de ella.");
+                    return;
+                }
+                setSpecificCompetences((prev: SpecificCompetence[]) => prev.filter(c => c.id !== id));
+                break;
+            }
+            case 'kc':
+            case 'od':
+                alert("La eliminación de Competencias Clave y Descriptores no está permitida para mantener la integridad del currículo base.");
+                break;
+            case 'sb':
+                setBasicKnowledge((prev: BasicKnowledge[]) => prev.filter(sb => sb.id !== id));
+                break;
+        }
+    };
+
+    const handleAddKeyCompetence = () => {
+        const newId = `kc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const newKc: KeyCompetence = { id: newId, code: '', description: '', descriptors: [] };
+        setKeyCompetences((prev: KeyCompetence[]) => [...prev, newKc]);
+        setNewlyAddedId(newId);
+    };
+
+    const handleAddDescriptor = (kcId: string) => {
+        const newId = `od-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const newDescriptor: OperationalDescriptor = { id: newId, code: '', description: '' };
+        setKeyCompetences((prev: KeyCompetence[]) => prev.map((kc: KeyCompetence) =>
+            kc.id === kcId ? { ...kc, descriptors: [...(kc.descriptors || []), newDescriptor] } : kc
+        ));
+        setNewlyAddedId(newId);
+    };
+
+    const handleAddSpecificCompetence = () => {
+        const newId = `sc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const newSc: SpecificCompetence = { id: newId, code: '', description: '', keyCompetenceDescriptorIds: [], courseId: selectedCourseId };
+        setSpecificCompetences((prev: SpecificCompetence[]) => [...prev, newSc]);
+        setNewlyAddedId(newId);
+    };
+
+
+    const confirmarReemplazo = (course: Course): boolean => {
+        const stage = isBachilleratoStage(course.level) ? 'Bachillerato' : 'ESO';
+        const courseName = `${course.level} - ${course.subject}`;
+
+        const confirmationMessage = `Se va a importar el currículo para el curso '${courseName}'.\n\n` +
+            `- Competencias Específicas, Criterios y Saberes de ESTE CURSO serán reemplazados.\n` +
+            `- Descriptores Operativos para la etapa '${stage}' serán FUSIONADOS inteligentemente por código (ej. CCL1) para evitar duplicados.\n` +
+            `- Los datos de otros cursos no se verán afectados.\n\n` +
+            `¿Deseas continuar?`;
+
+        return window.confirm(confirmationMessage);
+    };
+
+    const importarTexto = (text: string) => {
+        try {
+            const parsedData = parseCurriculumCsv(text, selectedCourseId, specificCompetences);
+            updateCurriculumState(parsedData, selectedCourseId);
+        } catch (error) {
+            console.error('Error parsing CSV:', error);
+            alert('Error al procesar el archivo CSV. Comprueba el formato, el contenido y la codificación del archivo (UTF-8 o UTF-16).');
+        }
+    };
+
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (!selectedCourseId) {
+            alert("Por favor, selecciona un curso para el que importar el currículo.");
+            if (event.target) event.target.value = '';
+            return;
+        }
+
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const course = courses.find((c: Course) => c.id === selectedCourseId);
+        if (!course) return;
+
+        if (!confirmarReemplazo(course)) {
+             if (event.target) event.target.value = '';
+             return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const buffer = e.target?.result as ArrayBuffer;
+            if (!buffer) {
+                alert('No se pudo leer el archivo.');
+                return;
+            }
+
+            const view = new Uint8Array(buffer);
+            let encoding = 'utf-8'; // Default encoding
+
+            // Check for Byte Order Mark (BOM) to detect encoding
+            if (view.length >= 2) {
+                if (view[0] === 0xFF && view[1] === 0xFE) {
+                    encoding = 'utf-16le';
+                } else if (view[0] === 0xFE && view[1] === 0xFF) {
+                    encoding = 'utf-16be';
+                } else if (view.length >= 3 && view[0] === 0xEF && view[1] === 0xBB && view[2] === 0xBF) {
+                    encoding = 'utf-8';
+                }
+            }
+
+            const decoder = new TextDecoder(encoding);
+            const text = decoder.decode(buffer);
+            importarTexto(text);
+        };
+        reader.onerror = () => {
+            alert('Error al leer el archivo.');
+        };
+        
+        reader.readAsArrayBuffer(file);
+
+        if (event.target) event.target.value = '';
+    };
+
+    const [presetSeleccionado, setPresetSeleccionado] = useState('');
+
+    // El curso seleccionado (p.ej. "1º ESO") no tiene un campo numérico propio:
+    // se extrae el primer dígito de "level" para poder filtrar los currículos
+    // oficiales que le corresponden (no todos los códigos oficiales cubren
+    // todos los cursos, p.ej. LAT/ECO solo existen en 4º).
+    const cursoNumeroSeleccionado = useMemo(() => {
+        const course = courses.find((c: Course) => c.id === selectedCourseId);
+        const match = course?.level.match(/(\d)/);
+        return match ? Number(match[1]) : null;
+    }, [courses, selectedCourseId]);
+
+    const oficialesFiltrados = useMemo(() => filtrarPorCurso(cursoNumeroSeleccionado, CURRICULOS_OFICIALES), [cursoNumeroSeleccionado]);
+    const propiosFiltrados = useMemo(() => filtrarPorCurso(cursoNumeroSeleccionado, CURRICULOS_PROPIOS), [cursoNumeroSeleccionado]);
+    const presetsFiltrados = useMemo(() => [...oficialesFiltrados, ...propiosFiltrados], [oficialesFiltrados, propiosFiltrados]);
+
+    const handleCargarPreset = async () => {
+        if (!selectedCourseId) {
+            alert("Por favor, selecciona un curso para el que importar el currículo.");
+            return;
+        }
+        if (!presetSeleccionado) return;
+
+        const course = courses.find((c: Course) => c.id === selectedCourseId);
+        const preset = TODOS_LOS_PRESETS.find(p => p.id === presetSeleccionado);
+        if (!course || !preset) return;
+
+        if (!preset.oficial && !window.confirm(
+            `"${preset.etiqueta}" NO es un currículo oficial: es uno propio, no correspondiente al decreto LOMLOE. ¿Seguro que quieres importarlo?`
+        )) return;
+
+        if (!confirmarReemplazo(course)) return;
+
+        try {
+            const response = await fetch(preset.ruta);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const text = await response.text();
+            importarTexto(text);
+        } catch (error) {
+            console.error('Error cargando currículo preseleccionado:', error);
+            alert('No se pudo cargar el currículo seleccionado.');
+        }
+    };
+
+    const parseCurriculumCsv = (csvText: string, courseId: string, existingSpecificCompetences: SpecificCompetence[]) => {
+        const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
+        if (lines.length < 1) return { newKCs: [], newODs: [], newSCs: [], newECs: [], newSBs: [] };
+
+        const headerLine = lines.shift()!; // Remove header line
+        // Algunos CSV propios (p.ej. los de Ámbito) añaden una columna final
+        // "origen" (documenta a qué competencias de las materias del ámbito
+        // corresponde una competencia combinada) que NO es un enlace real:
+        // se calcula cuántas columnas "linkN" declara la cabecera para no
+        // confundir esa anotación con un descriptor operativo más. Los CSV
+        // oficiales no tienen esa columna, así que no se ven afectados.
+        const numLinkColumns = headerLine.split(',').filter(h => /^link\d+$/i.test(h.trim())).length;
+
+        const newKCs: (Omit<KeyCompetence, 'descriptors'>)[] = [];
+        const newODs: (OperationalDescriptor & { parentKcId: string })[] = [];
+        const newSCs: SpecificCompetence[] = [];
+        const newECs: EvaluationCriterion[] = [];
+        const newSBs: BasicKnowledge[] = [];
+
+        const parseCsvLine = (line: string): string[] => {
+            const result: string[] = [];
+            let currentVal = "";
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+                        currentVal += '"';
+                        i++; 
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    result.push(currentVal.trim());
+                    currentVal = "";
+                } else {
+                    currentVal += char;
+                }
+            }
+            result.push(currentVal.trim());
+            return result;
+        };
+        
+        // Mapa de CÓDIGOS de Competencias Específicas a sus IDs, priorizando las de ESTE ARCHIVO
+        const localScCodeToIdMap = new Map<string, string>();
+        
+        // Pre-escaneo para construir el mapa local de Competencias Específicas del archivo
+        lines.forEach(line => {
+            const parts = parseCsvLine(line);
+            const [type, id, code] = parts;
+            if (type?.toUpperCase() === 'SC' && id && code) {
+                localScCodeToIdMap.set(code, id);
+            }
+        });
+
+        // Procesamiento principal del archivo
+        for (const line of lines) {
+            const parts = parseCsvLine(line);
+            const [type, id, code, description, ...rest] = parts;
+            const links = numLinkColumns > 0 ? rest.slice(0, numLinkColumns) : rest;
+            if (!type || !id || !code || !description) continue;
+            const commonData = { id, code, description };
+            
+            switch (type.toUpperCase()) {
+                case 'KC':
+                    newKCs.push({ ...commonData });
+                    break;
+                case 'OD':
+                    newODs.push({ ...commonData, parentKcId: links[0] });
+                    break;
+                case 'SC': {
+                    const scData = { ...commonData, courseId, keyCompetenceDescriptorIds: links.filter(l => l) };
+                    newSCs.push(scData);
+                    break;
+                }
+                case 'EC': {
+                    const criterionCode = commonData.code;
+                    const competenceNumberMatch = criterionCode.match(/^(\d+)\./);
+                    let competenceId = links[0] || '';
+
+                    if (competenceNumberMatch && competenceNumberMatch[1]) {
+                        const targetScCode = `CEs ${competenceNumberMatch[1].trim()}`;
+                        if (localScCodeToIdMap.has(targetScCode)) {
+                            // Prioridad 1: Usar la competencia del archivo actual
+                            competenceId = localScCodeToIdMap.get(targetScCode)!;
+                        } else {
+                             // Prioridad 2: Buscar una competencia existente con ese código (comportamiento anterior, como fallback)
+                            const existingSc = existingSpecificCompetences.find(sc => sc.code === targetScCode && sc.courseId === courseId);
+                            if (existingSc) {
+                                competenceId = existingSc.id;
+                                console.warn(`WARN: El criterio '${criterionCode}' se ha vinculado a una Competencia Específica existente ('${targetScCode}') porque no se encontró una con ese código en el archivo CSV importado.`);
+                            } else {
+                                console.error(`ERROR: No se pudo encontrar una Competencia Específica con el código '${targetScCode}' para vincular el criterio '${criterionCode}'. Por favor, asegúrate de que la competencia está definida en el mismo archivo CSV.`);
+                            }
+                        }
+                    }
+                    newECs.push({ ...commonData, courseId: courseId, competenceId: competenceId });
+                    break;
+                }
+                case 'SB':
+                    newSBs.push({ ...commonData, courseId });
+                    break;
+            }
+        }
+        return { newKCs, newODs, newSCs, newECs, newSBs };
+    };
+
+    const updateCurriculumState = ({ newKCs, newODs, newSCs, newECs, newSBs }: {
+        newKCs: (Omit<KeyCompetence, 'descriptors'>)[];
+        newODs: (OperationalDescriptor & { parentKcId: string })[];
+        newSCs: SpecificCompetence[];
+        newECs: EvaluationCriterion[];
+        newSBs: BasicKnowledge[];
+    }, courseId: string) => {
+        if ([newKCs, newODs, newSCs, newECs, newSBs].every(arr => arr.length === 0)) {
+            alert("No se encontraron elementos curriculares válidos en el archivo.");
+            return;
+        }
+
+        const course = courses.find((c: Course) => c.id === courseId);
+        if (!course) return;
+
+        const isBachStage = isBachilleratoStage(course.level);
+        const stage = isBachStage ? 'Bachillerato' : 'ESO';
+        const suffix = isBachStage ? '-bach' : '-eso';
+
+        const augmentId = (id: string, suffixToAdd: string) => {
+            if (id.endsWith('-eso') || id.endsWith('-bach')) {
+                return id;
+            }
+            return id + suffixToAdd;
+        };
+
+        // Map to track ID substitutions for Descriptors. 
+        // Key: Import ID (with suffix), Value: Resolved/Existing System ID
+        const odIdReplacementMap = new Map<string, string>();
+
+        // Augment IDs in the new data to make them stage-specific
+        const augmentedODs = newODs.map(od => ({ ...od, id: augmentId(od.id, suffix) }));
+        
+        // We will process SC links later, after resolving descriptor IDs
+
+        setEvaluationCriteria((prevCriteria: EvaluationCriterion[]) => {
+            const criteriaFromOtherCourses = prevCriteria.filter(c => c.courseId !== courseId);
+            return [...criteriaFromOtherCourses, ...newECs].sort((a, b) => compararCodigo(a.code, b.code));
+        });
+
+        setBasicKnowledge((prevSBs: BasicKnowledge[]) => {
+            const sbsFromOtherCourses = prevSBs.filter(sb => sb.courseId !== courseId);
+            return [...sbsFromOtherCourses, ...newSBs].sort((a, b) => compararCodigo(a.code, b.code));
+        });
+        
+        // KEY COMPETENCES AND DESCRIPTORS MERGING LOGIC
+        setKeyCompetences((prevKCs: KeyCompetence[]) => {
+            const nextKCs = JSON.parse(JSON.stringify(prevKCs)) as KeyCompetence[];
+            const kcMapByCode = new Map<string, KeyCompetence>(nextKCs.map(kc => [kc.code, kc]));
+            const importKcIdToCodeMap = new Map(newKCs.map(kc => [kc.id, kc.code]));
+
+            newKCs.forEach(nkc => {
+                if (kcMapByCode.has(nkc.code)) {
+                    kcMapByCode.get(nkc.code)!.description = nkc.description;
+                } else {
+                    const newFullKc: KeyCompetence = { ...nkc, descriptors: [] };
+                    kcMapByCode.set(nkc.code, newFullKc);
+                }
+            });
+
+            const newODsByParentCode = new Map<string, OperationalDescriptor[]>();
+            augmentedODs.forEach(od => {
+                const parentCode = importKcIdToCodeMap.get(od.parentKcId);
+                if (parentCode) {
+                    if (!newODsByParentCode.has(parentCode)) newODsByParentCode.set(parentCode, []);
+                    const { parentKcId, ...descriptorData } = od;
+                    newODsByParentCode.get(parentCode)!.push(descriptorData);
+                }
+            });
+            
+            for (const kc of kcMapByCode.values()) {
+                const stageIdentifier = suffix;
+                
+                const otherStageDescriptors = (kc.descriptors || []).filter(d => !d.id.endsWith(stageIdentifier));
+                const currentStageDescriptors = (kc.descriptors || []).filter(d => d.id.endsWith(stageIdentifier));
+                
+                const newDescriptorsForThisKC = newODsByParentCode.get(kc.code) || [];
+
+                // SMART MERGE: Map by CODE (e.g. "CCL1"), not just ID.
+                // This allows merging 'od_bg3_ccl1' and 'od_bg4_ccl1' if they share the code "CCL1".
+                const mergedDescriptorsByCode = new Map<string, OperationalDescriptor>();
+                
+                // 1. Populate with existing descriptors
+                currentStageDescriptors.forEach(d => {
+                     mergedDescriptorsByCode.set(d.code, d);
+                });
+
+                // 2. Process new descriptors
+                newDescriptorsForThisKC.forEach(newDesc => {
+                    if (mergedDescriptorsByCode.has(newDesc.code)) {
+                        // Conflict detected by Code: Reuse the EXISTING ID.
+                        const existing = mergedDescriptorsByCode.get(newDesc.code)!;
+                        
+                        // Record that any reference to newDesc.id should point to existing.id
+                        odIdReplacementMap.set(newDesc.id, existing.id);
+                        
+                        // Update description from import, but keep existing ID
+                        mergedDescriptorsByCode.set(newDesc.code, { 
+                            ...newDesc, 
+                            id: existing.id 
+                        });
+                    } else {
+                        // No conflict, add as new
+                        mergedDescriptorsByCode.set(newDesc.code, newDesc);
+                    }
+                });
+
+                kc.descriptors = [...otherStageDescriptors, ...Array.from(mergedDescriptorsByCode.values())]
+                    .sort((a, b) => compararCodigo(a.code, b.code));
+            }
+
+            return Array.from(kcMapByCode.values());
+        });
+
+        // SPECIFIC COMPETENCES MERGING (WITH LINK RESOLUTION)
+        setSpecificCompetences((prev: SpecificCompetence[]) => {
+            const scsFromOtherCourses = prev.filter(sc => sc.courseId !== courseId);
+            
+            const resolvedSCs = newSCs.map(sc => {
+                // 1. Augment IDs first (add suffix)
+                const rawDescriptorIds = sc.keyCompetenceDescriptorIds.map(id => augmentId(id, suffix));
+                
+                // 2. Resolve IDs using the replacement map generated during Descriptor merging
+                const resolvedDescriptorIds = rawDescriptorIds.map(id => {
+                    if (odIdReplacementMap.has(id)) {
+                        return odIdReplacementMap.get(id)!;
+                    }
+                    return id;
+                });
+
+                // Remove duplicates in links just in case
+                return {
+                    ...sc,
+                    keyCompetenceDescriptorIds: Array.from(new Set(resolvedDescriptorIds))
+                };
+            });
+
+            return [...scsFromOtherCourses, ...resolvedSCs].sort((a, b) => compararCodigo(a.code, b.code));
+        });
+        
+        const courseName = `${course.level} - ${course.subject}`;
+        alert(`Currículo para '${courseName}' (${stage.toUpperCase()}) importado con éxito.\n\nSe ha aplicado una fusión inteligente de Descriptores Operativos para evitar duplicados entre cursos.`);
+    };
+
+    const handleDeleteCurriculum = () => {
+        if (!selectedCourseId) {
+            alert("Por favor, selecciona un curso para definir el nivel educativo a eliminar (ESO o Bachillerato).");
+            return;
+        }
+
+        const course = courses.find((c: Course) => c.id === selectedCourseId);
+        if (!course) return;
+
+        const isBachStage = isBachilleratoStage(course.level);
+        const stage = isBachStage ? 'Bachillerato' : 'ESO';
+        const stageIdentifier = isBachStage ? '-bach' : '-eso';
+        
+        const courseIdsForStage = courses
+            .filter((c: Course) => isBachilleratoStage(c.level) === isBachStage)
+            .map((c: Course) => c.id);
+        
+        const coursesToDeleteText = courses
+            .filter((c: Course) => courseIdsForStage.includes(c.id))
+            .map((c: Course) => `- ${c.level} ${c.subject}`)
+            .join('\n');
+
+        const confirmationMessage = `¡ADVERTENCIA! Esta acción es irreversible.\n\n` +
+            `Se eliminará el currículo completo de la etapa ${stage}. Esto incluye:\n\n` +
+            `1. TODAS las Competencias Específicas, Criterios de Evaluación y Saberes Básicos de los siguientes cursos:\n${coursesToDeleteText}\n` +
+            `2. TODOS los Descriptores Operativos de ${stage} en todas las Competencias Clave.\n\n` +
+            `Si una Competencia Clave se queda sin descriptores, también será eliminada.\n` +
+            `¿Estás absolutamente seguro de que quieres continuar?`;
+
+        if (window.confirm(confirmationMessage)) {
+            const courseIdsSet = new Set(courseIdsForStage);
+
+            setEvaluationCriteria((prev: EvaluationCriterion[]) => prev.filter(item => !courseIdsSet.has(item.courseId)));
+            setSpecificCompetences((prev: SpecificCompetence[]) => prev.filter(item => !courseIdsSet.has(item.courseId)));
+            setBasicKnowledge((prev: BasicKnowledge[]) => prev.filter(item => !courseIdsSet.has(item.courseId)));
+
+            setKeyCompetences((prevKCs: KeyCompetence[]) => {
+                const kcsWithFilteredDescriptors = prevKCs.map(kc => {
+                    const remainingDescriptors = (kc.descriptors || []).filter(d => !d.id.endsWith(stageIdentifier));
+                    return { ...kc, descriptors: remainingDescriptors };
+                });
+                
+                return kcsWithFilteredDescriptors.filter(kc => kc.descriptors.length > 0);
+            });
+            
+            alert(`El currículo para la etapa ${stage} ha sido eliminado.`);
+        }
+    };
+
+    const courseName = courses.find((c: Course) => c.id === selectedCourseId)?.subject || '...';
+    const filteredCriteria = useMemo(() => evaluationCriteria.filter((ec: EvaluationCriterion) => ec.courseId === selectedCourseId).sort((a, b) => compararCodigo(a.code, b.code)), [evaluationCriteria, selectedCourseId]);
+    const filteredCompetences = useMemo(() => specificCompetences.filter((sc: SpecificCompetence) => sc.courseId === selectedCourseId).sort((a, b) => compararCodigo(a.code, b.code)), [specificCompetences, selectedCourseId]);
+    const filteredBasicKnowledge = useMemo(() => basicKnowledge.filter((sb: BasicKnowledge) => sb.courseId === selectedCourseId).sort((a, b) => compararCodigo(a.code, b.code)), [basicKnowledge, selectedCourseId]);
+
+    // Agrupa los criterios por competencia específica (los que no encajen en
+    // ninguna, p.ej. por currículos importados con datos inconsistentes, van
+    // a un grupo aparte para no perderlos silenciosamente).
+    const criteriaGroupedByCompetence = useMemo(() => {
+        // Se incluyen TODAS las competencias (aunque no tengan aún ningún
+        // criterio) para poder añadir el primero desde su propio grupo.
+        const groups = filteredCompetences
+            .map((sc: SpecificCompetence) => ({ competence: sc, criteria: filteredCriteria.filter((ec: EvaluationCriterion) => ec.competenceId === sc.id) }));
+        const orphanCriteria = filteredCriteria.filter((ec: EvaluationCriterion) =>
+            !filteredCompetences.some((sc: SpecificCompetence) => sc.id === ec.competenceId)
+        );
+        return { groups, orphanCriteria };
+    }, [filteredCriteria, filteredCompetences]);
+
+    const selectedCourse = useMemo(() => courses.find((c: Course) => c.id === selectedCourseId), [courses, selectedCourseId]);
+    const selectedStageSuffix = useMemo(() => {
+        if (!selectedCourse) return null;
+        return isBachilleratoStage(selectedCourse.level) ? '-bach' : '-eso';
+    }, [selectedCourse]);
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">Gestor del Currículo</h3>
+                <p className="text-sm text-slate-600 mb-4">
+                    Visualiza y edita los elementos curriculares. Las competencias específicas, criterios y saberes se muestran según el curso seleccionado.
+                </p>
+                <div className="mb-4">
+                  <label htmlFor="course-curr-select" className="block text-sm font-medium text-slate-700 mb-1">Curso a gestionar:</label>
+                  <Select id="course-curr-select" value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)}>
+                      <option value="" disabled>Selecciona un curso...</option>
+                      {courses.map((course: Course) => (
+                          <option key={course.id} value={course.id}>{course.level} - {course.subject}</option>
+                      ))}
+                  </Select>
+                </div>
+            </div>
+
+            <div className="space-y-3">
+                <Accordion title="Competencias Clave y Descriptores Operativos">
+                    <div className="space-y-4">
+                        {keyCompetences.map((kc: KeyCompetence) => {
+                             const descriptorsToShow = (kc.descriptors || []).filter(d =>
+                                !selectedStageSuffix || // show all if no course selected
+                                d.id.endsWith(selectedStageSuffix) || // show if matches stage
+                                (!d.id.endsWith('-eso') && !d.id.endsWith('-bach')) // always show generic
+                            ).sort((a, b) => compararCodigo(a.code, b.code));
+
+                            return (
+                                <div key={kc.id} className="p-3 border border-slate-200 rounded-lg bg-slate-50/50">
+                                    <EditableItem item={kc} type="kc" onSave={handleUpdate} onDelete={handleDelete} defaultEditing={kc.id === newlyAddedId} />
+                                    <div className="pl-4 mt-2 space-y-1">
+                                        {descriptorsToShow.map(od => (
+                                            <EditableItem key={od.id} item={od} type="od" onSave={handleUpdate} onDelete={handleDelete} defaultEditing={od.id === newlyAddedId} />
+                                        ))}
+                                        <button
+                                            onClick={() => handleAddDescriptor(kc.id)}
+                                            className={`text-xs font-semibold flex items-center gap-1 mt-1 ${linkClassName}`}
+                                        >
+                                            <PlusIcon className="w-3 h-3" /> Añadir descriptor
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <button
+                            onClick={handleAddKeyCompetence}
+                            className={`text-sm font-semibold flex items-center gap-1 ${linkClassName}`}
+                        >
+                            <PlusIcon className="w-4 h-4" /> Añadir competencia clave
+                        </button>
+                    </div>
+                </Accordion>
+
+                <Accordion title={`Competencias Específicas para ${courseName}`}>
+                    <div className="space-y-2">
+                        {filteredCompetences.map((sc: SpecificCompetence) => (
+                            <EditableItem key={sc.id} item={sc} type="sc" onSave={handleUpdate} onDelete={handleDelete} defaultEditing={sc.id === newlyAddedId} />
+                        ))}
+                        <button
+                            onClick={handleAddSpecificCompetence}
+                            className={`text-sm font-semibold flex items-center gap-1 ${linkClassName}`}
+                        >
+                            <PlusIcon className="w-4 h-4" /> Añadir competencia específica
+                        </button>
+                    </div>
+                </Accordion>
+
+                 <Accordion title={`Criterios de Evaluación para ${courseName}`}>
+                    {(() => {
+                        const repartoManual = selectedCourse?.pesoCriteriosManual === true;
+                        // Los criterios marcados "no cuenta para la nota" quedan fuera del
+                        // reparto por completo: ni tienen que sumar al 100%, ni el botón de
+                        // ajustar los toca.
+                        const criteriaEnJuego = filteredCriteria.filter((c: EvaluationCriterion) => !c.excludeFromWeighting);
+                        // Un peso de 0% escrito a mano es la misma ambigüedad que no
+                        // rellenarlo — si de verdad no debe contar, es "No cuenta para la
+                        // nota" (excludeFromWeighting), no un 0 suelto.
+                        const sinResolver = criteriaEnJuego.filter((c: EvaluationCriterion) => c.weight == null || c.weight === 0);
+                        const totalWeight = criteriaEnJuego.reduce((sum: number, ec: EvaluationCriterion) => sum + (ec.weight || 0), 0);
+                        const sumaCorrecta = Math.abs(totalWeight - 100) < 0.01;
+
+                        const handleToggleRepartoManual = (manual: boolean) => {
+                            setCourses((prev: Course[]) => prev.map((c: Course) => c.id === selectedCourseId ? { ...c, pesoCriteriosManual: manual } : c));
+                        };
+
+                        const handleAjustarPesos = () => {
+                            // Un 0% cuenta como "sin resolver" igual que null, ver arriba.
+                            const weighted = criteriaEnJuego.filter((c: EvaluationCriterion) => c.weight != null && c.weight !== 0);
+                            const unweighted = criteriaEnJuego.filter((c: EvaluationCriterion) => c.weight == null || c.weight === 0);
+                            const explicitSum = weighted.reduce((sum: number, c: EvaluationCriterion) => sum + (c.weight || 0), 0);
+
+                            // Peso objetivo al que se reescalan los criterios YA ponderados, y
+                            // los pesos que recibirán los criterios sin ponderar (por defecto 0,
+                            // salvo que se elija repartir el resto entre ellos).
+                            let weightedTargetSum = 100;
+                            let unweightedWeights: number[] = unweighted.map(() => 0);
+
+                            if (unweighted.length > 0) {
+                                const remaining = 100 - explicitSum;
+                                if (remaining <= 0) {
+                                    alert(`Los criterios con peso ya suman ${explicitSum}%: no queda porcentaje para repartir. ${unweighted.length === 1 ? 'El criterio' : 'Los ' + unweighted.length + ' criterios'} sin peso se quedará${unweighted.length === 1 ? '' : 'n'} a 0%.`);
+                                    // unweightedWeights ya está a 0; weighted se reescala a 100 entre ellos.
+                                } else {
+                                    const repartir = window.confirm(
+                                        `Hay ${unweighted.length} criterio(s) sin peso definido.\n\nAceptar: repartir el ${remaining.toFixed(2)}% restante a partes iguales entre ellos.\nCancelar: dejarlos a 0%.`
+                                    );
+                                    if (repartir) {
+                                        unweightedWeights = roundToExactSum(unweighted.map(() => remaining / unweighted.length), remaining);
+                                        weightedTargetSum = explicitSum; // los ya ponderados no cambian, ya suman esto
+                                    }
+                                    // Si no reparte, unweightedWeights sigue a 0 y weighted se reescala a 100.
+                                }
+                            } else if (!window.confirm(`Los pesos actuales suman ${totalWeight}%. ¿Ajustarlos proporcionalmente para que sumen 100%?`)) {
+                                return;
+                            }
+
+                            const weightedRaw = weighted.map((c: EvaluationCriterion) =>
+                                explicitSum > 0 ? ((c.weight || 0) / explicitSum) * weightedTargetSum : weightedTargetSum / weighted.length
+                            );
+                            const weightedRounded = roundToExactSum(weightedRaw, weightedTargetSum);
+
+                            const weightMap = new Map<string, number>();
+                            weighted.forEach((c: EvaluationCriterion, i: number) => weightMap.set(c.id, weightedRounded[i]));
+                            unweighted.forEach((c: EvaluationCriterion, i: number) => weightMap.set(c.id, unweightedWeights[i]));
+
+                            setEvaluationCriteria((prev: EvaluationCriterion[]) => prev.map((c: EvaluationCriterion) =>
+                                weightMap.has(c.id) ? { ...c, weight: weightMap.get(c.id) } : c
+                            ));
+                        };
+
+                        return (
+                            <div className="mb-3 space-y-2">
+                                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={!repartoManual}
+                                        onChange={(e) => handleToggleRepartoManual(!e.target.checked)}
+                                        className={checkboxClassName}
+                                    />
+                                    Reparto igual entre criterios
+                                </label>
+                                {repartoManual ? (
+                                    <>
+                                        <div className={`flex items-center gap-2 text-xs font-semibold ${sumaCorrecta ? 'text-slate-500' : 'text-amber-600'}`}>
+                                            <span>Peso anual total: {totalWeight}% {!sumaCorrecta && '(debe sumar 100%)'}</span>
+                                            {!sumaCorrecta && (
+                                                <button
+                                                    onClick={handleAjustarPesos}
+                                                    className="px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800"
+                                                >
+                                                    Ajustar a 100%
+                                                </button>
+                                            )}
+                                        </div>
+                                        {sinResolver.length > 0 && (
+                                            <p className="text-xs font-semibold text-red-600">
+                                                {sinResolver.length === 1 ? 'Hay 1 criterio' : `Hay ${sinResolver.length} criterios`} sin peso ni marcar como excluido — cuenta{sinResolver.length === 1 ? '' : 'n'} como 0% mientras tanto: {sinResolver.map((c: EvaluationCriterion) => c.code).join(', ')}.
+                                            </p>
+                                        )}
+                                    </>
+                                ) : (
+                                    <p className="text-xs text-slate-400">
+                                        Reparto igual activo: los {filteredCriteria.length} criterios pesan lo mismo, sea cual sea el peso que se guardara antes.
+                                    </p>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <div className="space-y-2">
+                        {criteriaGroupedByCompetence.groups.map(({ competence, criteria: groupCriteria }: { competence: SpecificCompetence; criteria: EvaluationCriterion[] }) => (
+                            <CriterioGroup key={competence.id} title={`${competence.code}: ${competence.description}`} count={groupCriteria.length}>
+                                {groupCriteria.map((ec: EvaluationCriterion) => (
+                                    <EditableItem key={ec.id} item={ec} type="ec" onSave={handleUpdate} onDelete={handleDelete} editableWeight={selectedCourse?.pesoCriteriosManual === true} defaultEditing={ec.id === newlyAddedId} />
+                                ))}
+                                <button
+                                    onClick={() => handleAddCriterion(competence.id)}
+                                    className={`text-xs font-semibold flex items-center gap-1 ${linkClassName}`}
+                                >
+                                    <PlusIcon className="w-3 h-3" /> Añadir criterio
+                                </button>
+                            </CriterioGroup>
+                        ))}
+                        {criteriaGroupedByCompetence.orphanCriteria.length > 0 && (
+                            <CriterioGroup title="Sin competencia específica asociada" count={criteriaGroupedByCompetence.orphanCriteria.length}>
+                                {criteriaGroupedByCompetence.orphanCriteria.map((ec: EvaluationCriterion) => (
+                                    <EditableItem key={ec.id} item={ec} type="ec" onSave={handleUpdate} onDelete={handleDelete} editableWeight={selectedCourse?.pesoCriteriosManual === true} defaultEditing={ec.id === newlyAddedId} />
+                                ))}
+                            </CriterioGroup>
+                        )}
+                    </div>
+                 </Accordion>
+                 <Accordion title={`Saberes Básicos para ${courseName}`}>
+                    <div className="space-y-2">
+                        {filteredBasicKnowledge.map((sb: BasicKnowledge) => (
+                            <EditableItem key={sb.id} item={sb} type="sb" onSave={handleUpdate} onDelete={handleDelete} />
+                        ))}
+                    </div>
+                 </Accordion>
+            </div>
+            
+            <div className="pt-6 border-t">
+                 <h4 className={`${TYPOGRAPHY.sectionTitle} mb-2`}>Importar Currículo desde CSV</h4>
+                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 space-y-3">
+                    <p className="font-semibold">Instrucciones para el formato del archivo CSV:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                        <li>El currículo importado (CE, EC, SB) se asignará automáticamente al curso seleccionado en el desplegable. <strong>No es necesario añadir una columna `courseId` al CSV.</strong></li>
+                        <li>El archivo debe tener una cabecera: <strong>type,id,code,description,links...</strong></li>
+                        <li>Utiliza la codificación <strong>UTF-8</strong> para evitar problemas con tildes y caracteres especiales.</li>
+                        <li>Si la descripción contiene comas, debe ir entre comillas dobles (<code>"</code>).</li>
+                        <li>Los Descriptores Operativos (OD) se vincularán a la etapa (ESO/Bachillerato) del curso seleccionado.</li>
+                        <li><strong>Importante:</strong> El sistema detectará si los Descriptores (OD) ya existen por su código (ej. "CCL1") y los unificará automáticamente, incluso si los IDs en el archivo CSV son diferentes entre cursos (ej. <code>od_bg3_ccl1</code> vs <code>od_bg4_ccl1</code>).</li>
+                        <li>La columna <strong>id</strong> debe ser un identificador <strong>único para CEs, ECs y SBs</strong>.</li>
+                        <li>La columna <strong>type</strong> indica el tipo de elemento:
+                            <ul className="list-['-_'] list-inside pl-4">
+                                <li><strong>KC:</strong> Competencia Clave.</li>
+                                <li><strong>OD:</strong> Descriptor Operativo. En la 5ª columna, poner el <code>id</code> de su Competencia Clave (el `id` de la fila KC en el mismo archivo).</li>
+                                <li><strong>SC:</strong> Competencia Específica. En las siguientes columnas, los <code>id</code> de sus Descriptores Operativos. Se asignará al curso seleccionado.</li>
+                                <li><strong>EC:</strong> Criterio de Evaluación. El sistema lo vinculará a la Competencia Específica (SC) que tenga el código correspondiente (ej. un criterio "1.2" se vincula a la CE "CEs 1") <strong>definida en el mismo archivo</strong>. Se asignará al curso seleccionado.</li>
+                                <li><strong>SB:</strong> Saber Básico. No necesita enlaces. Se asignará al curso seleccionado.</li>
+                            </ul>
+                        </li>
+                    </ul>
+                    <details>
+                        <summary className={`cursor-pointer font-medium ${linkClassName}`}>Ver ejemplo de formato</summary>
+                        <pre className="mt-2 p-2 bg-slate-200 text-xs rounded overflow-x-auto">
+{`type,id,code,description,links
+KC,kc-ccl-generic,"CCL","Competencia en comunicación lingüística"
+OD,od-ccl1-generic,"CCL1","Se expresa de forma oral...",kc-ccl-generic
+SC,sc-bg3-1,"CEs 1","Interpretar y transmitir información...",od-ccl1-generic
+EC,ec-bg3-1.1,"1.1","Analizar conceptos y procesos biológicos..."
+SB,sb-bg3-1,"A.1","La célula como unidad estructural..."`}
+                        </pre>
+                    </details>
+                </div>
+
+                <div className="p-3 bg-slate-100 rounded-lg border mt-4 space-y-2">
+                    <label htmlFor="preset-curr-select" className="block text-sm font-medium text-slate-700">
+                        Currículo preseleccionado
+                    </label>
+                    <div className="flex items-end gap-2">
+                        <Select
+                            id="preset-curr-select"
+                            value={presetsFiltrados.some(p => p.id === presetSeleccionado) ? presetSeleccionado : ''}
+                            onChange={e => setPresetSeleccionado(e.target.value)}
+                            className="flex-1"
+                        >
+                            <option value="">Selecciona materia y curso...</option>
+                            {oficialesFiltrados.length > 0 && (
+                                <optgroup label="Oficiales (decreto LOMLOE, Asturias)">
+                                    {oficialesFiltrados.map(preset => (
+                                        <option key={preset.id} value={preset.id}>{preset.etiqueta}</option>
+                                    ))}
+                                </optgroup>
+                            )}
+                            {propiosFiltrados.length > 0 && (
+                                <optgroup label="⚠ No oficiales (propios)">
+                                    {propiosFiltrados.map(preset => (
+                                        <option key={preset.id} value={preset.id}>⚠ {preset.etiqueta} — no oficial</option>
+                                    ))}
+                                </optgroup>
+                            )}
+                        </Select>
+                        <button
+                            onClick={handleCargarPreset}
+                            disabled={!selectedCourseId || !presetSeleccionado}
+                            className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed"
+                        >
+                            Cargar
+                        </button>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                        {cursoNumeroSeleccionado !== null
+                            ? `Mostrando materias de ${cursoNumeroSeleccionado}º ESO.`
+                            : 'Selecciona un curso arriba para filtrar por nivel.'}
+                        {' '}Los marcados con ⚠ no corresponden al decreto: son currículos propios (p.ej. Diversificación).
+                    </p>
+                </div>
+
+                <div className="flex items-end gap-4 p-3 bg-slate-100 rounded-lg border mt-4">
+                    <input
+                        type="file"
+                        id="csv-importer"
+                        className="hidden"
+                        accept=".csv, text/csv"
+                        onChange={handleFileChange}
+                    />
+                    <label
+                        htmlFor="csv-importer"
+                        className={`cursor-pointer w-full text-center bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors ${!selectedCourseId ? 'bg-blue-300 cursor-not-allowed' : ''}`}
+                    >
+                        O sube tu propio archivo CSV...
+                    </label>
+                </div>
+            </div>
+
+            <div className="pt-6 border-t border-red-200 mt-6">
+                <h4 className="text-lg font-semibold text-red-800 mb-2">Zona de Peligro</h4>
+                <p className="text-sm text-slate-600 mb-4">
+                    Esta acción elimina el currículo para toda una etapa educativa (ESO o Bachillerato), según el curso seleccionado.
+                </p>
+                <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                    <Button variant="danger" onClick={handleDeleteCurriculum} disabled={!selectedCourseId} className="w-full">
+                        Eliminar Currículo de la Etapa Seleccionada
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+interface EditableItemProps {
+    item: CurriculumItem;
+    type: CurriculumItemType;
+    onSave: (type: CurriculumItemType, item: CurriculumItem) => void;
+    onDelete: (type: CurriculumItemType, id: string) => void;
+    editableWeight?: boolean;
+    defaultEditing?: boolean;
+}
+
+// `code`/`description`/`id` existen en los 5 tipos de ítem curricular, así
+// que se leen directamente sobre la unión sin narrowing. `weight` (solo en
+// EvaluationCriterion), `keyCompetenceDescriptorIds` (solo en
+// SpecificCompetence) y `competenceId` (solo en EvaluationCriterion) usan
+// el operador `in` para estrechar la unión sin necesidad de casts.
+const EditableItem: React.FC<EditableItemProps> = ({ item, type, onSave, onDelete, editableWeight, defaultEditing }) => {
+    const [isEditing, setIsEditing] = useState(!!defaultEditing);
+    const [data, setData] = useState<CurriculumItem>(item);
+
+    const handleSave = () => {
+        onSave(type, data);
+        setIsEditing(false);
+    };
+
+    const handleCancel = () => {
+        setData(item);
+        setIsEditing(false);
+    };
+
+    if (isEditing) {
+        const weight = 'weight' in data ? data.weight : undefined;
+        const excluded = 'excludeFromWeighting' in data ? data.excludeFromWeighting === true : false;
+        // Un 0% escrito a mano cuenta como "sin resolver" igual que vacío: si de
+        // verdad no debe puntuar, es "No cuenta para la nota", no un 0 suelto —
+        // evita reproducir la ambigüedad que causó el problema original.
+        const pesoInvalido = type === 'ec' && editableWeight && !excluded && (weight == null || weight === 0);
+        return (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+                <Input
+                    value={data.code}
+                    onChange={(e) => setData({ ...data, code: e.target.value })}
+                    placeholder="Código"
+                />
+                 <Textarea
+                    value={data.description}
+                    onChange={(e) => setData({ ...data, description: e.target.value })}
+                    className="min-h-[60px]"
+                    placeholder="Descripción"
+                />
+                {type === 'ec' && editableWeight && (
+                    <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-medium text-slate-600 whitespace-nowrap">Peso anual (%)</label>
+                            <Input
+                                type="number" min="0" max="100" step="1"
+                                value={weight ?? ''}
+                                onChange={(e) => setData({ ...data, weight: e.target.value === '' ? undefined : Number(e.target.value) } as EvaluationCriterion)}
+                                className="w-28"
+                                disabled={excluded}
+                                error={pesoInvalido}
+                            />
+                            <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={excluded}
+                                    onChange={(e) => setData({ ...data, excludeFromWeighting: e.target.checked, weight: e.target.checked ? undefined : weight } as EvaluationCriterion)}
+                                    className={checkboxClassName}
+                                />
+                                No cuenta para la nota
+                            </label>
+                        </div>
+                        {pesoInvalido && (
+                            <p className="text-xs text-red-600">Asigna un peso o marca "No cuenta para la nota" — no puede quedar sin ninguno de los dos.</p>
+                        )}
+                    </div>
+                )}
+                <div className="flex justify-end gap-2">
+                    <button onClick={handleCancel} className="text-xs font-semibold text-slate-600 hover:text-slate-800">Cancelar</button>
+                    <button onClick={handleSave} disabled={pesoInvalido} className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1 rounded-md">Guardar</button>
+                </div>
+            </div>
+        )
+    }
+
+    const weight = 'weight' in item ? item.weight : undefined;
+    const excluded = 'excludeFromWeighting' in item ? item.excludeFromWeighting === true : false;
+    const keyCompetenceDescriptorIds = 'keyCompetenceDescriptorIds' in item ? item.keyCompetenceDescriptorIds : undefined;
+    const competenceId = 'competenceId' in item ? item.competenceId : undefined;
+
+    return (
+        <div className="flex items-center gap-2 p-2 group hover:bg-slate-50 rounded-md">
+            <div className="flex-grow">
+                <p className="font-semibold text-sm">
+                    {item.code}: <span className="font-normal text-slate-700">{item.description}</span>
+                    {type === 'ec' && editableWeight && (
+                        excluded
+                            ? <Badge variant="neutral" className="ml-2 align-middle">No cuenta</Badge>
+                            : weight != null && weight !== 0
+                                ? <Badge className="ml-2 align-middle">{weight}%</Badge>
+                                : <Badge variant="danger" className="ml-2 align-middle">Sin peso</Badge>
+                    )}
+                </p>
+                {type === 'sc' && <p className="text-xs text-slate-500 mt-1">Descriptores: {(keyCompetenceDescriptorIds || []).join(', ')}</p>}
+                 {type === 'ec' && <p className="text-xs text-slate-500 mt-1">Comp. Específica: {competenceId}</p>}
+            </div>
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                <IconButton label="Editar" size="sm" onClick={() => setIsEditing(true)}><PencilIcon className="w-4 h-4" /></IconButton>
+                <IconButton label="Eliminar" tone="danger" size="sm" onClick={() => onDelete(type, item.id)}><TrashIcon className="w-4 h-4" /></IconButton>
+            </div>
+        </div>
+    );
+};
+
+
+export default CurriculumManager;

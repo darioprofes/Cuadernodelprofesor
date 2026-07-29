@@ -1,0 +1,53 @@
+services:
+
+  profe:
+
+    image: nginx:alpine
+
+    container_name: profe
+
+    restart: unless-stopped
+
+    volumes:
+      - /mnt/storage/docker/data/profe:/usr/share/nginx/html:ro
+      - /mnt/storage/docker/compose/profe/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+    networks:
+      - proxy
+      - profe-internal
+
+  profe-api:
+
+    build: ./api
+
+    container_name: profe-api
+
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    networks:
+      - profe-internal
+      - db-shared
+
+    expose:
+      - "8000"
+
+networks:
+
+  proxy:
+    external: true
+
+  # Red compartida solo para hablar con Postgres (ver
+  # /mnt/storage/docker/compose/postgres/compose.yml). No es external:true
+  # ahí porque la crea ese compose; aquí sí lo es porque este proyecto solo
+  # se conecta a ella, no la posee.
+  db-shared:
+    external: true
+    name: postgres_db-shared
+
+  # Red privada solo entre profe/profe-api: profe-api no está en "proxy", así
+  # que ningún otro contenedor del stack puede alcanzarlo directamente
+  # saltándose Authentik (mismo criterio que panel-internal en panel).
+  profe-internal:
