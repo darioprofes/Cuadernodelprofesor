@@ -7,7 +7,7 @@ import Input from './Input';
 import Textarea from './Textarea';
 import { TrashIcon, ChevronRightIcon, ChevronDownIcon } from './Icons';
 import StudentPhotoAvatar from './StudentPhotoAvatar';
-import { fileToDataUrl, parsearNombre } from '../utils';
+import { fileToDataUrl } from '../utils';
 import { checkboxClassName } from '../theme/components/Input';
 
 interface StudentPersonalDataModalProps {
@@ -34,13 +34,9 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
         if (isOpen && student) {
             setForm({
                 name: student.name,
-                ...(!student.primerApellido && !student.nombre
-                    ? parsearNombre(student.name)
-                    : {
-                        nombre: student.nombre || '',
-                        primerApellido: student.primerApellido || '',
-                        segundoApellido: student.segundoApellido || '',
-                    }),
+                nombre: student.nombre || '',
+                primerApellido: student.primerApellido || '',
+                segundoApellido: student.segundoApellido || '',
                 foto: student.foto,
                 fechaNacimiento: student.fechaNacimiento || '',
                 dni: student.dni || '',
