@@ -5,6 +5,7 @@ import Button from './Button';
 import { ArrowUpTrayIcon } from './Icons';
 import ClassLabel from './ClassLabel';
 import type { ClassData, Course, AcademicConfiguration } from '../types';
+import { HUE_PRESETS } from '../utils';
 
 interface FilaHorario {
     dia: number; // 0=Lunes ... 4=Viernes (formato del backend)
@@ -117,10 +118,14 @@ const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: Class
             ? newClasses.find(c => c.courseId === courseId && c.grupo === grupo)
             : newClasses.find(c => c.courseId === courseId && !c.grupo);
         if (!cls) {
+            // Ciclar por HUE_PRESETS para que cada clase nueva tenga un color
+            // distinto sin que el usuario tenga que asignarlos a mano.
+            const colorAcento = HUE_PRESETS[newClasses.length % HUE_PRESETS.length];
             cls = {
                 id: `class-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
                 grupo,
                 courseId,
+                colorAcento,
                 students: [],
                 categories: [],
                 assignments: [],
