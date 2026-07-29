@@ -11,7 +11,6 @@ import { parsearNombre } from '../utils';
 
 interface TempStudent {
     id: number;
-    name: string;
     nombre: string;
     primerApellido: string;
     segundoApellido: string;
@@ -21,7 +20,7 @@ interface TempStudent {
 interface BulkAddStudentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (students: { name: string; nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => void;
+    onSave: (students: { nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => void;
 }
 
 
@@ -96,11 +95,11 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
     const handleProcesarTexto = () => {
         const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         if (lines.length === 0) return;
-        const newStudents: TempStudent[] = lines.map((line, index) => {
-            const partes = parsearNombre(line);
-            const name = [partes.primerApellido, partes.segundoApellido, partes.nombre].filter(Boolean).join(' ') || line.trim();
-            return { id: Date.now() + index, name, ...partes, acneae: new Set<string>() };
-        });
+        const newStudents: TempStudent[] = lines.map((line, index) => ({
+            id: Date.now() + index,
+            ...parsearNombre(line),
+            acneae: new Set<string>(),
+        }));
         setStudents(current => [...current, ...newStudents]);
         setRawText('');
     };
@@ -119,14 +118,13 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
 
     const handleSave = () => {
         const studentsToSave = students
-            .filter(s => s.primerApellido.trim() || s.nombre.trim() || s.name.trim())
-            .map(s => {
-                const primerApellido = s.primerApellido.trim() || undefined;
-                const segundoApellido = s.segundoApellido.trim() || undefined;
-                const nombre = s.nombre.trim() || undefined;
-                const name = [primerApellido, segundoApellido, nombre].filter(Boolean).join(' ') || s.name.trim();
-                return { name, nombre, primerApellido, segundoApellido, acneae: Array.from(s.acneae) };
-            });
+            .filter(s => s.primerApellido.trim() || s.nombre.trim())
+            .map(s => ({
+                nombre: s.nombre.trim() || undefined,
+                primerApellido: s.primerApellido.trim() || undefined,
+                segundoApellido: s.segundoApellido.trim() || undefined,
+                acneae: Array.from(s.acneae),
+            }));
         
         if(studentsToSave.length > 0) {
             onSave(studentsToSave);

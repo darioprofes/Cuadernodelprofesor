@@ -6,7 +6,7 @@ import type { ClassData, Course, KeyCompetence, SpecificCompetence, EvaluationCr
 import { calculateEvaluationPeriodGradeForStudent, calculateOverallFinalGradeForStudent, calculateStudentCriterionGrades, calculateStudentCompetenceGrades, calculateStudentKeyCompetenceGrades, calculatePeriodGradeCriterial, calculateFinalGradeCriterial } from '../services/gradeCalculations';
 import ClassLabel from './ClassLabel';
 import { checkboxClassName } from '../theme/components/Input';
-import { buildClassName } from '../utils';
+import { buildClassName, getNombreCompleto } from '../utils';
 
 interface ExportModalProps {
     isOpen: boolean;
@@ -87,7 +87,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, classes, cou
                 'Nota Final Curso (criterios)', 'Nota Final Curso (cat.)',
             ];
             const gradebookRows = classData.students.map(student => {
-                const row = [student.name];
+                const row = [getNombreCompleto(student)];
                 evaluationPeriods.forEach(p => {
                     const oficial = calculatePeriodGradeCriterial(student.id, classData, classCriteria, p.id, repartoIgualCriterios);
                     const comparacion = calculateEvaluationPeriodGradeForStudent(student.id, classData, p.id);
@@ -109,7 +109,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, classes, cou
                 const criteriaRows = classData.students.map(student => {
                     // FIX: Corrected the arguments passed to calculateStudentCriterionGrades.
                     const studentGrades = calculateStudentCriterionGrades(student.id, classData, classCriteria, period.id);
-                    return [student.name, ...classCriteria.map(c => studentGrades.get(c.id)?.toFixed(2) ?? '')];
+                    return [getNombreCompleto(student), ...classCriteria.map(c => studentGrades.get(c.id)?.toFixed(2) ?? '')];
                 });
                 const criteriaCsv = [criteriaHeaders, ...criteriaRows].map(row => row.map(escapeCsvCell).join(',')).join('\n');
                 downloadCsv(criteriaCsv, `${classNameSanitized}_Informe_Criterios_${period.name.replace(/ /g, '_')}.csv`);
@@ -121,7 +121,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, classes, cou
                 const scHeaders = ['Alumn@', ...classCompetences.map(c => c.code)];
                 const scRows = classData.students.map(student => {
                     const studentGrades = calculateStudentCompetenceGrades(student.id, classData, classCriteria, classCompetences, repartoIgualCriterios, period.id);
-                    return [student.name, ...classCompetences.map(c => studentGrades.get(c.id)?.toFixed(2) ?? '')];
+                    return [getNombreCompleto(student), ...classCompetences.map(c => studentGrades.get(c.id)?.toFixed(2) ?? '')];
                 });
                 const scCsv = [scHeaders, ...scRows].map(row => row.map(escapeCsvCell).join(',')).join('\n');
                 downloadCsv(scCsv, `${classNameSanitized}_Informe_Comp_Especificas_${period.name.replace(/ /g, '_')}.csv`);
@@ -132,7 +132,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, classes, cou
                 const kcHeaders = ['Alumn@', ...keyCompetences.map(kc => kc.code)];
                 const kcRows = classData.students.map(student => {
                      const studentGrades = calculateStudentKeyCompetenceGrades(student.id, classData, classCriteria, classCompetences, keyCompetences, repartoIgualCriterios, period.id);
-                    return [student.name, ...keyCompetences.map(kc => studentGrades.get(kc.id)?.toFixed(2) ?? '')];
+                    return [getNombreCompleto(student), ...keyCompetences.map(kc => studentGrades.get(kc.id)?.toFixed(2) ?? '')];
                 });
                 const kcCsv = [kcHeaders, ...kcRows].map(row => row.map(escapeCsvCell).join(',')).join('\n');
                 downloadCsv(kcCsv, `${classNameSanitized}_Informe_Comp_Clave_${period.name.replace(/ /g, '_')}.csv`);

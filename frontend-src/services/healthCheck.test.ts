@@ -39,7 +39,7 @@ describe('runHealthCheck', () => {
     it('flags an orphaned grade (assignment deleted but grade left behind)', () => {
         const classData: ClassData = {
             id: 'class1', courseId: 'course1',
-            students: [{ id: 's1', name: 'Alumno', acneae: [] }],
+            students: [{ id: 's1', nombre: 'Alumno', acneae: [] }],
             categories: [], assignments: [],
             grades: [{ studentId: 's1', assignmentId: 'gone', criterionScores: {} }],
         };

@@ -4,6 +4,7 @@ import Modal from './Modal';
 import Button from './Button';
 import Textarea from './Textarea';
 import type { Student, Assignment } from '../types';
+import { getNombreCompleto } from '../utils';
 
 interface BulkGradeImportModalProps {
     isOpen: boolean;
@@ -71,7 +72,7 @@ const BulkGradeImportModal: React.FC<BulkGradeImportModalProps> = ({ isOpen, onC
                                         const isValid = !isNaN(gradeNum) && gradeNum >= 0 && gradeNum <= 10;
                                         return (
                                             <tr key={student.id} className={`border-t ${!isValid && gradeStr !== '-' ? 'bg-red-50' : ''}`}>
-                                                <td className="p-2">{student.name}</td>
+                                                <td className="p-2">{getNombreCompleto(student)}</td>
                                                 <td className={`p-2 font-semibold ${isValid ? 'text-slate-800' : 'text-red-600'}`}>
                                                     {gradeStr}
                                                     {!isValid && gradeStr !== '-' && <span className="ml-2 text-xs">(Inválido)</span>}

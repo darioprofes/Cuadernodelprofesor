@@ -32,7 +32,7 @@ const directAssignment = (over: Partial<Assignment> = {}): Assignment => ({
 const baseClass = (over: Partial<ClassData> = {}): ClassData => ({
     id: 'class1',
     courseId: 'course1',
-    students: [{ id: 's1', name: 'Alumno Uno', acneae: [] }],
+    students: [{ id: 's1', nombre: 'Alumno', primerApellido: 'Uno', acneae: [] }],
     categories: [],
     assignments: [],
     grades: [],

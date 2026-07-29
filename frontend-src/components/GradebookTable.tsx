@@ -18,7 +18,7 @@ import BulkGradeImportModal from './BulkGradeImportModal';
 import StudentSummaryModal from './StudentSummaryModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ClassLabel from './ClassLabel';
-import { formatClassLabel, getClassName, getMateria, getClassAccentColor } from '../utils';
+import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getNombreOrden } from '../utils';
 
 
 interface GradebookTableProps {
@@ -540,8 +540,24 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           <thead className="text-xs uppercase sticky top-0 z-20 shadow-sm">
             <tr>
               {/* Alumno Header Top Half: No bottom border, align bottom */}
-              <th scope="col" className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 text-center border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] ${activePeriodId !== 'final' ? 'border-b-0 align-bottom' : 'align-middle'}`}>
-                  Alumn@
+              <th scope="col" className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] ${activePeriodId !== 'final' ? 'border-b-0 align-bottom' : 'align-middle'}`}>
+                  <div className="flex items-center justify-between gap-1">
+                      <span>Alumn@</span>
+                      <button
+                          type="button"
+                          title="Ordenar por apellido"
+                          onClick={() => {
+                              const sorted = [...classData.students].sort((a, b) =>
+                                  getNombreOrden(a).localeCompare(getNombreOrden(b), 'es', { sensitivity: 'base' })
+                              );
+                              onUpdateClass({ ...classData, students: sorted });
+                          }}
+                          className="text-slate-400 hover:text-slate-700 p-0.5 rounded"
+                      >
+                          <ArrowUpIcon className="w-3 h-3 -rotate-90" />
+                          <ArrowDownIcon className="w-3 h-3 -rotate-90" />
+                      </button>
+                  </div>
               </th>
               {activePeriodId === 'final' ? (
                 <>
@@ -628,7 +644,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                         >
                             <AcneaeTag tags={student.acneae}/> 
-                            <span className="truncate" title={student.name}>{student.name}</span>
+                            <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                         </button>
                     </div>
                 </td>

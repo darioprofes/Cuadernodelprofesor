@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { AcademicConfiguration, ClassData, Category, Course, Student } from '../../types';
-import { formatClassLabel } from '../../utils';
+import { formatClassLabel, getNombreCompleto } from '../../utils';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, UserCircleIcon } from '../Icons';
 import ClassModal from '../ClassModal';
 import BulkAddStudentModal from '../BulkAddStudentModal';
@@ -13,7 +13,6 @@ import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tabl
 
 interface StudentRowProps {
     student: Student;
-    onUpdate: (id: string, data: Partial<Student>) => void;
     onDelete: (id: string) => void;
     onReorder: (id: string, direction: 'up' | 'down') => void;
     onOpenFicha: (student: Student) => void;
@@ -21,21 +20,11 @@ interface StudentRowProps {
     totalStudents: number;
 }
 
-const StudentRow: React.FC<StudentRowProps> = ({ student, onUpdate, onDelete, onReorder, onOpenFicha, index, totalStudents }) => {
-    const [name, setName] = useState(student.name);
-
+const StudentRow: React.FC<StudentRowProps> = ({ student, onDelete, onReorder, onOpenFicha, index, totalStudents }) => {
     return (
         <tr className={tableRowClassName}>
             <td className="p-3 text-center text-slate-500">{index + 1}</td>
-            <td className="p-3">
-                <input
-                    type="text"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    onBlur={() => onUpdate(student.id, { name })}
-                    className="w-full p-1 bg-transparent rounded-md border-transparent hover:border-slate-300 focus:border-[#2f5c99] focus:ring-[#2f5c99]/30"
-                />
-            </td>
+            <td className="p-3 text-sm text-slate-800">{getNombreCompleto(student)}</td>
             <td className="p-3">
                 <div className="flex flex-wrap gap-1">
                     {student.acneae.length > 0
@@ -179,12 +168,11 @@ const ClassManager: React.FC<{
         }
     };
 
-    const handleBulkAddStudents = (newStudentData: { name: string; nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => {
+    const handleBulkAddStudents = (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => {
         if (!activeClassId) return;
 
         const newStudents: Student[] = newStudentData.map((data, index) => ({
             id: `s-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 7)}`,
-            name: data.name,
             nombre: data.nombre,
             primerApellido: data.primerApellido,
             segundoApellido: data.segundoApellido,
@@ -238,7 +226,6 @@ const ClassManager: React.FC<{
                                 <StudentRow
                                     key={student.id}
                                     student={student}
-                                    onUpdate={handleStudentUpdate}
                                     onDelete={handleDeleteStudent}
                                     onReorder={handleReorderStudent}
                                     onOpenFicha={setStudentForFicha}

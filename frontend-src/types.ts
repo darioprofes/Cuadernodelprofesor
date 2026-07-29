@@ -48,9 +48,8 @@ export interface Tutor {
 // datos que puedan quedar desactualizados. Edad se calcula de
 // fechaNacimiento, tampoco se guarda.
 export interface Student {
-  id:string;
-  name: string;   // nombre completo — se reconstruye de las partes al guardar desde la ficha
-  nombre?: string;         // nombre de pila
+  id: string;
+  nombre?: string;
   primerApellido?: string;
   segundoApellido?: string;
   acneae: string[]; // For educational needs tags: ['RE', 'ACS']

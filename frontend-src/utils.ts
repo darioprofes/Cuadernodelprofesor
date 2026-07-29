@@ -1,4 +1,12 @@
-import type { ClassData, Course } from './types';
+import type { ClassData, Course, Student } from './types';
+
+// Nombre para mostrar al usuario: orden natural "Nombre Apellido1 Apellido2"
+export const getNombreCompleto = (student: Student): string =>
+    [student.nombre, student.primerApellido, student.segundoApellido].filter(Boolean).join(' ') || '(sin nombre)';
+
+// Nombre para ordenar alfabéticamente: "Apellido1 Apellido2 Nombre"
+export const getNombreOrden = (student: Student): string =>
+    [student.primerApellido, student.segundoApellido, student.nombre].filter(Boolean).join(' ') || '';
 
 // Las fotos de alumnado (Student.foto, data URL) viven aparte del blob
 // principal (ver App.tsx: photosApi, /api/photos) para que el autoguardado

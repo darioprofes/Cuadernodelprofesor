@@ -4,7 +4,7 @@ import Modal from './Modal';
 import Badge from './Badge';
 import Tabs from './Tabs';
 import type { Student, ClassData, EvaluationPeriod, EvaluationCriterion, SpecificCompetence, KeyCompetence, AcademicConfiguration, Course, Tutor } from '../types';
-import { getMateria, formatFechaEs } from '../utils';
+import { getMateria, formatFechaEs, getNombreCompleto } from '../utils';
 import AcneaeTag from './AcneaeTag';
 import {
     calculateOverallFinalGradeForStudent,
@@ -87,7 +87,7 @@ const StudentSummaryModal: React.FC<StudentSummaryModalProps> = ({
                         <div className="flex justify-between items-start mb-6 pb-4 border-b">
                             <div>
                                 <div className="flex items-center gap-3 mb-1">
-                                    <h2 className="text-2xl font-bold text-slate-800">{student.name}</h2>
+                                    <h2 className="text-2xl font-bold text-slate-800">{getNombreCompleto(student)}</h2>
                                     <AcneaeTag tags={student.acneae} />
                                 </div>
                                 <div className="flex gap-2 text-sm text-slate-500">

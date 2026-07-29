@@ -2,6 +2,7 @@
 import React, { useMemo, useState } from 'react';
 import type { ClassData, SpecificCompetence, KeyCompetence, EvaluationCriterion, AcademicConfiguration, Student, Course } from '../types';
 import { calculateStudentCompetenceGrades, calculateStudentCriterionGrades, getGradeColorClass } from '../services/gradeCalculations';
+import { getNombreCompleto } from '../utils';
 import { TYPOGRAPHY } from '../theme/typography';
 import DrilldownModal, { DrilldownData } from './DrilldownModal';
 import Select from './Select';
@@ -65,7 +66,7 @@ const SpecificCompetenceAchievement: React.FC<SpecificCompetenceAchievementProps
         })).filter(item => item.grade !== null);
     
         setDrilldownData({
-            studentName: student.name,
+            studentName: getNombreCompleto(student),
             elementName: `Competencia Específica ${competence.code}: ${competence.description}`,
             items: items,
             finalGrade: finalGrade,
@@ -110,7 +111,7 @@ const SpecificCompetenceAchievement: React.FC<SpecificCompetenceAchievementProps
                             <tr key={student.id} className="bg-white border-b border-slate-200/80 hover:bg-slate-50/50">
                                 <td className="px-6 py-3 font-medium text-slate-900 sticky left-0 bg-white hover:bg-slate-50/50 z-10 w-52 flex items-center gap-2">
                                     <span className="text-xs text-slate-400 font-mono w-5 text-right">{index + 1}</span>
-                                    <span>{student.name}</span>
+                                    <span>{getNombreCompleto(student)}</span>
                                 </td>
                                 {competences.map(competence => {
                                     const grade = studentCompetenceGrades.get(student.id)?.get(competence.id) ?? null;

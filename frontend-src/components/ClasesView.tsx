@@ -5,7 +5,7 @@ import PageHeader from './PageHeader';
 import StudentSummaryModal from './StudentSummaryModal';
 import StudentPersonalDataModal from './StudentPersonalDataModal';
 import PlanoClaseModal from './PlanoClaseModal';
-import { getClassAccentColor, getMateria, getDayOfWeek1a7, parsePeriodRange } from '../utils';
+import { getClassAccentColor, getMateria, getDayOfWeek1a7, parsePeriodRange, getNombreCompleto } from '../utils';
 import { getClassIconComponent } from '../classIcons';
 import { RADIUS } from '../theme/radius';
 import { SHADOW } from '../theme/shadows';
@@ -26,7 +26,10 @@ interface ClasesViewProps {
 
 const DIA_CORTO: Record<number, string> = { 1: 'L', 2: 'M', 3: 'X', 4: 'J', 5: 'V' };
 
-const getInitials = (name: string): string => {
+const getInitials = (student: Student): string => {
+    if (student.nombre && student.primerApellido)
+        return (student.nombre[0] + student.primerApellido[0]).toUpperCase();
+    const name = getNombreCompleto(student);
     const parts = name.trim().split(/\s+/).filter(Boolean);
     if (parts.length === 0) return '?';
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
@@ -48,7 +51,7 @@ const StatPill: React.FC<{ icon: React.ReactNode; label: string }> = ({ icon, la
 // tanto en la fila compacta como en el listado completo desplegado.
 const StudentAvatar: React.FC<{ student: Student; bgColor: string; className?: string }> = ({ student, bgColor, className = 'w-6 h-6 text-[10px]' }) => (
     <span className={`${className} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 overflow-hidden`} style={{ backgroundColor: bgColor }}>
-        {student.foto ? <img src={student.foto} alt="" className="w-full h-full object-cover" /> : getInitials(student.name)}
+        {student.foto ? <img src={student.foto} alt="" className="w-full h-full object-cover" /> : getInitials(student)}
     </span>
 );
 
@@ -231,7 +234,7 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                                                 key={s.id}
                                                 onClick={() => setFichaTarget({ student: s, classData: cls })}
                                                 onContextMenu={e => openContextMenu(e, s, cls)}
-                                                title={s.name}
+                                                title={getNombreCompleto(s)}
                                                 className="hover:opacity-80"
                                             >
                                                 <StudentAvatar student={s} bgColor={accent.headerBg} />
@@ -260,11 +263,11 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                                                         key={s.id}
                                                         onClick={() => setFichaTarget({ student: s, classData: cls })}
                                                         onContextMenu={e => openContextMenu(e, s, cls)}
-                                                        title={s.name}
+                                                        title={getNombreCompleto(s)}
                                                         className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full border border-slate-200 hover:bg-slate-50 hover:border-blue-300 transition-colors"
                                                     >
                                                         <StudentAvatar student={s} bgColor={accent.headerBg} />
-                                                        <span className="text-xs text-slate-700 truncate max-w-[110px]">{s.name}</span>
+                                                        <span className="text-xs text-slate-700 truncate max-w-[110px]">{getNombreCompleto(s)}</span>
                                                     </button>
                                                 ))}
                                             </div>
@@ -301,7 +304,7 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                     className="bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[180px] text-sm"
                 >
                     <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 border-b border-slate-100 truncate">
-                        {contextMenu.student.name}
+                        {getNombreCompleto(contextMenu.student)}
                     </div>
                     <button
                         className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"

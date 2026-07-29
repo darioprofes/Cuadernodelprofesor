@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ClassData, Student } from '../types';
+import { getNombreCompleto } from '../utils';
 import { XMarkIcon, PencilIcon, CheckCircleIcon } from './Icons';
 import { TYPOGRAPHY } from '../theme/typography';
 import { SEMANTIC } from '../theme/palette';
@@ -163,7 +164,7 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
                             key={s.id}
                             onPointerDown={(e) => handlePointerDown(e, s.id)}
                             onPointerUp={() => handlePointerUp(s.id, s)}
-                            title={s.name}
+                            title={getNombreCompleto(s)}
                             className={`absolute flex flex-col items-center w-16 select-none ${editMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${draggingId === s.id ? 'opacity-80 z-20' : ''}`}
                             style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)', touchAction: 'none' }}
                         >
@@ -178,7 +179,7 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
                                 </div>
                             )}
                             <div className="mt-1 text-xs text-center bg-white px-1.5 py-0.5 rounded-md truncate max-w-[110px] shadow-sm pointer-events-none">
-                                {s.name}
+                                {getNombreCompleto(s)}
                             </div>
                         </div>
                     );

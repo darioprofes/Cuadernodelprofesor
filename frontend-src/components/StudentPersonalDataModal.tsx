@@ -7,7 +7,7 @@ import Input from './Input';
 import Textarea from './Textarea';
 import { TrashIcon, ChevronRightIcon, ChevronDownIcon } from './Icons';
 import StudentPhotoAvatar from './StudentPhotoAvatar';
-import { fileToDataUrl } from '../utils';
+import { fileToDataUrl, getNombreCompleto } from '../utils';
 import { checkboxClassName } from '../theme/components/Input';
 
 interface StudentPersonalDataModalProps {
@@ -17,7 +17,11 @@ interface StudentPersonalDataModalProps {
     onSave: (studentId: string, data: Partial<Student>) => void;
 }
 
-type FormState = Omit<Student, 'id'>;
+type FormState = Omit<Student, 'id' | 'nombre' | 'primerApellido' | 'segundoApellido'> & {
+    nombre: string;
+    primerApellido: string;
+    segundoApellido: string;
+};
 
 const emptyTutor: Tutor = { nombre: '', relacion: '', telefono: '', email: '' };
 
@@ -28,12 +32,11 @@ const emptyTutor: Tutor = { nombre: '', relacion: '', telefono: '', email: '' };
 // Sanitaria/Autorizaciones, más sensibles y menos consultadas a diario) para
 // no convertir esto en un formulario interminable de un solo vistazo.
 const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isOpen, onClose, student, onSave }) => {
-    const [form, setForm] = useState<FormState>({ name: '', acneae: [] });
+    const [form, setForm] = useState<FormState>({ nombre: '', primerApellido: '', segundoApellido: '', acneae: [] });
 
     useEffect(() => {
         if (isOpen && student) {
             setForm({
-                name: student.name,
                 nombre: student.nombre || '',
                 primerApellido: student.primerApellido || '',
                 segundoApellido: student.segundoApellido || '',
@@ -88,15 +91,10 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const nombreT = trimOrUndef(form.nombre);
-        const primerT = trimOrUndef(form.primerApellido);
-        const segundoT = trimOrUndef(form.segundoApellido);
-        const reconstructed = [primerT, segundoT, nombreT].filter(Boolean).join(' ');
         onSave(student.id, {
-            name: reconstructed || form.name || student.name,
-            nombre: nombreT,
-            primerApellido: primerT,
-            segundoApellido: segundoT,
+            nombre: trimOrUndef(form.nombre),
+            primerApellido: trimOrUndef(form.primerApellido),
+            segundoApellido: trimOrUndef(form.segundoApellido),
             foto: form.foto,
             fechaNacimiento: trimOrUndef(form.fechaNacimiento),
             dni: trimOrUndef(form.dni),
@@ -128,7 +126,7 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Ficha personal — ${student.name}`} size="2xl">
+        <Modal isOpen={isOpen} onClose={onClose} title={`Ficha personal — ${getNombreCompleto(student)}`} size="2xl">
             <form onSubmit={handleSubmit} className="space-y-3">
                 <div className="flex items-center gap-4 pb-2">
                     <StudentPhotoAvatar foto={form.foto} size="w-20 h-20" />

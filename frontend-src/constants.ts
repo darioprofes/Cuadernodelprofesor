@@ -39,10 +39,10 @@ export const INITIAL_CLASS_DATA: ClassData[] = [
         { day: 5, periodIndex: 6 }, // Viernes, 7ª Hora
     ],
     students: [
-      { id: 's1', name: 'Elena García', acneae: [] },
-      { id: 's2', name: 'Marcos Rodríguez', acneae: ['RE'] },
-      { id: 's3', name: 'Lucía Fernández', acneae: ['PAC', 'RE EC'] },
-      { id: 's4', name: 'Javier López', acneae: ['ACS'] },
+      { id: 's1', nombre: 'Elena', primerApellido: 'García', acneae: [] },
+      { id: 's2', nombre: 'Marcos', primerApellido: 'Rodríguez', acneae: ['RE'] },
+      { id: 's3', nombre: 'Lucía', primerApellido: 'Fernández', acneae: ['PAC', 'RE EC'] },
+      { id: 's4', nombre: 'Javier', primerApellido: 'López', acneae: ['ACS'] },
     ],
     categories: [
         { id: 'cat1', name: 'Proyectos', weight: 50, evaluationPeriodId: 'ep-1' },

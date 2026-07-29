@@ -5,6 +5,7 @@ import Input from './Input';
 import { checkboxClassName } from '../theme/components/Input';
 import type { Student, Assignment, Grade, EvaluationCriterion, EvaluationTool, Rubric } from '../types';
 import { calculateToolGlobalScore } from '../services/gradeCalculations';
+import { getNombreCompleto } from '../utils';
 import { ChevronRightIcon } from './Icons';
 
 interface GradeEntryModalProps {
@@ -298,7 +299,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
   return (
       <Modal isOpen={isOpen} onClose={onClose} title={`Calificar: ${assignment.name}`} size={assignment.evaluationMethod === 'rubric' ? '4xl' : '2xl'}>
         <div className="space-y-4">
-          <p className="text-slate-600 font-medium">Alumn@: <span className="font-bold">{student.name}</span></p>
+          <p className="text-slate-600 font-medium">Alumn@: <span className="font-bold">{getNombreCompleto(student)}</span></p>
           
           {assignment.evaluationMethod === 'direct_grade' ? renderDirectGradeInputs() : renderToolInputs()}
 
