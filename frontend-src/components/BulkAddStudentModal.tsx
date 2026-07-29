@@ -7,6 +7,7 @@ import Textarea from './Textarea';
 import { checkboxClassName } from '../theme/components/Input';
 import { TrashIcon } from './Icons';
 import { ACNEAE_TAGS } from '../constants';
+import { parsearNombre } from '../utils';
 
 interface TempStudent {
     id: number;
@@ -23,38 +24,6 @@ interface BulkAddStudentModalProps {
     onSave: (students: { name: string; nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => void;
 }
 
-const parseName = (raw: string): { name: string; nombre: string; primerApellido: string; segundoApellido: string } => {
-    const trimmed = raw.trim();
-    const parts = trimmed.split(',').map(p => p.trim());
-
-    if (parts.length >= 3) {
-        // Formato preferido: "Apellido1, Apellido2, Nombre"
-        const primerApellido = parts[0];
-        const segundoApellido = parts[1];
-        const nombre = parts.slice(2).join(', ');
-        const name = [primerApellido, segundoApellido, nombre].filter(Boolean).join(' ');
-        return { name: name || trimmed, nombre, primerApellido, segundoApellido };
-    }
-    if (parts.length === 2) {
-        // Formato antiguo: "Apellido1 Apellido2, Nombre" (una sola coma)
-        const apellidosWords = parts[0].split(/\s+/);
-        const primerApellido = apellidosWords[0] || '';
-        const segundoApellido = apellidosWords.slice(1).join(' ');
-        const nombre = parts[1];
-        const name = [primerApellido, segundoApellido, nombre].filter(Boolean).join(' ');
-        return { name: name || trimmed, nombre, primerApellido, segundoApellido };
-    }
-    // Sin coma: "Nombre Apellido1 Apellido2"
-    const words = trimmed.split(/\s+/);
-    if (words.length >= 2) {
-        const nombre = words[0];
-        const primerApellido = words[1];
-        const segundoApellido = words.slice(2).join(' ');
-        const name = [primerApellido, segundoApellido, nombre].filter(Boolean).join(' ');
-        return { name, nombre, primerApellido, segundoApellido };
-    }
-    return { name: trimmed, nombre: '', primerApellido: '', segundoApellido: '' };
-};
 
 const AcneaeSelector: React.FC<{ selected: Set<string>; onChange: (newSelection: Set<string>) => void }> = ({ selected, onChange }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -127,11 +96,11 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
     const handleProcesarTexto = () => {
         const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         if (lines.length === 0) return;
-        const newStudents: TempStudent[] = lines.map((line, index) => ({
-            id: Date.now() + index,
-            ...parseName(line),
-            acneae: new Set<string>(),
-        }));
+        const newStudents: TempStudent[] = lines.map((line, index) => {
+            const partes = parsearNombre(line);
+            const name = [partes.primerApellido, partes.segundoApellido, partes.nombre].filter(Boolean).join(' ') || line.trim();
+            return { id: Date.now() + index, name, ...partes, acneae: new Set<string>() };
+        });
         setStudents(current => [...current, ...newStudents]);
         setRawText('');
     };

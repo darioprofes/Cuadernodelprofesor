@@ -142,6 +142,30 @@ export const getSiglas = (materia: string): string => {
     return limpio.slice(0, 6).toUpperCase();
 };
 
+// Divide un nombre completo en sus partes. Formatos aceptados:
+//   "Apellido1, Apellido2, Nombre"   (preferido, permite apellidos compuestos)
+//   "Apellido1 Apellido2, Nombre"    (una sola coma, formato Sauce/Séneca)
+//   "Nombre Apellido1 Apellido2"     (sin coma)
+export const parsearNombre = (raw: string): { nombre: string; primerApellido: string; segundoApellido: string } => {
+    const trimmed = raw.trim();
+    const parts = trimmed.split(',').map(p => p.trim());
+    if (parts.length >= 3) {
+        return { primerApellido: parts[0], segundoApellido: parts[1], nombre: parts.slice(2).join(', ') };
+    }
+    if (parts.length === 2) {
+        const apellidosWords = parts[0].split(/\s+/);
+        return { primerApellido: apellidosWords[0] || '', segundoApellido: apellidosWords.slice(1).join(' '), nombre: parts[1] };
+    }
+    const words = trimmed.split(/\s+/);
+    if (words.length >= 2) {
+        return { nombre: words[0], primerApellido: words[1], segundoApellido: words.slice(2).join(' ') };
+    }
+    return { nombre: trimmed, primerApellido: '', segundoApellido: '' };
+};
+
+export const reconstruirNombre = (primerApellido?: string, segundoApellido?: string, nombre?: string): string =>
+    [primerApellido, segundoApellido, nombre].filter(Boolean).join(' ');
+
 // --- Fechas (hora local, no UTC — para "hoy" en el reloj del navegador) ---
 
 export const toYYYYMMDD = (date: Date): string => {
