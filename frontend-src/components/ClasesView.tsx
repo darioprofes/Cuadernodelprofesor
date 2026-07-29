@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { ClassData, Course, AcademicConfiguration, View, EvaluationCriterion, SpecificCompetence, KeyCompetence, Student } from '../types';
 import { UserGroupIcon, ClockIcon, BookOpenIcon, ChevronDownIcon, CalendarDaysIcon, AcademicCapIcon } from './Icons';
 import PageHeader from './PageHeader';
@@ -59,7 +59,16 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [fichaTarget, setFichaTarget] = useState<{ student: Student; classData: ClassData } | null>(null);
     const [fichaEditTarget, setFichaEditTarget] = useState<{ student: Student; classData: ClassData } | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; student: Student; classData: ClassData } | null>(null);
     const [planoTarget, setPlanoTarget] = useState<ClassData | null>(null);
+
+    useEffect(() => {
+        if (!contextMenu) return;
+        const close = () => setContextMenu(null);
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [contextMenu]);
 
     const handleSaveFichaEdit = (studentId: string, data: Partial<Student>) => {
         if (!fichaEditTarget) return;
@@ -71,9 +80,9 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
         setFichaEditTarget(prev => prev ? { ...prev, classData: updatedClass } : null);
     };
 
-    const openFichaEdit = (e: React.MouseEvent, student: Student, classData: ClassData) => {
+    const openContextMenu = (e: React.MouseEvent, student: Student, classData: ClassData) => {
         e.preventDefault();
-        setFichaEditTarget({ student, classData });
+        setContextMenu({ x: e.clientX, y: e.clientY, student, classData });
     };
 
     const academicCourseIds = new Set(courses.filter(c => c.type !== 'other').map(c => c.id));
@@ -221,8 +230,8 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                                             <button
                                                 key={s.id}
                                                 onClick={() => setFichaTarget({ student: s, classData: cls })}
-                                                onContextMenu={e => openFichaEdit(e, s, cls)}
-                                                title={`${s.name} · clic: resumen · clic derecho: editar ficha`}
+                                                onContextMenu={e => openContextMenu(e, s, cls)}
+                                                title={s.name}
                                                 className="hover:opacity-80"
                                             >
                                                 <StudentAvatar student={s} bgColor={accent.headerBg} />
@@ -250,8 +259,8 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                                                     <button
                                                         key={s.id}
                                                         onClick={() => setFichaTarget({ student: s, classData: cls })}
-                                                        onContextMenu={e => openFichaEdit(e, s, cls)}
-                                                        title={`${s.name} · clic: resumen · clic derecho: editar ficha`}
+                                                        onContextMenu={e => openContextMenu(e, s, cls)}
+                                                        title={s.name}
                                                         className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full border border-slate-200 hover:bg-slate-50 hover:border-blue-300 transition-colors"
                                                     >
                                                         <StudentAvatar student={s} bgColor={accent.headerBg} />
@@ -283,6 +292,32 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                 );
             })}
         </div>
+
+        {contextMenu && (
+            <>
+                <div className="fixed inset-0 z-40" onMouseDown={() => setContextMenu(null)} />
+                <div
+                    style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 50 }}
+                    className="bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[180px] text-sm"
+                >
+                    <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 border-b border-slate-100 truncate">
+                        {contextMenu.student.name}
+                    </div>
+                    <button
+                        className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
+                        onMouseDown={() => { setFichaTarget({ student: contextMenu.student, classData: contextMenu.classData }); setContextMenu(null); }}
+                    >
+                        Ver resumen
+                    </button>
+                    <button
+                        className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
+                        onMouseDown={() => { setFichaEditTarget({ student: contextMenu.student, classData: contextMenu.classData }); setContextMenu(null); }}
+                    >
+                        Editar ficha
+                    </button>
+                </div>
+            </>
+        )}
 
         <StudentPersonalDataModal
             isOpen={!!fichaEditTarget}
