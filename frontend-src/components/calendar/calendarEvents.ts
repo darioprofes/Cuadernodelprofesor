@@ -213,8 +213,8 @@ export const buildCalendarEvents = ({
                 const slot = classSessionSlots[i];
                 const slotDateStr = toYYYYMMDD_UTC(slot.date);
 
-                // Find if there is a journal entry for this class/date
-                const journalEntry = journalEntries.find(e => e.classId === classData.id && e.date === slotDateStr);
+                // Find if there is a journal entry for this class/date/period
+                const journalEntry = journalEntries.find(e => e.classId === classData.id && e.date === slotDateStr && e.periodIndex === slot.periodIndex);
 
                 // Anchor check
                 const anchorUnitIndex = unitsForClass.findIndex(u => u.startDate === slotDateStr);

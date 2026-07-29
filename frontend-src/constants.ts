@@ -55,7 +55,7 @@ export const INITIAL_CLASS_DATA: ClassData[] = [
 
 // JOURNAL ENTRIES
 export const INITIAL_JOURNAL_ENTRIES: JournalEntry[] = [
-    { id: 'j1', date: '2024-09-16', classId: 'class-bg3', notes: 'La clase ha mostrado gran interés en el proyecto de investigación de ecosistemas. Marcos necesita un poco más de apoyo para arrancar.' },
+    { id: 'j1', date: '2024-09-16', classId: 'class-bg3', periodIndex: 0, notes: 'La clase ha mostrado gran interés en el proyecto de investigación de ecosistemas. Marcos necesita un poco más de apoyo para arrancar.' },
 ];
 
 // BASIC KNOWLEDGE

@@ -1,5 +1,5 @@
 import React from 'react';
-import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenIcon } from '../Icons';
+import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenIcon, UsersIcon } from '../Icons';
 import { CalendarEvent, NOTE_COLOR, startOfWeekUTC, addDaysUTC, toYYYYMMDD_UTC, getContrastingTextColor } from './calendarEvents';
 import { SEMANTIC } from '../../theme/palette';
 
@@ -91,11 +91,18 @@ const DayColumn: React.FC<{
                             </button>
                         </div>
                     )
+                } else if (event.eventType === 'meeting') {
+                    return (
+                        <div key={event.id} onClick={() => onEventClick(event)} className="p-1.5 text-xs rounded border border-l-4 flex items-start gap-1.5 cursor-pointer hover:brightness-95" style={style}>
+                            <UsersIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80"/>
+                            <p>{event.description}</p>
+                        </div>
+                    )
                 } else {
                     // Standalone assignment
                     const categoryName = event.assignmentId ? getAssignmentCategoryName(event.classId, event.assignmentId) : undefined;
                      return (
-                        <div key={event.id} className="p-1.5 text-xs rounded border border-l-4 flex items-start gap-1.5" style={style}>
+                        <div key={event.id} onClick={() => onEventClick(event)} className="p-1.5 text-xs rounded border border-l-4 flex items-start gap-1.5 cursor-pointer hover:brightness-95" style={style}>
                            <ClipboardDocumentIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80"/>
                            <div>
                                 <p className="font-semibold">

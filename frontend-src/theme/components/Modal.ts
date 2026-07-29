@@ -15,7 +15,7 @@ export const MODAL_SIZE_CLASSES: Record<ModalSize, string> = {
     '5xl': 'max-w-5xl',
 };
 
-export const modalOverlayClassName = 'fixed inset-0 bg-black/10 z-50 flex justify-center items-center overflow-hidden';
+export const modalOverlayClassName = 'fixed inset-0 bg-black/30 z-50 flex justify-center items-center overflow-hidden';
 
 export const modalPanelClassName = `bg-white ${RADIUS.container} ${SHADOW.md} w-full m-4 relative flex flex-col max-h-[90vh]`;
 

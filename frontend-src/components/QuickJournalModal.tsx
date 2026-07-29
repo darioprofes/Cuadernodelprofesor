@@ -71,7 +71,7 @@ const QuickJournalModal: React.FC<QuickJournalModalProps> = ({ isOpen, onClose, 
             setNotas('');
             return;
         }
-        const existente = entries.find(e => e.classId === sesion.classData.id && e.date === hoyStr);
+        const existente = entries.find(e => e.classId === sesion.classData.id && e.date === hoyStr && e.periodIndex === sesion.periodIndex);
         setNotas(existente?.notes || '');
     }, [selectedIdx, sesionesHoy, entries, hoyStr]);
 
@@ -79,11 +79,12 @@ const QuickJournalModal: React.FC<QuickJournalModalProps> = ({ isOpen, onClose, 
         e.preventDefault();
         const sesion = sesionesHoy[selectedIdx];
         if (!sesion) return;
-        const existente = entries.find(en => en.classId === sesion.classData.id && en.date === hoyStr);
+        const existente = entries.find(en => en.classId === sesion.classData.id && en.date === hoyStr && en.periodIndex === sesion.periodIndex);
         onSave({
-            id: existente?.id || `j-${Date.now()}-${sesion.classData.id}-${Math.random().toString(36).substring(2, 5)}`,
+            id: existente?.id || `j-${Date.now()}-${sesion.classData.id}-${sesion.periodIndex}-${Math.random().toString(36).substring(2, 5)}`,
             date: hoyStr,
             classId: sesion.classData.id,
+            periodIndex: sesion.periodIndex,
             notes: notas,
         });
         onClose();

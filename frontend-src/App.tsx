@@ -430,6 +430,10 @@ const App = () => {
     const [isFavoritoMeetingOpen, setIsFavoritoMeetingOpen] = useState(false);
     const [isFavoritoJournalOpen, setIsFavoritoJournalOpen] = useState(false);
     const [initialized, setInitialized] = useState(false);
+    // Al pinchar una reunión en la Agenda: navega a Reuniones y le dice qué
+    // reunión concreta abrir en el formulario (ReunionesView limpia esto
+    // sola tras abrirla, vía onOpened).
+    const [meetingToOpenId, setMeetingToOpenId] = useState<string | null>(null);
 
     // --- Derived State & Callbacks ---
     useEffect(() => {
@@ -611,7 +615,12 @@ const App = () => {
         }
 
         if (activeView === 'meetings') {
-            return <ReunionesView meetings={meetings} setMeetings={setMeetingsCallback} />;
+            return <ReunionesView
+                meetings={meetings}
+                setMeetings={setMeetingsCallback}
+                openMeetingId={meetingToOpenId}
+                onOpened={() => setMeetingToOpenId(null)}
+            />;
         }
 
         if (activeView === 'exams') {
@@ -724,6 +733,9 @@ const App = () => {
                     setAgendaNotes={setAgendaNotesCallback}
                     meetings={meetings}
                     setMeetings={setMeetingsCallback}
+                    setActiveView={setActiveView}
+                    setActiveClassId={setActiveClassId}
+                    onOpenMeeting={setMeetingToOpenId}
                 />;
             default:
                 return null;
@@ -795,7 +807,7 @@ const App = () => {
                 academicConfiguration={academicConfiguration}
             />
 
-            <Modal isOpen={isFavoritosOpen} onClose={() => setIsFavoritosOpen(false)} title="Favoritos" size="md">
+            <Modal isOpen={isFavoritosOpen} onClose={() => setIsFavoritosOpen(false)} title="Favoritos" size="md" accent="sand">
                 <p className="text-sm text-slate-500 mb-4">Accesos directos a las funciones del día a día, sin tener que navegar.</p>
                 <div className="grid grid-cols-2 gap-3">
                     <button

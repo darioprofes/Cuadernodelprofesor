@@ -4,7 +4,7 @@ import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import Select from './Select';
-import { buildClassName, getClassAccentColor } from '../utils';
+import { buildClassName, getClassAccentColor, HUE_PRESETS, ACCENT_WHITE, ACCENT_BLACK } from '../utils';
 import { CLASS_ICON_OPTIONS } from '../classIcons';
 import IconPicker, { type IconPickerOption } from './IconPicker';
 
@@ -15,12 +15,6 @@ interface ClassModalProps {
   classToEdit: ClassData | null;
   courses: Course[];
 }
-
-// Tonos repartidos por la rueda de color para elegir a mano el acento de la
-// clase (ver getClassAccentColor en utils.ts); "Automático" vuelve a dejar
-// que se derive del hash de la materia, como el resto de materias que no se
-// toquen aquí.
-const HUE_PRESETS = [0, 25, 50, 90, 150, 190, 220, 260, 300, 335];
 
 const ClassModal: React.FC<ClassModalProps> = ({ isOpen, onClose, onSave, classToEdit, courses }) => {
   const [grupo, setGrupo] = useState('');
@@ -127,6 +121,18 @@ const ClassModal: React.FC<ClassModalProps> = ({ isOpen, onClose, onSave, classT
                             style={{ backgroundColor: `hsl(${hue}, 45%, 42%)` }}
                         />
                     ))}
+                    <button
+                        type="button"
+                        onClick={() => setColorAcento(ACCENT_WHITE)}
+                        title="Blanco"
+                        className={`w-7 h-7 rounded-full border border-slate-300 bg-white ${colorAcento === ACCENT_WHITE ? 'ring-2 ring-offset-1 ring-blue-500' : ''}`}
+                    />
+                    <button
+                        type="button"
+                        onClick={() => setColorAcento(ACCENT_BLACK)}
+                        title="Negro"
+                        className={`w-7 h-7 rounded-full bg-slate-900 ${colorAcento === ACCENT_BLACK ? 'ring-2 ring-offset-1 ring-blue-500' : ''}`}
+                    />
                 </div>
                 {selectedCourse && (
                     <div className="mt-2 flex items-center gap-2">

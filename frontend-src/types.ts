@@ -241,6 +241,7 @@ export interface JournalEntry {
   id: string;
   date: string; // YYYY-MM-DD
   classId: string;
+  periodIndex: number; // franja horaria concreta: una clase con varias sesiones el mismo día tiene una anotación por sesión, no una compartida
   notes: string;
 }
 

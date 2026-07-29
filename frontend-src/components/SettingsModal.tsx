@@ -51,7 +51,7 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const renderView = () => {
         switch (activeView) {
             case 'classes':
-                return <ClassManager classes={classes} setClasses={setClasses} courses={courses} />;
+                return <ClassManager classes={classes} setClasses={setClasses} courses={courses} academicConfiguration={academicConfiguration} />;
             case 'schedule':
                 return <ScheduleManager classes={classes} setClasses={setClasses} courses={courses} setCourses={setCourses} academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
             case 'courses':

@@ -1,15 +1,17 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { JournalEntry, ClassData, AcademicConfiguration, ProgrammingUnit, Course } from '../types';
-import { ClockIcon, BookOpenIcon, ClipboardDocumentIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons';
+import { ClockIcon, BookOpenIcon, ClipboardDocumentIcon, ChevronLeftIcon, ChevronRightIcon, MagnifyingGlassIcon, CheckCircleIcon } from './Icons';
 import ClassLabel from './ClassLabel';
 import Input from './Input';
 import Textarea from './Textarea';
 import EmptyState from './EmptyState';
-import { PALETTE, SEMANTIC } from '../theme/palette';
+import IconButton from './IconButton';
+import DateNavButton from './DateNavButton';
+import { PALETTE } from '../theme/palette';
 import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
-import { getMateria, getClassAccentColor } from '../utils';
+import { getMateria, getClassAccentColor, formatFechaEs } from '../utils';
 
 type PlannedContent = { unitName: string, sessionDesc: string, sessionNumber: number } | null;
 
@@ -36,12 +38,34 @@ const addDays = (date: Date, days: number): Date => {
     return d;
 };
 
+// Clave de notesMap/isDirtyMap: por (clase, franja), no solo por clase — una
+// clase con varias sesiones el mismo día tiene una anotación por sesión.
+const entryKey = (classId: string, periodIndex: number): string => `${classId}::${periodIndex}`;
+
 const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, academicConfiguration, units, courses, onDirtyChange }) => {
   const [selectedDate, setSelectedDate] = useState<string>(toYYYYMMDD(new Date()));
   // Local state to hold edits before saving: Map<classId, string>
   const [notesMap, setNotesMap] = useState<Record<string, string>>({});
   const [isDirtyMap, setIsDirtyMap] = useState<Record<string, boolean>>({});
   const isDirty = Object.values(isDirtyMap).some(Boolean);
+
+  // Búsqueda de anotaciones pasadas: el Diario solo muestra un día a la
+  // vez, así que sin esto no había forma de encontrar "qué anoté sobre X"
+  // salvo ir pinchando día a día. Busca en el texto de la anotación y en
+  // la materia/clase; al elegir un resultado salta a ese día.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchWrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchWrapperRef.current && !searchWrapperRef.current.contains(event.target as Node)) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Avisa a App.tsx (para bloquear el cambio de vista) y al propio
   // navegador (cierre/recarga de pestaña) mientras haya anotaciones sin
@@ -151,12 +175,14 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
         return null;
   }, [academicConfiguration.academicYearStart, academicConfiguration.academicYearEnd, units, isHoliday]);
 
-  // Filter classes scheduled for this day
+  // Una tarjeta por (clase, franja): una clase con varias sesiones el mismo
+  // día (p.ej. "RECREO", con el hueco de las 11:00 y el de las 13:20) tiene
+  // una anotación independiente por franja, no una compartida para todo el
+  // día — JournalEntry incluye periodIndex justo para esto.
   const scheduledClasses = useMemo(() => {
       const list: { classData: ClassData, periodIndex: number, periodName: string, plannedContent: PlannedContent }[] = [];
-      
+
       classes.forEach(c => {
-          // Check for schedule array existence and if it has entries for today
           const slots = c.schedule?.filter(s => s.day === dayOfWeek);
           if (slots && slots.length > 0) {
               const planned = getPlannedContent(c, selectedDate);
@@ -165,60 +191,79 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
                       classData: c,
                       periodIndex: slot.periodIndex,
                       periodName: academicConfiguration.periods?.[slot.periodIndex] || `Hora ${slot.periodIndex + 1}`,
-                      plannedContent: planned
+                      plannedContent: planned,
                   });
               });
           }
       });
 
-      // Sort by period index (time)
       return list.sort((a, b) => a.periodIndex - b.periodIndex);
   }, [classes, dayOfWeek, academicConfiguration.periods, selectedDate, getPlannedContent]);
+
+  const searchResults = useMemo(() => {
+      const query = searchQuery.trim().toLowerCase();
+      if (!query) return [];
+
+      return entries
+          .filter(e => e.notes && e.notes.trim() !== '')
+          .map(e => {
+              const classData = classes.find(c => c.id === e.classId);
+              if (!classData) return null;
+              const materia = getMateria(classData, courses);
+              const haystack = `${e.notes} ${materia}`.toLowerCase();
+              if (!haystack.includes(query)) return null;
+              return { entry: e, classData, materia };
+          })
+          .filter((r): r is { entry: JournalEntry; classData: ClassData; materia: string } => r !== null)
+          .sort((a, b) => b.entry.date.localeCompare(a.entry.date))
+          .slice(0, 15);
+  }, [entries, searchQuery, classes, courses]);
+
+  const handleSelectSearchResult = (date: string) => {
+      setSearchQuery('');
+      setIsSearchOpen(false);
+      changeDate(date);
+  };
 
   // Initialize notes from existing entries when date changes
   useEffect(() => {
       const newNotes: Record<string, string> = {};
       const newDirty: Record<string, boolean> = {};
-      
+
       scheduledClasses.forEach(item => {
-          const existingEntry = entries.find(e => e.classId === item.classData.id && e.date === selectedDate);
-          newNotes[item.classData.id] = existingEntry ? existingEntry.notes : '';
-          newDirty[item.classData.id] = false;
+          const key = entryKey(item.classData.id, item.periodIndex);
+          const existingEntry = entries.find(e => e.classId === item.classData.id && e.date === selectedDate && e.periodIndex === item.periodIndex);
+          newNotes[key] = existingEntry ? existingEntry.notes : '';
+          newDirty[key] = false;
       });
-      
+
       setNotesMap(newNotes);
       setIsDirtyMap(newDirty);
   }, [selectedDate, scheduledClasses, entries]);
 
-  const handleNoteChange = (classId: string, text: string) => {
-      setNotesMap(prev => ({ ...prev, [classId]: text }));
-      setIsDirtyMap(prev => ({ ...prev, [classId]: true }));
+  const handleNoteChange = (key: string, text: string) => {
+      setNotesMap(prev => ({ ...prev, [key]: text }));
+      setIsDirtyMap(prev => ({ ...prev, [key]: true }));
   };
 
-  const handleSaveAll = () => {
-      let savedCount = 0;
-      scheduledClasses.forEach(item => {
-          const classId = item.classData.id;
-          if (isDirtyMap[classId]) {
-              const existingEntry = entries.find(e => e.classId === classId && e.date === selectedDate);
-              const noteContent = notesMap[classId];
-              
-              onSave({
-                  id: existingEntry?.id || `j-${Date.now()}-${classId}-${Math.random().toString(36).substring(2, 5)}`,
-                  date: selectedDate,
-                  classId: classId,
-                  notes: noteContent
-              });
-              savedCount++;
-          }
-      });
-      
-      // Reset dirty state
-      const resetDirty: Record<string, boolean> = {};
-      Object.keys(isDirtyMap).forEach(k => resetDirty[k] = false);
-      setIsDirtyMap(resetDirty);
+  // Guardado por franja: cada tarjeta tiene su propio botón (aparece en
+  // cuanto se escribe algo en ella), en vez de un único botón global que
+  // guardaba todo a la vez sin indicar qué franja concreta cambió.
+  const handleSaveOne = (item: { classData: ClassData, periodIndex: number }) => {
+      const classId = item.classData.id;
+      const key = entryKey(classId, item.periodIndex);
+      const existingEntry = entries.find(e => e.classId === classId && e.date === selectedDate && e.periodIndex === item.periodIndex);
+      const noteContent = notesMap[key] ?? '';
 
-      if (savedCount > 0) alert("Entradas guardadas correctamente.");
+      onSave({
+          id: existingEntry?.id || `j-${Date.now()}-${classId}-${item.periodIndex}-${Math.random().toString(36).substring(2, 5)}`,
+          date: selectedDate,
+          classId: classId,
+          periodIndex: item.periodIndex,
+          notes: noteContent
+      });
+
+      setIsDirtyMap(prev => ({ ...prev, [key]: false }));
   };
 
   // Cambiar de día descarta silenciosamente notesMap/isDirtyMap (se
@@ -231,7 +276,6 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
 
   const handlePrevDay = () => changeDate(toYYYYMMDD(addDays(new Date(selectedDate), -1)));
   const handleNextDay = () => changeDate(toYYYYMMDD(addDays(new Date(selectedDate), 1)));
-  const handleToday = () => changeDate(toYYYYMMDD(new Date()));
 
   return (
     <div className="space-y-6">
@@ -250,21 +294,62 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
                 <button onClick={handlePrevDay} className="p-2 text-slate-500 hover:bg-slate-100 rounded-l-lg border-r border-slate-200" title="Día anterior">
                     <ChevronLeftIcon className="w-5 h-5"/>
                 </button>
-                <button onClick={handleToday} className="px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100" title="Ir a hoy">
-                    Hoy
-                </button>
+                <DateNavButton
+                    value={selectedDate}
+                    label={selectedDate === toYYYYMMDD(new Date()) ? 'Hoy' : formatFechaEs(selectedDate)}
+                    onChange={changeDate}
+                    className="px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                />
                 <button onClick={handleNextDay} className="p-2 text-slate-500 hover:bg-slate-100 rounded-r-lg border-l border-slate-200" title="Día siguiente">
                     <ChevronRightIcon className="w-5 h-5"/>
                 </button>
             </div>
-            
+        </div>
+      </div>
+
+      {/* Búsqueda de anotaciones */}
+      <div className="relative" ref={searchWrapperRef}>
+        <div className="relative">
+            <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => changeDate(e.target.value)}
-                className="font-medium text-slate-700"
+                type="text"
+                value={searchQuery}
+                onChange={e => { setSearchQuery(e.target.value); setIsSearchOpen(true); }}
+                onFocus={() => setIsSearchOpen(true)}
+                onKeyDown={e => {
+                    if (e.key === 'Enter' && searchResults.length > 0) {
+                        e.preventDefault();
+                        handleSelectSearchResult(searchResults[0].entry.date);
+                    } else if (e.key === 'Escape') {
+                        setIsSearchOpen(false);
+                    }
+                }}
+                placeholder="Buscar en anotaciones del diario..."
+                className="w-full pl-10"
             />
         </div>
+        {isSearchOpen && searchQuery.trim() !== '' && (
+            <div className="absolute z-20 mt-1 w-full max-h-80 overflow-y-auto bg-white shadow-lg border rounded-lg divide-y">
+                {searchResults.length > 0 ? searchResults.map(({ entry, classData }) => (
+                    <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() => handleSelectSearchResult(entry.date)}
+                        className="w-full text-left p-3 hover:bg-slate-50"
+                    >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-sm font-semibold text-slate-700">
+                                <ClassLabel classData={classData} courses={courses} />
+                            </span>
+                            <span className="text-xs text-slate-500 flex-shrink-0">{formatFechaEs(entry.date)}</span>
+                        </div>
+                        <p className="text-sm text-slate-600 truncate">{entry.notes}</p>
+                    </button>
+                )) : (
+                    <p className="p-3 text-sm text-slate-500 text-center">Sin resultados.</p>
+                )}
+            </div>
+        )}
       </div>
 
       {/* Timeline / List */}
@@ -277,9 +362,10 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
         ) : (
             scheduledClasses.map((item) => {
                 const classId = item.classData.id;
+                const key = entryKey(classId, item.periodIndex);
                 const accent = getClassAccentColor(getMateria(item.classData, courses), item.classData.colorAcento);
                 return (
-                    <div key={`${classId}-${item.periodIndex}`} className="bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col md:flex-row">
+                    <div key={key} className="bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col md:flex-row">
                         {/* Sidebar / Time Info */}
                         <div className="p-4 md:w-48 flex-shrink-0 border-b md:border-b-0 md:border-r flex flex-col justify-center" style={{ backgroundColor: accent.cellBg }}>
                             <div className="flex items-center gap-2 font-bold mb-1" style={{ color: accent.text }}>
@@ -321,9 +407,22 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
 
                             {/* Editable Notes Area */}
                             <div className="p-4 flex-grow">
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-xs font-medium text-slate-500">Anotaciones</label>
+                                    {isDirtyMap[key] && (
+                                        <IconButton
+                                            label="Guardar esta anotación"
+                                            tone="success"
+                                            size="sm"
+                                            onClick={() => handleSaveOne(item)}
+                                        >
+                                            <CheckCircleIcon className="w-5 h-5" />
+                                        </IconButton>
+                                    )}
+                                </div>
                                 <Textarea
-                                    value={notesMap[classId] || ''}
-                                    onChange={(e) => handleNoteChange(classId, e.target.value)}
+                                    value={notesMap[key] || ''}
+                                    onChange={(e) => handleNoteChange(key, e.target.value)}
                                     placeholder={`Anotaciones reales de la sesión (incidencias, tareas mandadas, etc.)...`}
                                     className="h-32 resize-y"
                                 />
@@ -334,20 +433,6 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
             })
         )}
       </div>
-
-      {/* Footer Actions */}
-      {scheduledClasses.length > 0 && (
-          <div className="sticky bottom-6 flex justify-end">
-              <button
-                onClick={handleSaveAll}
-                disabled={!Object.values(isDirtyMap).some(v => v)}
-                className="shadow-lg inline-flex items-center justify-center py-3 px-6 border border-transparent text-base font-medium rounded-full text-white hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100 transition-all transform hover:scale-105"
-                style={{ backgroundColor: SEMANTIC.primary.base }}
-              >
-                Guardar Todos los Cambios
-              </button>
-          </div>
-      )}
     </div>
   );
 };

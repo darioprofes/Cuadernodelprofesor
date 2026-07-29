@@ -47,9 +47,10 @@ def _completar_franjas_libres(filas):
     # tabla (p.ej. el hueco del recreo, que no tiene fila en ningún día).
     # Se reconstruye la rejilla real de franjas del horario (unión de las
     # horas que sí aparecen en cualquier día, más los huecos entre franjas
-    # consecutivas) y se rellena con "Libre" cualquier franja de esa rejilla
-    # que falte en un día que ya tiene alguna franja (no se inventan días
-    # enteros sin ninguna fila, por si ese día simplemente no es lectivo).
+    # consecutivas) y se rellena, sin nombre por defecto, cualquier franja de
+    # esa rejilla que falte en un día que ya tiene alguna franja (no se
+    # inventan días enteros sin ninguna fila, por si ese día simplemente no
+    # es lectivo).
 
     franjas_reales = sorted(
         {(f["hora_inicio"], f["hora_fin"]) for f in filas},
@@ -77,7 +78,7 @@ def _completar_franjas_libres(filas):
                     "hora_inicio": hora_inicio,
                     "hora_fin": hora_fin,
                     "grupo": None,
-                    "asignatura": "Libre",
+                    "asignatura": "",
                     "aula": None,
                     "ensenanza": None
                 })
@@ -169,8 +170,10 @@ def extraer_filas_pdf(contenido_bytes):
                     # Sin "Materia" ni "Actividad" es una franja libre (hora
                     # sin docencia ni guardia asignada) tal cual la marca el
                     # PDF oficial: se conserva como tal en vez de descartarla,
-                    # para que quede reflejada en el horario importado.
-                    asignatura = p["materia"] or p["actividad"] or "Libre"
+                    # para que quede reflejada en el horario importado — pero
+                    # sin nombre por defecto (el profesor decide si le pone
+                    # uno, p.ej. "Recreo", desde Ajustes → Cursos y Materias).
+                    asignatura = p["materia"] or p["actividad"] or ""
 
                     if p["unidades"]:
                         grupo_nombre = _fusionar_codigos_grupo(p["unidades"])

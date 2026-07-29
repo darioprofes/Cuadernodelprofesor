@@ -3,10 +3,10 @@ import type { ClassData, Course, AcademicConfiguration, Task, Meeting, View } fr
 import ClassLabel from './ClassLabel';
 import BannerCostero from './BannerCostero';
 import Input from './Input';
-import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange } from '../utils';
+import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange, formatFechaEs } from '../utils';
 import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon } from './Icons';
 import { PALETTE } from '../theme/palette';
-import { linkClassName } from '../theme/components/Link';
+import DateNavButton from './DateNavButton';
 
 interface HoyViewProps {
     classes: ClassData[];
@@ -52,6 +52,13 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     const viewDate = new Date(fechaSeleccionada);
     const dow = getDayOfWeek1a7(viewDate);
 
+    // Fecha del día mostrado (sigue al selector de día), en formato largo.
+    // En español los días de la semana van en minúscula salvo que empiecen
+    // la frase — aquí siempre van a mitad ("Horario de hoy, miércoles..."),
+    // así que no se capitalizan.
+    const fechaLarga = `${viewDate.getDate()} de ${viewDate.toLocaleDateString('es-ES', { month: 'long' })} de ${viewDate.getFullYear()}`;
+    const diaSemanaLargo = viewDate.toLocaleDateString('es-ES', { weekday: 'long' });
+
     const handleOpenCuaderno = (classId: string) => {
         setActiveClassId(classId);
         setActiveView('gradebook');
@@ -59,7 +66,6 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
 
     const handleDiaAnterior = () => setFechaSeleccionada(toYYYYMMDD(addDays(viewDate, -1)));
     const handleDiaSiguiente = () => setFechaSeleccionada(toYYYYMMDD(addDays(viewDate, 1)));
-    const handleIrAHoy = () => setFechaSeleccionada(hoyStr);
 
     const construirSlots = (diaSemana: number): SlotHoy[] => {
         if (diaSemana > 5) return [];
@@ -131,13 +137,15 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     };
 
     // Tareas evaluables: mismo criterio que la vista "Tareas evaluables"
-    // (fecha estrictamente futura, ni hoy ni pasada).
+    // (fecha estrictamente futura, ni hoy ni pasada). Se cuenta desde el día
+    // seleccionado en el selector, no siempre desde hoy — así "Próximos
+    // eventos" también se ajusta al navegar a otro día.
     const contarEventosEnVentana = (dias: number): { tareasEvaluables: number; reuniones: number } => {
-        const limite = toYYYYMMDD(addDays(now, dias));
+        const limite = toYYYYMMDD(addDays(viewDate, dias));
         let tareasEvaluables = 0, reuniones = 0;
-        meetings.forEach(m => { if (m.fecha >= hoyStr && m.fecha <= limite) reuniones++; });
+        meetings.forEach(m => { if (m.fecha >= fechaSeleccionada && m.fecha <= limite) reuniones++; });
         classes.forEach(c => c.assignments.forEach(a => {
-            if (a.date && a.date > hoyStr && a.date <= limite) tareasEvaluables++;
+            if (a.date && a.date > fechaSeleccionada && a.date <= limite) tareasEvaluables++;
         }));
         return { tareasEvaluables, reuniones };
     };
@@ -154,20 +162,15 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                     <button onClick={handleDiaAnterior} className="p-1 rounded-full text-slate-600 hover:bg-white" title="Día anterior">
                         <ChevronLeftIcon className="w-4 h-4" />
                     </button>
-                    <input
-                        type="date"
+                    <DateNavButton
                         value={fechaSeleccionada}
-                        onChange={(e) => setFechaSeleccionada(e.target.value)}
-                        className="text-xs text-slate-700 bg-transparent border-none focus:outline-none w-[6.5rem]"
+                        label={esHoy ? 'Hoy' : formatFechaEs(fechaSeleccionada)}
+                        onChange={setFechaSeleccionada}
+                        className="text-xs font-semibold text-slate-700 px-1"
                     />
                     <button onClick={handleDiaSiguiente} className="p-1 rounded-full text-slate-600 hover:bg-white" title="Día siguiente">
                         <ChevronRightIcon className="w-4 h-4" />
                     </button>
-                    {!esHoy && (
-                        <button onClick={handleIrAHoy} className={`text-xs font-semibold pl-1 ${linkClassName}`} title="Ir a hoy">
-                            Hoy
-                        </button>
-                    )}
                 </div>
             </div>
 
@@ -242,8 +245,8 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
 
                 <div className="bg-white rounded-xl shadow-sm border overflow-hidden h-full flex flex-col">
                     <div className="px-4 py-2 flex items-center gap-1.5 text-white text-sm font-semibold" style={{ backgroundColor: PALETTE.blue.header }}>
-                        <ClockIcon className="w-4 h-4" />
-                        <h3>{esHoy ? 'Horario de hoy' : `Horario del ${viewDate.toLocaleDateString('es-ES', { weekday: 'long' })}`}</h3>
+                        <ClockIcon className="w-4 h-4 flex-shrink-0" />
+                        <h3>{esHoy ? `Horario de hoy, ${diaSemanaLargo} ${fechaLarga}` : `Horario del ${diaSemanaLargo} ${fechaLarga}`}</h3>
                     </div>
                     <div className="p-4 flex-grow">
                     {slotsDia.length === 0 ? (
@@ -262,18 +265,32 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                                 const esFranjaActual = esHoy && actual !== null
                                     && actual.classId === slot.classId
                                     && actual.periodIndex === slot.periodIndex;
-                                return (
-                                    <button
-                                        key={`${slot.classId}-${slot.periodIndex}`}
-                                        onClick={() => handleOpenCuaderno(slot.classId)}
-                                        className={`w-full flex items-center gap-2 text-left p-2 rounded-lg border-l-2 transition-colors ${
-                                            esFranjaActual ? 'bg-[#fbf1dc] border-[#d9b878]' : 'hover:bg-slate-50 border-blue-400'
-                                        }`}
-                                    >
+                                // "Otras ocupaciones" (guardias, recreo...) no tienen
+                                // alumnado ni Cuaderno que abrir.
+                                const course = courses.find(c => c.id === cls.courseId);
+                                const esAcademica = course?.type !== 'other';
+                                const claseComun = `w-full flex items-center gap-2 text-left p-2 rounded-lg border-l-2 transition-colors ${
+                                    esFranjaActual ? 'bg-[#fbf1dc] border-[#d9b878]' : (esAcademica ? 'hover:bg-slate-50 border-blue-400' : 'border-slate-300')
+                                }`;
+                                const contenido = (
+                                    <>
                                         <span className="text-xs text-slate-400 flex-shrink-0 w-24">{slot.periodName}</span>
                                         <ClassLabel classData={cls} courses={courses} className="text-sm font-medium text-slate-700 truncate" />
                                         {slot.aula && <span className="text-xs text-slate-400 flex-shrink-0">Aula {slot.aula}</span>}
+                                    </>
+                                );
+                                return esAcademica ? (
+                                    <button
+                                        key={`${slot.classId}-${slot.periodIndex}`}
+                                        onClick={() => handleOpenCuaderno(slot.classId)}
+                                        className={claseComun}
+                                    >
+                                        {contenido}
                                     </button>
+                                ) : (
+                                    <div key={`${slot.classId}-${slot.periodIndex}`} className={claseComun}>
+                                        {contenido}
+                                    </div>
                                 );
                             })}
                         </div>

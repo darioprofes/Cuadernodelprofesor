@@ -3,6 +3,9 @@ import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, ViewWeekIcon, View
 import { PALETTE } from '../../theme/palette';
 import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../../theme/components/PageHeader';
 import { headerPatternStyle } from '../../theme/headerPattern';
+import DateNavButton from '../DateNavButton';
+import { toYYYYMMDD_UTC, startOfWeekUTC, addDaysUTC } from './calendarEvents';
+import { formatFechaEs } from '../../utils';
 
 const CalendarHeader: React.FC<{
     currentDate: Date;
@@ -10,8 +13,35 @@ const CalendarHeader: React.FC<{
     setView: (view: 'month' | 'week' | 'day') => void;
     onPrev: () => void;
     onNext: () => void;
-    onToday: () => void;
-}> = ({ currentDate, view, setView, onPrev, onNext, onToday }) => (
+    onJumpToDate: (date: string) => void;
+}> = ({ currentDate, view, setView, onPrev, onNext, onJumpToDate }) => {
+    const today = new Date();
+
+    // Etiqueta del botón de fecha: "Hoy" solo si el mes/semana/día mostrado
+    // es de verdad el actual — si no, muestra qué se está viendo, para no
+    // dejar "Hoy" fijo mientras se navega a otra fecha (confunde).
+    let dateLabel: string;
+    if (view === 'day') {
+        dateLabel = toYYYYMMDD_UTC(currentDate) === toYYYYMMDD_UTC(today) ? 'Hoy' : formatFechaEs(toYYYYMMDD_UTC(currentDate));
+    } else if (view === 'month') {
+        const isCurrentMonth = currentDate.getUTCFullYear() === today.getUTCFullYear() && currentDate.getUTCMonth() === today.getUTCMonth();
+        dateLabel = isCurrentMonth ? 'Hoy' : currentDate.toLocaleString('es-ES', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    } else {
+        const weekStart = startOfWeekUTC(currentDate);
+        const isCurrentWeek = toYYYYMMDD_UTC(weekStart) === toYYYYMMDD_UTC(startOfWeekUTC(today));
+        if (isCurrentWeek) {
+            dateLabel = 'Hoy';
+        } else {
+            const weekEnd = addDaysUTC(weekStart, 4);
+            const mesInicio = weekStart.toLocaleString('es-ES', { month: 'long', timeZone: 'UTC' });
+            const mesFin = weekEnd.toLocaleString('es-ES', { month: 'long', timeZone: 'UTC' });
+            dateLabel = mesInicio === mesFin
+                ? `${weekStart.getUTCDate()} - ${weekEnd.getUTCDate()} de ${mesFin}`
+                : `${weekStart.getUTCDate()} de ${mesInicio} - ${weekEnd.getUTCDate()} de ${mesFin}`;
+        }
+    }
+
+    return (
     <div className={`flex items-center justify-between rounded-t-xl ${pageHeaderPaddingClassName} ${pageHeaderMinHeight} flex-wrap gap-3`} style={{ backgroundColor: PALETTE.navy.header, ...headerPatternStyle }}>
         <div className="flex items-center gap-4 flex-wrap">
              <div className="flex items-center gap-3">
@@ -22,7 +52,13 @@ const CalendarHeader: React.FC<{
              </div>
             <div className="flex items-center bg-white rounded-lg overflow-hidden">
                 <button onClick={onPrev} className="p-2 text-slate-500 hover:bg-slate-100"><ChevronLeftIcon className="w-5 h-5"/></button>
-                <button onClick={onToday} className="px-3 py-1.5 text-sm font-semibold border-x border-slate-200 text-slate-700 hover:bg-slate-100">Hoy</button>
+                <DateNavButton
+                    value={toYYYYMMDD_UTC(currentDate)}
+                    label={dateLabel}
+                    onChange={onJumpToDate}
+                    title={view === 'month' ? 'Ir al mes de una fecha concreta' : view === 'week' ? 'Ir a la semana de una fecha concreta' : 'Elegir fecha'}
+                    className="px-3 py-1.5 text-sm font-semibold border-x border-slate-200 text-slate-700 hover:bg-slate-100"
+                />
                 <button onClick={onNext} className="p-2 text-slate-500 hover:bg-slate-100"><ChevronRightIcon className="w-5 h-5"/></button>
             </div>
         </div>
@@ -38,6 +74,7 @@ const CalendarHeader: React.FC<{
             </button>
         </div>
     </div>
-);
+    );
+};
 
 export default CalendarHeader;

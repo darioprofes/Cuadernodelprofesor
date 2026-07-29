@@ -86,9 +86,30 @@ export interface ClassAccentColor {
     headerBg: string; // fondo intenso para cabeceras con texto blanco
 }
 
-// `hueOverride` (0-360) permite fijar el color a mano desde Ajustes → Clases
-// y Alumnado en vez de dejarlo siempre al hash de la materia.
+// Tonos repartidos por la rueda de color para elegir a mano el acento de una
+// clase u ocupación (ver getClassAccentColor abajo); compartido entre
+// ClassModal (clases académicas) y CourseManager (otras ocupaciones).
+export const HUE_PRESETS = [0, 25, 50, 90, 150, 190, 220, 260, 300, 335];
+
+// Blanco y negro no son un tono de la rueda de color (hsl con saturación),
+// así que se marcan con valores fuera del rango real de hueOverride (0-360)
+// y getClassAccentColor los trata aparte.
+export const ACCENT_WHITE = -1;
+export const ACCENT_BLACK = -2;
+
+// `hueOverride` (0-360, o ACCENT_WHITE/ACCENT_BLACK) permite fijar el color a
+// mano desde Ajustes → Clases y Alumnado en vez de dejarlo siempre al hash
+// de la materia. cellBg y pillBg comparten `text` en los sitios donde se
+// usan juntos (p.ej. la franja del Horario y su insignia de grupo), así que
+// deben tener luminosidad parecida entre sí — por eso "negro" usa fondos
+// oscuros con texto claro en vez de un negro puro sobre fondo claro.
 export const getClassAccentColor = (materia: string, hueOverride?: number): ClassAccentColor => {
+    if (hueOverride === ACCENT_WHITE) {
+        return { cellBg: '#f8fafc', pillBg: '#e2e8f0', text: '#334155', headerBg: '#475569' };
+    }
+    if (hueOverride === ACCENT_BLACK) {
+        return { cellBg: '#334155', pillBg: '#1e293b', text: '#f8fafc', headerBg: '#0f172a' };
+    }
     const hue = hueOverride ?? hashHue(materia);
     return {
         cellBg: `hsl(${hue}, 60%, 95%)`,

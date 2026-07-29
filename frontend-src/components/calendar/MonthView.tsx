@@ -115,10 +115,15 @@ const MonthView: React.FC<{
                                     }
                                     if (event.eventType === 'meeting') {
                                         return (
-                                            <div key={event.id} className="p-1 text-xs rounded border flex items-start gap-1 group/note" style={{ backgroundColor: MEETING_COLOR.backgroundColor, color: MEETING_COLOR.textColor, borderColor: MEETING_COLOR.borderColor }}>
+                                            <div
+                                                key={event.id}
+                                                onClick={() => onEventClick(event)}
+                                                className="p-1 text-xs rounded border flex items-start gap-1 group/note cursor-pointer hover:brightness-95"
+                                                style={{ backgroundColor: MEETING_COLOR.backgroundColor, color: MEETING_COLOR.textColor, borderColor: MEETING_COLOR.borderColor }}
+                                            >
                                                 <UsersIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80" />
                                                 <p className="truncate flex-grow" title={event.description}>{event.description}</p>
-                                                <button onClick={() => event.meetingId && onDeleteMeeting(event.meetingId)} className="flex-shrink-0 opacity-0 group-hover/note:opacity-70 hover:!opacity-100">
+                                                <button onClick={(e) => { e.stopPropagation(); event.meetingId && onDeleteMeeting(event.meetingId); }} className="flex-shrink-0 opacity-0 group-hover/note:opacity-70 hover:!opacity-100">
                                                     <TrashIcon className="w-3.5 h-3.5" />
                                                 </button>
                                             </div>
@@ -175,7 +180,13 @@ const MonthView: React.FC<{
                                         const style = { backgroundColor: event.courseColor.backgroundColor, color: event.courseColor.textColor, borderColor: event.courseColor.borderColor };
                                         const categoryName = event.assignmentId ? getAssignmentCategoryName(event.classId, event.assignmentId) : undefined;
                                         return (
-                                            <div key={event.id} className="p-1 text-xs rounded border flex items-start gap-1.5" style={style} title={`${event.classGrupo ? event.classGrupo + ' - ' : ''}${event.className} - ${event.unitName}${categoryName ? ' (' + categoryName + ')' : ''}`}>
+                                            <div
+                                                key={event.id}
+                                                onClick={() => onEventClick(event)}
+                                                className="p-1 text-xs rounded border flex items-start gap-1.5 cursor-pointer hover:brightness-95"
+                                                style={style}
+                                                title={`${event.classGrupo ? event.classGrupo + ' - ' : ''}${event.className} - ${event.unitName}${categoryName ? ' (' + categoryName + ')' : ''}`}
+                                            >
                                                <ClipboardDocumentIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80"/>
                                                <div className="truncate">
                                                     <p className="font-semibold truncate">

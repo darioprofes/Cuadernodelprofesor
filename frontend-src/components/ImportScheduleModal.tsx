@@ -56,8 +56,23 @@ const normalizarNivel = (raw: string): string => {
 // filas extraídas del PDF, y el nuevo conjunto de cursos/clases resultante
 // de fusionar esas filas con lo que ya existía. No muta nada: se aplica solo
 // cuando el usuario confirma la previsualización.
-const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[]) => {
-    const filasValidas = filas.filter(f => f.asignatura && f.hora_inicio && f.hora_fin);
+//
+// `borrarAcademicasSinUsar` solo importa cuando hay cursos/grupos académicos
+// que YA existían pero a los que esta importación no les toca ninguna
+// franja (ya no aparecen en el PDF actual): true los borra del todo
+// (alumnado y calificaciones incluidos), false los deja tal cual estaban.
+const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[], borrarAcademicasSinUsar: boolean) => {
+    // La materia puede venir vacía (franja sin nada asignado en el PDF,
+    // p.ej. el recreo): se importa igual, sin nombre por defecto.
+    const filasValidas = filas.filter(f => f.hora_inicio && f.hora_fin);
+
+    // "Otras ocupaciones" (guardias, reuniones, recreo...) no guardan
+    // alumnado ni calificaciones, así que importar el horario implica
+    // sustituirlas siempre por completo (curso + clase) — sin esto, reimportar
+    // tras renombrar una (p.ej. "Libre" → "RECREO") no la reconoce por el
+    // nombre y crea otra en paralelo, dejando la antigua con franjas
+    // obsoletas.
+    const idsOtrasOcupaciones = new Set(courses.filter(c => c.type === 'other').map(c => c.id));
 
     const parejasUnicas = Array.from(new Set(filasValidas.map(f => `${f.hora_inicio}|${f.hora_fin}`)))
         .map(par => {
@@ -69,10 +84,15 @@ const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: Class
     const periods = parejasUnicas.map(p => `${p.inicio}-${p.fin}`);
     const periodIndexOf = new Map(parejasUnicas.map((p, i) => [`${p.inicio}|${p.fin}`, i]));
 
-    const newCourses = [...courses];
-    const newClasses = [...classes];
-    let clasesCreadas = 0;
-    let clasesActualizadas = 0;
+    let newCourses = courses.filter(c => !idsOtrasOcupaciones.has(c.id));
+    let newClasses = classes.filter(cl => !idsOtrasOcupaciones.has(cl.courseId));
+    // Se cuentan clases distintas tocadas por la importación, no franjas: una
+    // misma clase recibe varias franjas (una por sesión/semana) sin que eso
+    // cuente como varias clases nuevas o actualizadas. También sirve para
+    // saber qué clases académicas ya existían pero esta vez no se han tocado.
+    const idsClasesNuevas = new Set<string>();
+    const idsClasesActualizadas = new Set<string>();
+    const idsClasesTocadas = new Set<string>();
 
     const findOrCreateCourse = (subject: string, level: string, type: 'academic' | 'other'): Course => {
         let course = newCourses.find(c => c.subject === subject && c.level === level && c.type === type);
@@ -108,10 +128,11 @@ const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: Class
                 schedule: [],
             };
             newClasses.push(cls);
-            clasesCreadas++;
-        } else {
-            clasesActualizadas++;
+            idsClasesNuevas.add(cls.id);
+        } else if (!idsClasesNuevas.has(cls.id)) {
+            idsClasesActualizadas.add(cls.id);
         }
+        idsClasesTocadas.add(cls.id);
         return cls;
     };
 
@@ -137,7 +158,31 @@ const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: Class
         }
     }
 
-    return { periods, courses: newCourses, classes: newClasses, clasesCreadas, clasesActualizadas };
+    // Cursos/grupos académicos que ya existían antes de esta importación pero
+    // no han recibido ninguna franja del PDF actual: ya no aparecen en el
+    // horario que se está importando. Se listan siempre (para avisar), y solo
+    // se borran (con su alumnado y calificaciones) si el usuario lo confirma.
+    const clasesAcademicasSinUsar = newClasses.filter(cl => {
+        if (idsClasesTocadas.has(cl.id)) return false;
+        const course = newCourses.find(c => c.id === cl.courseId);
+        return course?.type !== 'other';
+    });
+
+    if (borrarAcademicasSinUsar && clasesAcademicasSinUsar.length > 0) {
+        const idsABorrar = new Set(clasesAcademicasSinUsar.map(cl => cl.id));
+        newClasses = newClasses.filter(cl => !idsABorrar.has(cl.id));
+        const idsCoursesConClase = new Set(newClasses.map(cl => cl.courseId));
+        newCourses = newCourses.filter(c => c.type === 'other' ? true : idsCoursesConClase.has(c.id));
+    }
+
+    return {
+        periods,
+        courses: newCourses,
+        classes: newClasses,
+        clasesCreadas: idsClasesNuevas.size,
+        clasesActualizadas: idsClasesActualizadas.size,
+        clasesAcademicasSinUsar,
+    };
 };
 
 const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClose, courses, setCourses, classes, setClasses, setAcademicConfiguration }) => {
@@ -147,12 +192,14 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
     const [filas, setFilas] = useState<FilaHorario[] | null>(null);
     const [erroresExtraccion, setErroresExtraccion] = useState<string[]>([]);
     const [applied, setApplied] = useState(false);
+    const [borrarAcademicasSinUsar, setBorrarAcademicasSinUsar] = useState(false);
 
     const handleClose = () => {
         setFilas(null);
         setErroresExtraccion([]);
         setErrorMsg(null);
         setApplied(false);
+        setBorrarAcademicasSinUsar(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
         onClose();
     };
@@ -185,7 +232,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
         }
     };
 
-    const plan = filas ? buildImportPlan(filas, courses, classes) : null;
+    const plan = filas ? buildImportPlan(filas, courses, classes, borrarAcademicasSinUsar) : null;
 
     const handleConfirm = () => {
         if (!plan) return;
@@ -215,6 +262,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
 
                         <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
                             <p>⚠️ Al confirmar, la lista de <strong>franjas horarias</strong> (Ajustes → Configuración del Curso) se <strong>sustituye</strong> por las horas encontradas en el PDF. Pensado para hacerse una vez, al empezar.</p>
+                            <p>Las <strong>otras ocupaciones</strong> (guardias, reuniones, recreo...) se sustituyen siempre por completo — no guardan alumnado ni calificaciones.</p>
                             <p>El <strong>aula</strong> de cada sesión se importa junto a la franja; puedes revisarla o añadir una nota (p.ej. "Laboratorio") pulsando la celda en "Horario Semanal".</p>
                             <p>Los grupos que ya venían fusionados en una misma franja (p.ej. dos subgrupos compartiendo una clase) se mantienen como un único nombre combinado.</p>
                         </div>
@@ -253,6 +301,28 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                                     <p>{plan.periods.length} franjas horarias distintas.</p>
                                     <p>{plan.clasesCreadas} clase(s) nueva(s) se crearán; {plan.clasesActualizadas} clase(s) existentes se completarán con nuevas franjas.</p>
                                 </div>
+                                {plan.clasesAcademicasSinUsar.length > 0 && (
+                                    <label className="flex items-start gap-2 p-3 border border-red-200 rounded-lg bg-red-50 text-sm text-red-800 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={borrarAcademicasSinUsar}
+                                            onChange={e => setBorrarAcademicasSinUsar(e.target.checked)}
+                                            className="mt-0.5"
+                                        />
+                                        <span>
+                                            <span className="font-semibold">
+                                                {plan.clasesAcademicasSinUsar.length} curso(s)/grupo(s) académico(s) ya no aparecen en este horario:
+                                            </span>
+                                            {' '}
+                                            {plan.clasesAcademicasSinUsar.map(cl => (
+                                                <ClassLabel key={cl.id} classData={cl} courses={courses} className="inline-block mr-1.5" />
+                                            ))}
+                                            <br />
+                                            Márcalo para borrarlos por completo, <strong>incluyendo su alumnado y calificaciones</strong>. Sin marcar,
+                                            se dejan tal cual estaban (con su horario anterior).
+                                        </span>
+                                    </label>
+                                )}
                                 <div className="max-h-56 overflow-y-auto border rounded-lg divide-y">
                                     {classes.length === 0 && plan.classes.length === 0 && (
                                         <p className="p-3 text-slate-500 text-sm">No se ha detectado ninguna franja con grupo o materia.</p>

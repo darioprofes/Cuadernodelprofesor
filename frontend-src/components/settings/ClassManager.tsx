@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { ClassData, Course, Student } from '../../types';
+import type { AcademicConfiguration, ClassData, Category, Course, Student } from '../../types';
 import { ACNEAE_TAGS } from '../../constants';
 import { formatClassLabel } from '../../utils';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, UserCircleIcon } from '../Icons';
@@ -124,11 +124,18 @@ const StudentRow: React.FC<StudentRowProps> = ({ student, onUpdate, onDelete, on
     );
 };
 
+const DEFAULT_CATEGORIES = [
+    { name: 'Trabajo diario', weight: 30 },
+    { name: 'Tareas',         weight: 40 },
+    { name: 'Controles',      weight: 30 },
+];
+
 const ClassManager: React.FC<{
     classes: ClassData[];
     setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
     courses: Course[];
-}> = ({ classes, setClasses, courses }) => {
+    academicConfiguration: AcademicConfiguration;
+}> = ({ classes, setClasses, courses, academicConfiguration }) => {
 
     const academicClasses = useMemo(() => {
         const academicCourseIds = new Set(courses.filter(c => c.type !== 'other').map(c => c.id));
@@ -196,10 +203,19 @@ const ClassManager: React.FC<{
         if (classToEdit) {
             setClasses(prev => prev.map(c => c.id === classToEdit.id ? { ...c, ...classData } : c));
         } else {
+            const periods = academicConfiguration.evaluationPeriods ?? [];
+            const defaultCategories: Category[] = periods.flatMap(p =>
+                DEFAULT_CATEGORIES.map(dc => ({
+                    id: crypto.randomUUID(),
+                    name: dc.name,
+                    weight: dc.weight,
+                    evaluationPeriodId: p.id,
+                }))
+            );
             const newClass: ClassData = {
                 ...classData,
                 students: [],
-                categories: [],
+                categories: defaultCategories,
                 assignments: [],
                 grades: [],
                 schedule: [],

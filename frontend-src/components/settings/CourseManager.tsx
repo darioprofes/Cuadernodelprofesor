@@ -4,6 +4,7 @@ import { PencilIcon, TrashIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
 import IconButton from '../IconButton';
+import { HUE_PRESETS, ACCENT_WHITE, ACCENT_BLACK } from '../../utils';
 
 const CourseManager: React.FC<{
     courses: Course[];
@@ -17,6 +18,7 @@ const CourseManager: React.FC<{
     const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
     const [editLevel, setEditLevel] = useState('');
     const [editSubject, setEditSubject] = useState('');
+    const [editColorAcento, setEditColorAcento] = useState<number | undefined>(undefined);
 
     const academicCourses = courses.filter(c => c.type !== 'other');
     const otherOccupations = courses.filter(c => c.type === 'other');
@@ -25,6 +27,7 @@ const CourseManager: React.FC<{
         setEditingCourseId(course.id);
         setEditLevel(course.level);
         setEditSubject(course.subject);
+        setEditColorAcento(classes.find(cl => cl.courseId === course.id)?.colorAcento);
     };
 
     const handleCancelEdit = () => {
@@ -35,10 +38,24 @@ const CourseManager: React.FC<{
         e.preventDefault();
         if (editSubject.trim() === '' || !editingCourseId) return;
 
+        const editingCourse = courses.find(c => c.id === editingCourseId);
+
         setCourses(prev => prev.map(c => c.id === editingCourseId
             ? { ...c, subject: editSubject.trim(), level: c.type === 'other' ? c.level : editLevel }
             : c
         ));
+
+        // El color de acento vive en la clase, no en el curso — solo se toca
+        // aquí para "Otras Ocupaciones", que siempre tienen una única clase
+        // asociada (a diferencia de un curso académico, que puede tener
+        // varios grupos con colores distintos gestionados desde Clases).
+        if (editingCourse?.type === 'other') {
+            setClasses(prev => prev.map(cl => cl.courseId === editingCourseId
+                ? { ...cl, colorAcento: editColorAcento }
+                : cl
+            ));
+        }
+
         setEditingCourseId(null);
     };
 
@@ -164,13 +181,48 @@ const CourseManager: React.FC<{
                      <div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50/50">
                         {otherOccupations.length > 0 ? otherOccupations.map(course => (
                             editingCourseId === course.id ? (
-                                <form key={course.id} onSubmit={handleSaveEdit} className="flex items-end gap-2 bg-white p-2 rounded-md border">
-                                    <div className="w-full flex-grow">
-                                        <Input type="text" value={editSubject} onChange={e => setEditSubject(e.target.value)} className="w-full" autoFocus/>
+                                <form key={course.id} onSubmit={handleSaveEdit} className="flex flex-col gap-2 bg-white p-2 rounded-md border">
+                                    <div className="flex items-end gap-2">
+                                        <div className="w-full flex-grow">
+                                            <Input type="text" value={editSubject} onChange={e => setEditSubject(e.target.value)} className="w-full" autoFocus/>
+                                        </div>
+                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                            <button type="submit" className="bg-green-600 text-white text-sm font-semibold py-1.5 px-3 rounded-lg hover:bg-green-700">Guardar</button>
+                                            <button type="button" onClick={handleCancelEdit} className="text-slate-500 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-100">Cancelar</button>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-1 flex-shrink-0">
-                                        <button type="submit" className="bg-green-600 text-white text-sm font-semibold py-1.5 px-3 rounded-lg hover:bg-green-700">Guardar</button>
-                                        <button type="button" onClick={handleCancelEdit} className="text-slate-500 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-100">Cancelar</button>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-xs font-medium text-slate-600 mr-1">Color:</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditColorAcento(undefined)}
+                                            title="Automático (según el nombre)"
+                                            className={`w-6 h-6 rounded-full border-2 border-dashed flex items-center justify-center text-[8px] font-bold text-slate-400 bg-white ${editColorAcento == null ? 'ring-2 ring-offset-1 ring-blue-500 border-blue-400' : 'border-slate-300'}`}
+                                        >
+                                            A
+                                        </button>
+                                        {HUE_PRESETS.map(hue => (
+                                            <button
+                                                key={hue}
+                                                type="button"
+                                                onClick={() => setEditColorAcento(hue)}
+                                                title={`Tono ${hue}°`}
+                                                className={`w-6 h-6 rounded-full ${editColorAcento === hue ? 'ring-2 ring-offset-1 ring-blue-500' : ''}`}
+                                                style={{ backgroundColor: `hsl(${hue}, 45%, 42%)` }}
+                                            />
+                                        ))}
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditColorAcento(ACCENT_WHITE)}
+                                            title="Blanco"
+                                            className={`w-6 h-6 rounded-full border border-slate-300 bg-white ${editColorAcento === ACCENT_WHITE ? 'ring-2 ring-offset-1 ring-blue-500' : ''}`}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditColorAcento(ACCENT_BLACK)}
+                                            title="Negro"
+                                            className={`w-6 h-6 rounded-full bg-slate-900 ${editColorAcento === ACCENT_BLACK ? 'ring-2 ring-offset-1 ring-blue-500' : ''}`}
+                                        />
                                     </div>
                                 </form>
                             ) : (

@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, ArrowUpIcon, ArrowDownIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
 import Badge from './Badge';
@@ -194,9 +194,9 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       return finalGrades;
   }, [classData, academicConfiguration]);
 
-  const handleSaveAssignment = (assignmentData: Omit<Assignment, 'id' | 'categoryId'> & { id?: string }) => {
+  const handleSaveAssignment = (assignmentData: Omit<Assignment, 'id' | 'categoryId'> & { id?: string; categoryId?: string }) => {
     if (!activeCategory) return;
-    const assignment = { ...assignmentData, categoryId: activeCategory.id };
+    const assignment = { ...assignmentData, categoryId: assignmentData.categoryId ?? activeCategory.id };
 
     const existingIndex = classData.assignments.findIndex(a => a.id === assignment.id);
     let updatedAssignments;
@@ -365,8 +365,41 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     onUpdateClass({ ...classData, grades: updatedGrades });
   };
   
+  const handleReorderCategory = (catId: string, dir: -1 | 1) => {
+    const cats = [...classData.categories];
+    const periodCats = cats.filter(c => c.evaluationPeriodId === activePeriodId);
+    const idx = periodCats.findIndex(c => c.id === catId);
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= periodCats.length) return;
+    const globalIdx = cats.indexOf(periodCats[idx]);
+    const globalSwapIdx = cats.indexOf(periodCats[swapIdx]);
+    [cats[globalIdx], cats[globalSwapIdx]] = [cats[globalSwapIdx], cats[globalIdx]];
+    onUpdateClass({ ...classData, categories: cats });
+  };
+
+  const handleReorderAssignment = (assignId: string, dir: -1 | 1) => {
+    const assigns = [...classData.assignments];
+    const catId = assigns.find(a => a.id === assignId)?.categoryId;
+    if (!catId) return;
+    const catAssigns = assigns.filter(a => a.categoryId === catId && a.evaluationPeriodId === activePeriodId);
+    const idx = catAssigns.findIndex(a => a.id === assignId);
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= catAssigns.length) return;
+    const globalIdx = assigns.indexOf(catAssigns[idx]);
+    const globalSwapIdx = assigns.indexOf(catAssigns[swapIdx]);
+    [assigns[globalIdx], assigns[globalSwapIdx]] = [assigns[globalSwapIdx], assigns[globalIdx]];
+    onUpdateClass({ ...classData, assignments: assigns });
+  };
+
   const categoriesForPeriod = useMemo(() => classData.categories.filter(c => c.evaluationPeriodId === activePeriodId), [classData.categories, activePeriodId]);
   const assignmentsForPeriod = useMemo(() => classData.assignments.filter(a => a.evaluationPeriodId === activePeriodId), [classData.assignments, activePeriodId]);
+
+  const categoryColorMap = useMemo(() => {
+    const COLORS = ['#0d9488','#ea580c','#7c3aed','#0284c7','#16a34a','#db2777','#ca8a04','#dc2626'];
+    const map = new Map<string, string>();
+    categoriesForPeriod.forEach((cat, idx) => map.set(cat.id, COLORS[idx % COLORS.length]));
+    return map;
+  }, [categoriesForPeriod]);
 
   const studentAssignmentScores = useMemo(() => {
     const allScores = new Map<string, Map<string, number | null>>();
@@ -504,36 +537,38 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm text-left">
           {/* Fix: Header set to sticky top-0 to stick to the very top of scroll view area */}
-          <thead className="text-xs text-slate-700 uppercase bg-slate-200 sticky top-0 z-20 shadow-sm">
+          <thead className="text-xs uppercase sticky top-0 z-20 shadow-sm">
             <tr>
               {/* Alumno Header Top Half: No bottom border, align bottom */}
-              <th scope="col" className={`${studentHeaderPad} font-semibold sticky left-0 bg-slate-200 z-30 w-52 text-center border-r border-slate-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${activePeriodId !== 'final' ? 'border-b-0 align-bottom' : 'align-middle'}`}>
+              <th scope="col" className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 text-center border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] ${activePeriodId !== 'final' ? 'border-b-0 align-bottom' : 'align-middle'}`}>
                   Alumn@
               </th>
               {activePeriodId === 'final' ? (
                 <>
-                  {evaluationPeriods.map(p => <th key={p.id} className={`${headerPad} font-semibold text-center`}>{p.name}</th>)}
-                  <th className={`${headerPad} font-semibold text-center`}>Nota Final</th>
+                  {evaluationPeriods.map(p => <th key={p.id} className={`${headerPad} font-semibold text-center bg-white text-slate-700 border-l border-slate-200`}>{p.name}</th>)}
+                  <th className={`${headerPad} font-semibold text-center bg-white text-slate-700 border-l border-slate-200`}>Nota Final</th>
                 </>
               ) : (
                 <>
                   {categoriesForPeriod.map(cat => {
                     const assignmentsForCat = assignmentsForPeriod.filter(a => a.categoryId === cat.id);
                     return (
-                      <th key={cat.id} colSpan={assignmentsForCat.length > 0 ? assignmentsForCat.length + 1 : 1} className={`${headerPad} font-semibold text-center border-l border-r-2 border-r-slate-400 bg-slate-200 align-top`}>
+                      <th key={cat.id} colSpan={assignmentsForCat.length > 0 ? assignmentsForCat.length + 1 : 1} className={`${headerPad} font-semibold text-center border-l border-r-2 border-l-slate-200 border-r-slate-200 bg-white align-top`} style={{ color: categoryColorMap.get(cat.id), borderBottomColor: categoryColorMap.get(cat.id), borderBottomWidth: '3px' }}>
                         <div className="flex justify-center items-center">
                             {cat.name} ({cat.weight}%)
                             {cat.type === 'recovery' && <Badge variant="primary" className="ml-2" title="Categoría de Recuperación">REC</Badge>}
                         </div>
                         <div className="flex justify-center items-center gap-1 mt-1 font-normal normal-case">
-                            <button onClick={() => { setActiveCategory(cat); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }} className="p-1 text-blue-600 hover:bg-blue-100 rounded-md text-xs">Añadir Tarea</button>
+                            <button onClick={() => { setActiveCategory(cat); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }} className="p-1 text-blue-600 hover:bg-blue-100 rounded-md text-xs">Añadir {cat.name.toLowerCase()}</button>
                             <IconButton label="Editar categoría" size="sm" onClick={() => {setCategoryToEdit(cat); setIsCategoryModalOpen(true);}}><PencilIcon className="w-3 h-3"/></IconButton>
                             <IconButton label="Eliminar categoría" tone="danger" size="sm" onClick={() => handleDeleteCategory(cat.id)}><TrashIcon className="w-3 h-3"/></IconButton>
+                            <IconButton label="Mover izquierda" size="sm" onClick={() => handleReorderCategory(cat.id, -1)}><ArrowUpIcon className="w-3 h-3 -rotate-90"/></IconButton>
+                            <IconButton label="Mover derecha" size="sm" onClick={() => handleReorderCategory(cat.id, 1)}><ArrowDownIcon className="w-3 h-3 -rotate-90"/></IconButton>
                         </div>
                       </th>
                     )
                   })}
-                  <th rowSpan={2} className={`${headerPad} font-semibold text-center bg-slate-200 border-l align-middle relative`}>
+                  <th rowSpan={2} className={`${headerPad} font-semibold text-center bg-white text-slate-700 border-l border-slate-200 align-middle relative`}>
                     Nota Ev.
                     <IconButton
                         label="Nueva categoría"
@@ -552,26 +587,28 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             {activePeriodId !== 'final' && (
               <tr>
                 {/* Alumno Header Bottom Half: No top border, align top (visually merges with above) */}
-                <th className={`${studentHeaderPad} sticky left-0 bg-slate-200 z-30 w-52 border-r border-slate-300 border-t-0 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}></th>
+                <th className={`${studentHeaderPad} sticky left-0 bg-white z-30 w-52 border-r border-t-0 border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]`}></th>
                 
                 {categoriesForPeriod.map(cat => {
                     const assignmentsForCat = assignmentsForPeriod.filter(a => a.categoryId === cat.id);
                     if (assignmentsForCat.length === 0) {
-                        return <th key={`${cat.id}-empty`} className={`${cellPad} border-l border-r-2 border-r-slate-400`}></th>
+                        return <th key={`${cat.id}-empty`} className={`${cellPad} bg-white border-l border-r-2 border-slate-200`}></th>
                     }
                     return [
                         ...assignmentsForCat.map((a, idx) => (
-                            <th key={a.id} className={`${cellPad} font-normal text-center border-l ${idx === assignmentsForCat.length - 1 ? 'border-r' : ''} min-w-[120px]`} title={a.name}>
+                            <th key={a.id} className={`${cellPad} font-normal text-center border-l border-slate-200 ${idx === assignmentsForCat.length - 1 ? 'border-r border-r-slate-200' : ''} min-w-[120px] bg-white`} title={a.name} style={{ color: categoryColorMap.get(cat.id) }}>
                               <div className="truncate w-full mx-auto px-1">{a.name}</div>
                               <div className="flex justify-center items-center gap-1 mt-1">
                                 <IconButton label="Editar tarea" size="sm" onClick={() => handleEditAssignment(a)}><PencilIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Eliminar tarea" tone="danger" size="sm" onClick={() => handleDeleteAssignment(a.id)}><TrashIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Copiar tarea a otra clase" tone="primary" size="sm" onClick={() => setAssignmentToCopy(a)}><DocumentDuplicateIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Importar notas en lote" tone="primary" size="sm" onClick={() => {setAssignmentForImport(a); setIsBulkImportModalOpen(true);}}><ArrowUpTrayIcon className="w-3 h-3"/></IconButton>
+                                <IconButton label="Mover izquierda" size="sm" onClick={() => handleReorderAssignment(a.id, -1)}><ArrowUpIcon className="w-3 h-3 -rotate-90"/></IconButton>
+                                <IconButton label="Mover derecha" size="sm" onClick={() => handleReorderAssignment(a.id, 1)}><ArrowDownIcon className="w-3 h-3 -rotate-90"/></IconButton>
                               </div>
                             </th>
                         )),
-                        <th key={`${cat.id}-media`} className={`${cellPad} font-semibold text-center border-r-2 border-r-slate-400 bg-slate-200 min-w-[80px]`}>
+                        <th key={`${cat.id}-media`} className={`${cellPad} font-semibold text-center border-r-2 border-r-slate-300 min-w-[80px] bg-white`} style={{ color: categoryColorMap.get(cat.id) }}>
                             Media
                         </th>,
                     ];

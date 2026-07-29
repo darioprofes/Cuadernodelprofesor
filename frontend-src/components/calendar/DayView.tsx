@@ -1,5 +1,5 @@
 import React from 'react';
-import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenIcon } from '../Icons';
+import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenIcon, UsersIcon } from '../Icons';
 import { CalendarEvent, NOTE_COLOR, toYYYYMMDD_UTC, getContrastingTextColor } from './calendarEvents';
 import { TYPOGRAPHY } from '../../theme/typography';
 
@@ -109,10 +109,17 @@ const DayView: React.FC<{
                                 </button>
                             </div>
                         );
+                    } else if (event.eventType === 'meeting') {
+                        return (
+                            <div key={event.id} onClick={() => onEventClick(event)} className="p-3 rounded-lg border-l-4 flex items-center gap-3 cursor-pointer hover:brightness-95" style={style}>
+                                <UsersIcon className="w-6 h-6 opacity-80"/>
+                                <p className="text-base">{event.description}</p>
+                            </div>
+                        )
                     } else {
                         const categoryName = event.assignmentId ? getAssignmentCategoryName(event.classId, event.assignmentId) : undefined;
                          return (
-                            <div key={event.id} className="p-3 rounded-lg border-l-4 flex items-center gap-3" style={style}>
+                            <div key={event.id} onClick={() => onEventClick(event)} className="p-3 rounded-lg border-l-4 flex items-center gap-3 cursor-pointer hover:brightness-95" style={style}>
                                 <ClipboardDocumentIcon className="w-6 h-6 opacity-80"/>
                                 <div>
                                     <p className="font-bold text-lg">

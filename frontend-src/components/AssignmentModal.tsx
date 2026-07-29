@@ -21,7 +21,7 @@ import { TrashIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon } from './Icons'
 interface AssignmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (assignment: Omit<Assignment, 'id' | 'categoryId'> & { id?: string }) => void;
+  onSave: (assignment: Omit<Assignment, 'id' | 'categoryId'> & { id?: string; categoryId?: string }) => void;
   assignmentToEdit: Assignment | null;
   category: Category;
   criteria: EvaluationCriterion[];
@@ -50,10 +50,10 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
   const [importancia, setImportancia] = useState<ImportanciaActividad>('normal');
   const [importanciaAvanzada, setImportanciaAvanzada] = useState(false);
   const [importanciaPersonalizada, setImportanciaPersonalizada] = useState<string>('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(category.id);
 
-  // UI State for the new selector
   const [isCriteriaSelectorOpen, setIsCriteriaSelectorOpen] = useState(false);
-  // New State: Toggle for using global criteria on tools
+  const [expandedCompetences, setExpandedCompetences] = useState<Set<string>>(new Set());
   const [useGlobalToolCriteria, setUseGlobalToolCriteria] = useState(false);
 
   const descriptorMap = useMemo(() => {
@@ -70,15 +70,25 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
     const map = new Map<string, SpecificCompetence>();
     criteria.forEach(crit => {
       const sc = specificCompetences.find(sc => sc.id === crit.competenceId);
-      if (sc) {
-        map.set(crit.id, sc);
-      }
+      if (sc) map.set(crit.id, sc);
     });
     return map;
   }, [criteria, specificCompetences]);
 
+  const criteriaByCompetence = useMemo(() => {
+    const groups = new Map<string, { competence: SpecificCompetence | null; criteria: typeof criteria }>();
+    criteria.forEach(c => {
+      const sc = criterionToCompetenceMap.get(c.id);
+      const key = sc?.id ?? '__sin_competencia__';
+      if (!groups.has(key)) groups.set(key, { competence: sc ?? null, criteria: [] });
+      groups.get(key)!.criteria.push(c);
+    });
+    return Array.from(groups.values());
+  }, [criteria, criterionToCompetenceMap]);
+
   useEffect(() => {
     if (assignmentToEdit) {
+      setSelectedCategoryId(assignmentToEdit.categoryId);
       setName(assignmentToEdit.name);
       setDate(assignmentToEdit.date || '');
       setEvaluationPeriodId(assignmentToEdit.evaluationPeriodId);
@@ -95,6 +105,11 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
         selectedDescriptorIds: lc.selectedDescriptorIds || [],
       }));
       setLinkedCriteria(sanitizedLinkedCriteria);
+      // Expandir automáticamente los grupos con criterios ya seleccionados
+      const selectedIds = new Set(sanitizedLinkedCriteria.map(lc => lc.criterionId));
+      setExpandedCompetences(new Set(
+        criteria.filter(c => selectedIds.has(c.id)).map(c => criterionToCompetenceMap.get(c.id)?.id ?? '__sin_competencia__')
+      ));
       
       // Determine if global tool criteria mode should be active
       if (assignmentToEdit.evaluationMethod !== 'direct_grade' && sanitizedLinkedCriteria.length > 0) {
@@ -104,6 +119,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
       }
 
     } else {
+      setSelectedCategoryId(category.id);
       setName('');
       setDate('');
       setEvaluationPeriodId(category.evaluationPeriodId);
@@ -210,7 +226,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
         importanciaPersonalizada: importanciaAvanzada && importanciaPersonalizada.trim() ? Number(importanciaPersonalizada) : undefined,
       };
       if (assignmentToEdit) {
-        onSave({ ...assignmentData, id: assignmentToEdit.id });
+        onSave({ ...assignmentData, id: assignmentToEdit.id, categoryId: selectedCategoryId });
       } else {
         onSave(assignmentData);
       }
@@ -256,6 +272,20 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
             </Select>
           </div>
         </div>
+        {assignmentToEdit && (
+          <div>
+            <label htmlFor="category-select" className="block text-sm font-medium text-slate-700">Categoría</label>
+            <Select
+              id="category-select" value={selectedCategoryId}
+              onChange={(e) => setSelectedCategoryId(e.target.value)}
+              className="mt-1"
+            >
+              {allCategories
+                .filter(c => c.evaluationPeriodId === evaluationPeriodId)
+                .map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
           <div>
@@ -392,33 +422,54 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
                 </button>
                 
                 {isCriteriaSelectorOpen && (
-                    <div className="p-3 border-t border-slate-200 max-h-60 overflow-y-auto bg-white">
-                        <div className="grid grid-cols-1 gap-2">
-                            {criteria.length === 0 ? (
-                                <p className="text-sm text-slate-500 italic">No hay criterios definidos para este curso.</p>
-                            ) : (
-                                criteria.map(c => {
-                                    const isSelected = linkedCriteria.some(lc => lc.criterionId === c.id);
-                                    return (
-                                        <label 
-                                            key={c.id} 
-                                            className={`flex items-start gap-3 p-2 rounded-md cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 border border-blue-100' : 'hover:bg-slate-50 border border-transparent'}`}
+                    <div className="border-t border-slate-200 max-h-72 overflow-y-auto bg-white">
+                        {criteria.length === 0 ? (
+                            <p className="p-3 text-sm text-slate-500 italic">No hay criterios definidos para este curso.</p>
+                        ) : (
+                            criteriaByCompetence.map(({ competence, criteria: groupCriteria }) => {
+                                const groupKey = competence?.id ?? '__sin_competencia__';
+                                const isExpanded = expandedCompetences.has(groupKey);
+                                const selectedInGroup = groupCriteria.filter(c => linkedCriteria.some(lc => lc.criterionId === c.id)).length;
+                                return (
+                                    <div key={groupKey} className="border-b border-slate-100 last:border-b-0">
+                                        <button
+                                            type="button"
+                                            onClick={() => setExpandedCompetences(prev => {
+                                                const next = new Set(prev);
+                                                next.has(groupKey) ? next.delete(groupKey) : next.add(groupKey);
+                                                return next;
+                                            })}
+                                            className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 text-left"
                                         >
-                                            <input 
-                                                type="checkbox" 
-                                                checked={isSelected}
-                                                onChange={() => handleToggleCriterion(c.id)}
-                                                className={`mt-1 ${checkboxClassName}`}
-                                            />
-                                            <div className="flex-1">
-                                                <span className="block text-sm font-semibold text-slate-800">{c.code}</span>
-                                                <span className="block text-xs text-slate-600">{c.description}</span>
+                                            <span className="flex items-start gap-2 text-sm font-medium text-slate-700 min-w-0">
+                                                {isExpanded ? <ChevronDownIcon className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5"/> : <ChevronRightIcon className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5"/>}
+                                                <span className="font-semibold text-slate-500 whitespace-nowrap flex-shrink-0">{competence?.code ?? '—'}</span>
+                                                <span className="break-words min-w-0">{competence?.description ?? 'Sin competencia'}</span>
+                                            </span>
+                                            {selectedInGroup > 0 && (
+                                                <Badge variant="primary" className="ml-2 flex-shrink-0">{selectedInGroup}</Badge>
+                                            )}
+                                        </button>
+                                        {isExpanded && (
+                                            <div className="px-3 pb-2 space-y-1 bg-slate-50/50">
+                                                {groupCriteria.map(c => {
+                                                    const isSelected = linkedCriteria.some(lc => lc.criterionId === c.id);
+                                                    return (
+                                                        <label key={c.id} className={`flex items-start gap-3 p-2 rounded-md cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 border border-blue-100' : 'hover:bg-white border border-transparent'}`}>
+                                                            <input type="checkbox" checked={isSelected} onChange={() => handleToggleCriterion(c.id)} className={`mt-1 ${checkboxClassName}`} />
+                                                            <div className="flex-1">
+                                                                <span className="block text-sm font-semibold text-slate-800">{c.code}</span>
+                                                                <span className="block text-xs text-slate-600">{c.description}</span>
+                                                            </div>
+                                                        </label>
+                                                    );
+                                                })}
                                             </div>
-                                        </label>
-                                    )
-                                })
-                            )}
-                        </div>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
                     </div>
                 )}
             </div>

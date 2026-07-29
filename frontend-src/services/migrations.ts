@@ -1,5 +1,6 @@
 import type { AppState } from '../types';
 import { INITIAL_SHORTCUTS } from '../constants';
+import { getDayOfWeek1a7 } from '../utils';
 
 // Sistema de migraciones del blob guardado (ver App.tsx::useDatabase).
 // Antes de esto, los campos nuevos de AppState se "rescataban" a mano con
@@ -10,7 +11,7 @@ import { INITIAL_SHORTCUTS } from '../constants';
 // que `schemaVersion` del estado cargado, y el resultado queda marcado con
 // CURRENT_SCHEMA_VERSION. Las migraciones son historial: no se editan ni
 // renumeran una vez publicadas, solo se añaden nuevas al final.
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 interface Migration {
     version: number;
@@ -64,6 +65,33 @@ const MIGRATIONS: Migration[] = [
                 }),
             })),
         }),
+    },
+    {
+        version: 3,
+        description: 'Añade periodIndex a las anotaciones del Diario de Clase: antes había una única anotación por (clase, día), ahora una por (clase, día, franja) para clases con varias sesiones el mismo día (p.ej. "otras ocupaciones" con más de un hueco diario). Las anotaciones antiguas se anclan a la primera franja de ese día de la semana que tenga la clase, o a 0 si no se encuentra ninguna.',
+        migrate: (state) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const classesById = new Map<string, any>((state.classes ?? []).map((c: any) => [c.id, c]));
+
+            return {
+                ...state,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                journalEntries: (state.journalEntries ?? []).map((entry: any) => {
+                    if (typeof entry.periodIndex === 'number') return entry;
+
+                    const cls = classesById.get(entry.classId);
+                    const dayOfWeek = getDayOfWeek1a7(new Date(entry.date + 'T00:00:00'));
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const slotsDelDia = (cls?.schedule ?? []).filter((s: any) => s.day === dayOfWeek);
+                    const periodIndex = slotsDelDia.length > 0
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        ? Math.min(...slotsDelDia.map((s: any) => s.periodIndex))
+                        : 0;
+
+                    return { ...entry, periodIndex };
+                }),
+            };
+        },
     },
 ];
 

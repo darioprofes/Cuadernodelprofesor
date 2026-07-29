@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import type { Meeting } from '../types';
 import { TrashIcon, PlusIcon, UsersIcon, PencilIcon } from './Icons';
 import { toYYYYMMDD, addDays, getDayOfWeek1a7, formatFechaEs } from '../utils';
@@ -12,6 +12,10 @@ import Button from './Button';
 interface ReunionesViewProps {
     meetings: Meeting[];
     setMeetings: (updater: React.SetStateAction<Meeting[]>) => void;
+    /** Id de una reunión a abrir en el formulario de edición en cuanto se
+     * monta esta vista (p.ej. al pinchar una reunión en la Agenda). */
+    openMeetingId?: string | null;
+    onOpened?: () => void;
 }
 
 const TIPO_LABEL: Record<Meeting['tipo'], string> = {
@@ -41,7 +45,7 @@ const finDeMes = (hoy: Date): string => toYYYYMMDD(new Date(hoy.getFullYear(), h
 // igual que en Tareas evaluables. "R. Tutores" (coordinación de tutores de
 // un nivel con Jefatura y Orientación) es un tipo más, distinto de una
 // tutoría 1 a 1 con familia/alumno.
-const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings }) => {
+const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, openMeetingId, onOpened }) => {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [fecha, setFecha] = useState(toYYYYMMDD(new Date()));
@@ -88,6 +92,15 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings }) 
         setSeguimiento(m.seguimiento || '');
         setIsFormOpen(true);
     };
+
+    // Llegada desde la Agenda con una reunión concreta que abrir.
+    useEffect(() => {
+        if (!openMeetingId) return;
+        const meeting = meetings.find(m => m.id === openMeetingId);
+        if (meeting) handleEdit(meeting);
+        onOpened?.();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [openMeetingId]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();

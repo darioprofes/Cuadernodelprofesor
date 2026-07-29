@@ -1,5 +1,6 @@
 
 import React, { ReactNode, useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import IconButton from './IconButton';
 import {
   MODAL_SIZE_CLASSES,
@@ -10,6 +11,8 @@ import {
   modalTitleClassName,
   type ModalSize,
 } from '../theme/components/Modal';
+import { PALETTE, type PaletteKey } from '../theme/palette';
+import { headerPatternStyle } from '../theme/headerPattern';
 
 interface ModalProps {
   isOpen: boolean;
@@ -17,9 +20,13 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   size?: ModalSize;
+  /** Cabecera en un color de acento fuerte (mismo sistema que las páginas
+   * principales) en vez del gris neutro por defecto — para modales que
+   * merece la pena destacar visualmente, p.ej. accesos rápidos. */
+  accent?: PaletteKey;
 }
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 'lg' }) => {
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 'lg', accent }) => {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartPos = useRef({ x: 0, y: 0 });
@@ -65,7 +72,12 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 
 
   if (!isOpen) return null;
 
-  return (
+  // Portal directo a document.body: si no, un modal anidado dentro de otro
+  // modal hereda como "contenedor" de position:fixed al panel del modal
+  // exterior (tiene un transform en línea para poder arrastrarlo, y
+  // transform en un ancestro rompe fixed — queda encajonado en el tamaño
+  // del modal exterior en vez de cubrir la pantalla entera).
+  return createPortal((
     <div className={modalOverlayClassName}>
       <div
         ref={modalRef}
@@ -75,10 +87,15 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 
       >
         <div
             className={modalHeaderClassName}
+            style={accent ? { backgroundColor: PALETTE[accent].header, ...headerPatternStyle } : undefined}
             onMouseDown={handleMouseDown}
         >
-          <h3 className={modalTitleClassName}>{title}</h3>
-          <IconButton label="Cerrar" onClick={onClose}>
+          <h3 className={modalTitleClassName} style={accent ? { color: '#ffffff' } : undefined}>{title}</h3>
+          <IconButton
+            label="Cerrar"
+            onClick={onClose}
+            className={accent ? 'text-white/80 hover:text-white hover:bg-white/10' : undefined}
+          >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -89,7 +106,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 };
 
 export default Modal;

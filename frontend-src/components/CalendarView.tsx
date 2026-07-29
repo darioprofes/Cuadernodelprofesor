@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, JournalEntry, EvaluationPeriod, Assignment, EvaluationCriterion, SpecificCompetence, KeyCompetence, SessionDetail, AgendaNote, Meeting } from '../types';
+import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, JournalEntry, EvaluationPeriod, Assignment, EvaluationCriterion, SpecificCompetence, KeyCompetence, SessionDetail, AgendaNote, Meeting, View } from '../types';
 import SessionActionModal from './SessionActionModal';
 import CalendarTaskModal from './CalendarTaskModal';
 import CalendarNoteModal from './CalendarNoteModal';
@@ -29,9 +29,12 @@ interface CalendarViewProps {
     setAgendaNotes: (updater: React.SetStateAction<AgendaNote[]>) => void;
     meetings: Meeting[];
     setMeetings: (updater: React.SetStateAction<Meeting[]>) => void;
+    setActiveView: (view: View) => void;
+    setActiveClassId: (id: string) => void;
+    onOpenMeeting: (meetingId: string) => void;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, academicConfiguration, classes, journalEntries, onUpdateClass, criteria, specificCompetences, keyCompetences, onSaveJournalEntry, agendaNotes, setAgendaNotes, meetings, setMeetings }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, academicConfiguration, classes, journalEntries, onUpdateClass, criteria, specificCompetences, keyCompetences, onSaveJournalEntry, agendaNotes, setAgendaNotes, meetings, setMeetings, setActiveView, setActiveClassId, onOpenMeeting }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<'month' | 'week' | 'day'>('month');
     const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -95,6 +98,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, a
         if (event.eventType === 'session') {
             setSelectedEvent(event);
             setIsActionModalOpen(true);
+        } else if (event.eventType === 'assignment') {
+            // Lleva directo a la página de la tarea en el Cuaderno de esa clase.
+            setActiveClassId(event.classId);
+            setActiveView('gradebook');
+        } else if (event.eventType === 'meeting' && event.meetingId) {
+            // Lleva a Reuniones con esa reunión concreta abierta para editar.
+            onOpenMeeting(event.meetingId);
+            setActiveView('meetings');
         }
     };
 
@@ -175,12 +186,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, a
         // it does NOT overwrite the original plan (ProgrammingUnit).
         if (selectedEvent) {
             const dateStr = toYYYYMMDD_UTC(selectedEvent.date);
-            const existingEntry = journalEntries.find(e => e.classId === selectedEvent.classId && e.date === dateStr);
+            // Los eventos de sesión (los únicos que pasan por aquí) siempre traen
+            // periodIndex; el fallback a 0 es solo para que el tipo cuadre.
+            const periodIndex = selectedEvent.periodIndex ?? 0;
+            const existingEntry = journalEntries.find(e => e.classId === selectedEvent.classId && e.date === dateStr && e.periodIndex === periodIndex);
 
             const newEntry: JournalEntry = {
                 id: existingEntry ? existingEntry.id : `j-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
                 classId: selectedEvent.classId,
                 date: dateStr,
+                periodIndex,
                 notes: newDescription
             };
 
@@ -220,8 +235,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, a
         if (view === 'day') setCurrentDate(addDaysUTC(currentDate, 1));
     };
 
-    const handleToday = () => {
-        setCurrentDate(new Date());
+    const handleJumpToDate = (dateStr: string) => {
+        setCurrentDate(new Date(dateStr + 'T00:00:00Z'));
     };
 
     const getPeriodForDate = useMemo(() => {
@@ -255,7 +270,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, a
                     setView={setView}
                     onPrev={handlePrev}
                     onNext={handleNext}
-                    onToday={handleToday}
+                    onJumpToDate={handleJumpToDate}
                 />
                 {view === 'month' && (
                     <MonthView

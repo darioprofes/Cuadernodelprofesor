@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import type { ClassData, Course, AcademicConfiguration, View } from '../types';
-import { getMateria, getSiglas, addDays, getClassAccentColor } from '../utils';
+import { getMateria, getSiglas, addDays, getClassAccentColor, toYYYYMMDD } from '../utils';
 import { CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon } from './Icons';
 import { PALETTE } from '../theme/palette';
 import { tableBaseClassName, tableCellClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../theme/components/Table';
 import EmptyState from './EmptyState';
 import { pageHeaderMinHeight } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
+import DateNavButton from './DateNavButton';
 
 interface HorarioViewProps {
     classes: ClassData[];
@@ -58,6 +59,17 @@ const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicCon
         return `${rango}, ${anio}`;
     }, [inicioSemana, finSemana]);
 
+    // El horario es una plantilla semanal recurrente (arriba): elegir una
+    // fecha aquí no cambia el contenido, solo salta a la semana a la que
+    // pertenece esa fecha (igual que hacían antes las flechas, pero directo
+    // en vez de una a una).
+    const handleJumpToDate = (dateStr: string) => {
+        const picked = new Date(dateStr + 'T00:00:00');
+        const pickedWeekStart = startOfWeekMonday(picked);
+        const diffDays = Math.round((pickedWeekStart.getTime() - inicioSemanaReal.getTime()) / 86400000);
+        setWeekOffset(Math.round(diffDays / 7));
+    };
+
     const grid = useMemo(() => {
         const map = new Map<string, { classId: string; aula?: string; nota?: string }>();
         classes.forEach(c => {
@@ -96,22 +108,32 @@ const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicCon
                     </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                    <button
-                        onClick={() => setWeekOffset(0)}
-                        className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-white hover:bg-white/90 text-slate-700"
-                    >
-                        Hoy
-                    </button>
                     <button onClick={() => setWeekOffset(w => w - 1)} className="p-1.5 rounded-lg bg-white hover:bg-white/90 text-slate-600" title="Semana anterior">
                         <ChevronLeftIcon className="w-4 h-4" />
                     </button>
+                    <DateNavButton
+                        value={toYYYYMMDD(inicioSemana)}
+                        onChange={handleJumpToDate}
+                        title="Ir a la semana de una fecha concreta"
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-sm font-medium text-slate-700 hover:bg-white/90"
+                        label={
+                            <>
+                                <CalendarDaysIcon className="w-4 h-4 text-slate-400" />
+                                {rangoTexto}
+                            </>
+                        }
+                    />
                     <button onClick={() => setWeekOffset(w => w + 1)} className="p-1.5 rounded-lg bg-white hover:bg-white/90 text-slate-600" title="Semana siguiente">
                         <ChevronRightIcon className="w-4 h-4" />
                     </button>
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-sm font-medium text-slate-700">
-                        <CalendarDaysIcon className="w-4 h-4 text-slate-400" />
-                        {rangoTexto}
-                    </div>
+                    {weekOffset !== 0 && (
+                        <button
+                            onClick={() => setWeekOffset(0)}
+                            className="text-xs font-semibold text-white/90 hover:text-white underline underline-offset-2"
+                        >
+                            Ir a esta semana
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -135,31 +157,51 @@ const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicCon
                                     const detalle = [slot?.aula, slot?.nota].filter(Boolean).join(' · ');
                                     const materia = cls ? getMateria(cls, courses) : '';
                                     const color = cls ? getClassAccentColor(materia, cls.colorAcento) : null;
+                                    // Las "otras ocupaciones" (guardias, reuniones, recreo...) no tienen
+                                    // alumnado ni Cuaderno que abrir — la celda se muestra igual pero sin
+                                    // convertirla en enlace.
+                                    const course = cls ? courses.find(c => c.id === cls.courseId) : undefined;
+                                    const esAcademica = course?.type !== 'other';
+                                    const contenidoCelda = cls && color ? (
+                                        <>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                {cls.grupo && (
+                                                    <span
+                                                        className="inline-block px-1.5 py-0.5 rounded text-xs font-mono font-semibold"
+                                                        style={{ backgroundColor: color.pillBg, color: color.text }}
+                                                    >
+                                                        {cls.grupo}
+                                                    </span>
+                                                )}
+                                                <span className="text-sm font-semibold" style={{ color: color.text }}>
+                                                    {getSiglas(materia)}
+                                                </span>
+                                            </div>
+                                            {detalle && <div className="text-xs text-slate-500 mt-0.5 truncate">{detalle}</div>}
+                                        </>
+                                    ) : null;
                                     return (
                                         <td key={`${day.value}-${periodIndex}`} className="p-1.5 align-top">
                                             {cls && color ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleOpenCuaderno(cls.id)}
-                                                    className="w-full min-h-[2.75rem] p-1.5 rounded-lg text-left transition-[filter] hover:brightness-95"
-                                                    style={{ backgroundColor: color.cellBg }}
-                                                    title={materia}
-                                                >
-                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                        {cls.grupo && (
-                                                            <span
-                                                                className="inline-block px-1.5 py-0.5 rounded text-xs font-mono font-semibold"
-                                                                style={{ backgroundColor: color.pillBg, color: color.text }}
-                                                            >
-                                                                {cls.grupo}
-                                                            </span>
-                                                        )}
-                                                        <span className="text-sm font-semibold" style={{ color: color.text }}>
-                                                            {getSiglas(materia)}
-                                                        </span>
+                                                esAcademica ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleOpenCuaderno(cls.id)}
+                                                        className="w-full min-h-[2.75rem] p-1.5 rounded-lg text-left transition-[filter] hover:brightness-95"
+                                                        style={{ backgroundColor: color.cellBg }}
+                                                        title={materia}
+                                                    >
+                                                        {contenidoCelda}
+                                                    </button>
+                                                ) : (
+                                                    <div
+                                                        className="w-full min-h-[2.75rem] p-1.5 rounded-lg text-left"
+                                                        style={{ backgroundColor: color.cellBg }}
+                                                        title={materia}
+                                                    >
+                                                        {contenidoCelda}
                                                     </div>
-                                                    {detalle && <div className="text-xs text-slate-500 mt-0.5 truncate">{detalle}</div>}
-                                                </button>
+                                                )
                                             ) : (
                                                 <div className="min-h-[2.75rem]" />
                                             )}
