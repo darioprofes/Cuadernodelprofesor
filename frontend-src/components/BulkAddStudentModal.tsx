@@ -27,13 +27,23 @@ const parseName = (raw: string): { name: string; nombre: string; primerApellido:
     const trimmed = raw.trim();
     const commaIdx = trimmed.indexOf(',');
     if (commaIdx !== -1) {
+        // Formato preferido: "Apellido1 Apellido2, Nombre"
         const apellidosPart = trimmed.slice(0, commaIdx).trim();
         const nombrePart = trimmed.slice(commaIdx + 1).trim();
         const words = apellidosPart.split(/\s+/);
         const primerApellido = words[0] || '';
         const segundoApellido = words.slice(1).join(' ');
         const name = [primerApellido, segundoApellido, nombrePart].filter(Boolean).join(' ');
-        return { name, nombre: nombrePart, primerApellido, segundoApellido };
+        return { name: name || trimmed, nombre: nombrePart, primerApellido, segundoApellido };
+    }
+    // Formato alternativo sin coma: "Nombre Apellido1 Apellido2"
+    const words = trimmed.split(/\s+/);
+    if (words.length >= 2) {
+        const nombre = words[0];
+        const primerApellido = words[1];
+        const segundoApellido = words.slice(2).join(' ');
+        const name = [primerApellido, segundoApellido, nombre].filter(Boolean).join(' ');
+        return { name, nombre, primerApellido, segundoApellido };
     }
     return { name: trimmed, nombre: '', primerApellido: '', segundoApellido: '' };
 };
@@ -165,9 +175,14 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
                         id="student-paste-area"
                         value={rawText}
                         onChange={e => setRawText(e.target.value)}
-                        placeholder="Copia y pega (o escribe) una lista de nombres aquí, uno por línea, y pulsa 'Procesar lista'."
-                        className="mt-1 min-h-[100px]"
+                        placeholder={"Apellido1 Apellido2, Nombre\nApellido1 Apellido2, Nombre\n…"}
+                        className="mt-1 min-h-[100px] font-mono text-sm"
                     />
+                    <p className="mt-1 text-xs text-slate-500">
+                        Formato preferido: <code className="bg-slate-100 px-1 rounded">Apellido1 Apellido2, Nombre</code> (un alumno/a por línea).
+                        También se acepta <code className="bg-slate-100 px-1 rounded">Nombre Apellido1 Apellido2</code> sin coma.
+                        Puedes corregir los campos antes de guardar.
+                    </p>
                     <button
                         type="button"
                         onClick={handleProcesarTexto}
