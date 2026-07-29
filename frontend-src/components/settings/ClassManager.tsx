@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { AcademicConfiguration, ClassData, Category, Course, Student } from '../../types';
-import { ACNEAE_TAGS } from '../../constants';
 import { formatClassLabel } from '../../utils';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, UserCircleIcon } from '../Icons';
 import ClassModal from '../ClassModal';
@@ -9,68 +8,8 @@ import StudentPersonalDataModal from '../StudentPersonalDataModal';
 import IconButton from '../IconButton';
 import Button from '../Button';
 import Select from '../Select';
-import { checkboxClassName } from '../../theme/components/Input';
 import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../../theme/components/Table';
 
-interface AcneaeSelectorProps {
-    selected: Set<string>;
-    onChange: (newSelection: Set<string>) => void;
-}
-
-const AcneaeSelector: React.FC<AcneaeSelectorProps> = ({ selected, onChange }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const wrapperRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
-        }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [wrapperRef]);
-
-    const handleTagChange = (tag: string, checked: boolean) => {
-        const newSelection = new Set(selected);
-        if (checked) {
-            newSelection.add(tag);
-        } else {
-            newSelection.delete(tag);
-        }
-        onChange(newSelection);
-    };
-
-    return (
-        <div className="relative" ref={wrapperRef}>
-            <button
-                type="button"
-                onClick={() => setIsOpen(!isOpen)}
-                className="px-3 py-1.5 border border-slate-300 rounded-md text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-                ACNEAE ({selected.size})
-            </button>
-            {isOpen && (
-                <div className="absolute z-20 mt-1 w-64 bg-white shadow-lg border rounded-md p-2 right-0">
-                    <p className="text-xs font-bold mb-2">Seleccionar Medidas</p>
-                    <div className="grid grid-cols-2 gap-2">
-                        {ACNEAE_TAGS.map(tag => (
-                            <label key={tag} className="flex items-center space-x-2 text-xs cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={selected.has(tag)}
-                                    onChange={e => handleTagChange(tag, e.target.checked)}
-                                    className={checkboxClassName}
-                                />
-                                <span>{tag}</span>
-                            </label>
-                        ))}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
 
 interface StudentRowProps {
     student: Student;
@@ -85,10 +24,6 @@ interface StudentRowProps {
 const StudentRow: React.FC<StudentRowProps> = ({ student, onUpdate, onDelete, onReorder, onOpenFicha, index, totalStudents }) => {
     const [name, setName] = useState(student.name);
 
-    const handleAcneaeChange = (newAcneae: Set<string>) => {
-        onUpdate(student.id, { acneae: Array.from(newAcneae) });
-    };
-
     return (
         <tr className={tableRowClassName}>
             <td className="p-3 text-center text-slate-500">{index + 1}</td>
@@ -102,7 +37,14 @@ const StudentRow: React.FC<StudentRowProps> = ({ student, onUpdate, onDelete, on
                 />
             </td>
             <td className="p-3">
-                 <AcneaeSelector selected={new Set(student.acneae)} onChange={handleAcneaeChange} />
+                <div className="flex flex-wrap gap-1">
+                    {student.acneae.length > 0
+                        ? student.acneae.map(tag => (
+                            <span key={tag} className="px-1.5 py-0.5 text-xs bg-slate-100 text-slate-600 rounded">{tag}</span>
+                          ))
+                        : <span className="text-slate-400 text-xs">—</span>
+                    }
+                </div>
             </td>
              <td className="p-3 text-right">
                 <div className="inline-flex items-center gap-1">

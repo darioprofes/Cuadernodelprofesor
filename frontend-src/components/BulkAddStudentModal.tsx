@@ -135,6 +135,7 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
     return (
         <Modal isOpen={isOpen} onClose={handleClose} title="Añadir Alumnado en Lote" size="2xl">
             <div className="space-y-4">
+                {students.length === 0 && (
                 <div>
                     <label htmlFor="student-paste-area" className="block text-sm font-medium text-slate-700">
                         Pega aquí el listado de alumnado
@@ -155,6 +156,7 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
                         Procesar lista
                     </button>
                 </div>
+                )}
 
                 {students.length > 0 && (
                     <div>

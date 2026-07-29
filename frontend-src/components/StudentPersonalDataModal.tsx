@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Student, Tutor } from '../types';
+import { ACNEAE_TAGS } from '../constants';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -7,6 +8,7 @@ import Textarea from './Textarea';
 import { TrashIcon, ChevronRightIcon, ChevronDownIcon } from './Icons';
 import StudentPhotoAvatar from './StudentPhotoAvatar';
 import { fileToDataUrl } from '../utils';
+import { checkboxClassName } from '../theme/components/Input';
 
 interface StudentPersonalDataModalProps {
     isOpen: boolean;
@@ -15,7 +17,7 @@ interface StudentPersonalDataModalProps {
     onSave: (studentId: string, data: Partial<Student>) => void;
 }
 
-type FormState = Omit<Student, 'id' | 'name' | 'acneae'>;
+type FormState = Omit<Student, 'id' | 'name'>;
 
 const emptyTutor: Tutor = { nombre: '', relacion: '', telefono: '', email: '' };
 
@@ -26,7 +28,7 @@ const emptyTutor: Tutor = { nombre: '', relacion: '', telefono: '', email: '' };
 // Sanitaria/Autorizaciones, más sensibles y menos consultadas a diario) para
 // no convertir esto en un formulario interminable de un solo vistazo.
 const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isOpen, onClose, student, onSave }) => {
-    const [form, setForm] = useState<FormState>({});
+    const [form, setForm] = useState<FormState>({ acneae: [] });
 
     useEffect(() => {
         if (isOpen && student) {
@@ -50,6 +52,7 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                 medicacionHabitual: student.medicacionHabitual || '',
                 intoleranciasAlimentarias: student.intoleranciasAlimentarias || '',
                 observacionesSanitarias: student.observacionesSanitarias || '',
+                acneae: student.acneae || [],
                 neae: student.neae,
                 neaeDetalle: student.neaeDetalle || '',
                 medidasEducativas: student.medidasEducativas || '',
@@ -101,6 +104,7 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
             medicacionHabitual: trimOrUndef(form.medicacionHabitual),
             intoleranciasAlimentarias: trimOrUndef(form.intoleranciasAlimentarias),
             observacionesSanitarias: trimOrUndef(form.observacionesSanitarias),
+            acneae: form.acneae || [],
             neae: form.neae,
             neaeDetalle: trimOrUndef(form.neaeDetalle),
             medidasEducativas: trimOrUndef(form.medidasEducativas),
@@ -208,6 +212,24 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                     <div className="space-y-3">
                         <Field label="¿Presenta necesidades específicas de apoyo educativo (NEAE)?">
                             <SiNoToggle value={form.neae} onChange={v => set({ neae: v })} />
+                        </Field>
+                        <Field label="Anotaciones ACNEAE">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 mt-1 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                {ACNEAE_TAGS.map(tag => (
+                                    <label key={tag} className="flex items-center gap-2 text-xs cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={(form.acneae || []).includes(tag)}
+                                            onChange={e => {
+                                                const current = form.acneae || [];
+                                                set({ acneae: e.target.checked ? [...current, tag] : current.filter(t => t !== tag) });
+                                            }}
+                                            className={checkboxClassName}
+                                        />
+                                        <span>{tag}</span>
+                                    </label>
+                                ))}
+                            </div>
                         </Field>
                         <Field label="En caso afirmativo, indicar">
                             <Input type="text" value={form.neaeDetalle || ''} onChange={e => set({ neaeDetalle: e.target.value })} className={inputClass} />
