@@ -3,6 +3,7 @@ import type { ClassData, Course, AcademicConfiguration, View, EvaluationCriterio
 import { UserGroupIcon, ClockIcon, BookOpenIcon, ChevronDownIcon, CalendarDaysIcon, AcademicCapIcon } from './Icons';
 import PageHeader from './PageHeader';
 import StudentSummaryModal from './StudentSummaryModal';
+import StudentPersonalDataModal from './StudentPersonalDataModal';
 import PlanoClaseModal from './PlanoClaseModal';
 import { getClassAccentColor, getMateria, getDayOfWeek1a7, parsePeriodRange } from '../utils';
 import { getClassIconComponent } from '../classIcons';
@@ -57,7 +58,23 @@ const StudentAvatar: React.FC<{ student: Student; bgColor: string; className?: s
 const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfiguration, criteria, specificCompetences, keyCompetences, onUpdateClass, setActiveView, setActiveClassId }) => {
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [fichaTarget, setFichaTarget] = useState<{ student: Student; classData: ClassData } | null>(null);
+    const [fichaEditTarget, setFichaEditTarget] = useState<{ student: Student; classData: ClassData } | null>(null);
     const [planoTarget, setPlanoTarget] = useState<ClassData | null>(null);
+
+    const handleSaveFichaEdit = (studentId: string, data: Partial<Student>) => {
+        if (!fichaEditTarget) return;
+        const updatedClass: ClassData = {
+            ...fichaEditTarget.classData,
+            students: fichaEditTarget.classData.students.map(s => s.id === studentId ? { ...s, ...data } : s),
+        };
+        onUpdateClass(updatedClass);
+        setFichaEditTarget(prev => prev ? { ...prev, classData: updatedClass } : null);
+    };
+
+    const openFichaEdit = (e: React.MouseEvent, student: Student, classData: ClassData) => {
+        e.preventDefault();
+        setFichaEditTarget({ student, classData });
+    };
 
     const academicCourseIds = new Set(courses.filter(c => c.type !== 'other').map(c => c.id));
     const academicClasses = classes.filter(c => academicCourseIds.has(c.courseId));
@@ -204,7 +221,8 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                                             <button
                                                 key={s.id}
                                                 onClick={() => setFichaTarget({ student: s, classData: cls })}
-                                                title={s.name}
+                                                onContextMenu={e => openFichaEdit(e, s, cls)}
+                                                title={`${s.name} · clic: resumen · clic derecho: editar ficha`}
                                                 className="hover:opacity-80"
                                             >
                                                 <StudentAvatar student={s} bgColor={accent.headerBg} />
@@ -232,7 +250,8 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                                                     <button
                                                         key={s.id}
                                                         onClick={() => setFichaTarget({ student: s, classData: cls })}
-                                                        title={s.name}
+                                                        onContextMenu={e => openFichaEdit(e, s, cls)}
+                                                        title={`${s.name} · clic: resumen · clic derecho: editar ficha`}
                                                         className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-full border border-slate-200 hover:bg-slate-50 hover:border-blue-300 transition-colors"
                                                     >
                                                         <StudentAvatar student={s} bgColor={accent.headerBg} />
@@ -264,6 +283,13 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                 );
             })}
         </div>
+
+        <StudentPersonalDataModal
+            isOpen={!!fichaEditTarget}
+            onClose={() => setFichaEditTarget(null)}
+            student={fichaEditTarget?.student ?? null}
+            onSave={handleSaveFichaEdit}
+        />
 
         {fichaTarget && (
             <StudentSummaryModal
