@@ -49,7 +49,10 @@ export interface Tutor {
 // fechaNacimiento, tampoco se guarda.
 export interface Student {
   id:string;
-  name: string;
+  name: string;   // nombre completo — se reconstruye de las partes al guardar desde la ficha
+  nombre?: string;         // nombre de pila
+  primerApellido?: string;
+  segundoApellido?: string;
   acneae: string[]; // For educational needs tags: ['RE', 'ACS']
   foto?: string; // data URL (base64), embebida en el propio blob SQLite
   fechaNacimiento?: string; // YYYY-MM-DD

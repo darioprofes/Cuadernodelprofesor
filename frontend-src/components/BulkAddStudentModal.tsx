@@ -11,14 +11,32 @@ import { ACNEAE_TAGS } from '../constants';
 interface TempStudent {
     id: number;
     name: string;
+    nombre: string;
+    primerApellido: string;
+    segundoApellido: string;
     acneae: Set<string>;
 }
 
 interface BulkAddStudentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (students: { name: string; acneae: string[] }[]) => void;
+    onSave: (students: { name: string; nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => void;
 }
+
+const parseName = (raw: string): { name: string; nombre: string; primerApellido: string; segundoApellido: string } => {
+    const trimmed = raw.trim();
+    const commaIdx = trimmed.indexOf(',');
+    if (commaIdx !== -1) {
+        const apellidosPart = trimmed.slice(0, commaIdx).trim();
+        const nombrePart = trimmed.slice(commaIdx + 1).trim();
+        const words = apellidosPart.split(/\s+/);
+        const primerApellido = words[0] || '';
+        const segundoApellido = words.slice(1).join(' ');
+        const name = [primerApellido, segundoApellido, nombrePart].filter(Boolean).join(' ');
+        return { name, nombre: nombrePart, primerApellido, segundoApellido };
+    }
+    return { name: trimmed, nombre: '', primerApellido: '', segundoApellido: '' };
+};
 
 const AcneaeSelector: React.FC<{ selected: Set<string>; onChange: (newSelection: Set<string>) => void }> = ({ selected, onChange }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -89,19 +107,19 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
     // normal y un botón explícito "Procesar lista" hace el troceado,
     // así que funciona sin importar cómo haya llegado el texto ahí.
     const handleProcesarTexto = () => {
-        const names = rawText.split('\n').map(name => name.trim()).filter(name => name.length > 0);
-        if (names.length === 0) return;
-        const newStudents: TempStudent[] = names.map((name, index) => ({
+        const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length === 0) return;
+        const newStudents: TempStudent[] = lines.map((line, index) => ({
             id: Date.now() + index,
-            name: name,
+            ...parseName(line),
             acneae: new Set<string>(),
         }));
         setStudents(current => [...current, ...newStudents]);
         setRawText('');
     };
 
-    const handleNameChange = (id: number, newName: string) => {
-        setStudents(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s));
+    const patchStudent = (id: number, patch: Partial<TempStudent>) => {
+        setStudents(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
     };
 
     const handleAcneaeChange = (id: number, newAcneae: Set<string>) => {
@@ -114,11 +132,14 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
 
     const handleSave = () => {
         const studentsToSave = students
-            .filter(s => s.name.trim() !== '')
-            .map(s => ({
-                name: s.name.trim(),
-                acneae: Array.from(s.acneae)
-            }));
+            .filter(s => s.primerApellido.trim() || s.nombre.trim() || s.name.trim())
+            .map(s => {
+                const primerApellido = s.primerApellido.trim() || undefined;
+                const segundoApellido = s.segundoApellido.trim() || undefined;
+                const nombre = s.nombre.trim() || undefined;
+                const name = [primerApellido, segundoApellido, nombre].filter(Boolean).join(' ') || s.name.trim();
+                return { name, nombre, primerApellido, segundoApellido, acneae: Array.from(s.acneae) };
+            });
         
         if(studentsToSave.length > 0) {
             onSave(studentsToSave);
@@ -163,19 +184,34 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
                         <h4 className="text-sm font-medium text-slate-700 mb-2">Alumnado a añadir:</h4>
                         <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-2 bg-slate-50">
                             {students.map((student, index) => (
-                                <div key={student.id} className="flex items-center gap-2 p-1 bg-white rounded-md border">
-                                    <span className="font-semibold text-slate-500 w-6 text-center">{index + 1}.</span>
+                                <div key={student.id} className="flex items-center gap-1.5 p-1.5 bg-white rounded-md border">
+                                    <span className="font-semibold text-slate-400 w-5 text-center text-xs flex-shrink-0">{index + 1}</span>
                                     <Input
                                         type="text"
-                                        value={student.name}
-                                        onChange={e => handleNameChange(student.id, e.target.value)}
-                                        className="flex-grow"
+                                        value={student.primerApellido}
+                                        onChange={e => patchStudent(student.id, { primerApellido: e.target.value })}
+                                        placeholder="1er apellido"
+                                        className="flex-1 min-w-0"
+                                    />
+                                    <Input
+                                        type="text"
+                                        value={student.segundoApellido}
+                                        onChange={e => patchStudent(student.id, { segundoApellido: e.target.value })}
+                                        placeholder="2º apellido"
+                                        className="flex-1 min-w-0"
+                                    />
+                                    <Input
+                                        type="text"
+                                        value={student.nombre}
+                                        onChange={e => patchStudent(student.id, { nombre: e.target.value })}
+                                        placeholder="Nombre"
+                                        className="flex-1 min-w-0"
                                     />
                                     <AcneaeSelector
                                         selected={student.acneae}
                                         onChange={newTags => handleAcneaeChange(student.id, newTags)}
                                     />
-                                    <button onClick={() => removeStudent(student.id)} className="p-2 text-slate-400 hover:text-red-500 rounded-full">
+                                    <button onClick={() => removeStudent(student.id)} className="p-1.5 text-slate-400 hover:text-red-500 rounded-full flex-shrink-0">
                                         <TrashIcon className="w-4 h-4" />
                                     </button>
                                 </div>

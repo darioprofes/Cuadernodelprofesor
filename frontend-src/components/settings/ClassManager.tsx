@@ -179,12 +179,15 @@ const ClassManager: React.FC<{
         }
     };
 
-    const handleBulkAddStudents = (newStudentData: { name: string; acneae: string[] }[]) => {
+    const handleBulkAddStudents = (newStudentData: { name: string; nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => {
         if (!activeClassId) return;
 
         const newStudents: Student[] = newStudentData.map((data, index) => ({
             id: `s-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 7)}`,
             name: data.name,
+            nombre: data.nombre,
+            primerApellido: data.primerApellido,
+            segundoApellido: data.segundoApellido,
             acneae: data.acneae,
         }));
 

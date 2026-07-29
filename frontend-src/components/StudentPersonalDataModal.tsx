@@ -17,7 +17,7 @@ interface StudentPersonalDataModalProps {
     onSave: (studentId: string, data: Partial<Student>) => void;
 }
 
-type FormState = Omit<Student, 'id' | 'name'>;
+type FormState = Omit<Student, 'id'>;
 
 const emptyTutor: Tutor = { nombre: '', relacion: '', telefono: '', email: '' };
 
@@ -28,11 +28,15 @@ const emptyTutor: Tutor = { nombre: '', relacion: '', telefono: '', email: '' };
 // Sanitaria/Autorizaciones, más sensibles y menos consultadas a diario) para
 // no convertir esto en un formulario interminable de un solo vistazo.
 const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isOpen, onClose, student, onSave }) => {
-    const [form, setForm] = useState<FormState>({ acneae: [] });
+    const [form, setForm] = useState<FormState>({ name: '', acneae: [] });
 
     useEffect(() => {
         if (isOpen && student) {
             setForm({
+                name: student.name,
+                nombre: student.nombre || '',
+                primerApellido: student.primerApellido || '',
+                segundoApellido: student.segundoApellido || '',
                 foto: student.foto,
                 fechaNacimiento: student.fechaNacimiento || '',
                 dni: student.dni || '',
@@ -84,7 +88,15 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        const nombreT = trimOrUndef(form.nombre);
+        const primerT = trimOrUndef(form.primerApellido);
+        const segundoT = trimOrUndef(form.segundoApellido);
+        const reconstructed = [primerT, segundoT, nombreT].filter(Boolean).join(' ');
         onSave(student.id, {
+            name: reconstructed || form.name || student.name,
+            nombre: nombreT,
+            primerApellido: primerT,
+            segundoApellido: segundoT,
             foto: form.foto,
             fechaNacimiento: trimOrUndef(form.fechaNacimiento),
             dni: trimOrUndef(form.dni),
@@ -135,6 +147,15 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
 
                 <FichaSection title="Datos del alumno/a" defaultOpen>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Field label="Primer apellido">
+                            <Input type="text" value={form.primerApellido || ''} onChange={e => set({ primerApellido: e.target.value })} className={inputClass} />
+                        </Field>
+                        <Field label="Segundo apellido">
+                            <Input type="text" value={form.segundoApellido || ''} onChange={e => set({ segundoApellido: e.target.value })} className={inputClass} />
+                        </Field>
+                        <Field label="Nombre de pila" className="sm:col-span-2">
+                            <Input type="text" value={form.nombre || ''} onChange={e => set({ nombre: e.target.value })} className={inputClass} />
+                        </Field>
                         <Field label="Fecha de nacimiento">
                             <Input type="date" value={form.fechaNacimiento || ''} onChange={e => set({ fechaNacimiento: e.target.value })} className={inputClass} />
                         </Field>
