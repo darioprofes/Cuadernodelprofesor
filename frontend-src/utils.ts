@@ -108,7 +108,7 @@ const CONECTORES = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'y', 'en', 'a
 export const getSiglas = (materia: string): string => {
     const limpio = materia.trim();
 
-    if (limpio.length <= 4) return limpio;
+    if (limpio.length <= 6) return limpio;
 
     const palabras = limpio
         .split(/[\s-]+/)
@@ -118,7 +118,7 @@ export const getSiglas = (materia: string): string => {
 
     if (siglas.length >= 2) return siglas;
 
-    return limpio.slice(0, 4).toUpperCase();
+    return limpio.slice(0, 6).toUpperCase();
 };
 
 // --- Fechas (hora local, no UTC — para "hoy" en el reloj del navegador) ---

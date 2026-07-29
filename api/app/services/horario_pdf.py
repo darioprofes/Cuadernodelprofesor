@@ -33,6 +33,58 @@ def _parsear_rango_horas_pdf(texto):
     return partes[0].strip(), partes[1].strip()
 
 
+def _a_minutos(hhmm):
+
+    h, m = hhmm.split(":")
+
+    return int(h) * 60 + int(m)
+
+
+def _completar_franjas_libres(filas):
+
+    # El PDF no imprime fila alguna para una franja sin ninguna actividad
+    # asignada en un día concreto: ni la propia franja horaria aparece en la
+    # tabla (p.ej. el hueco del recreo, que no tiene fila en ningún día).
+    # Se reconstruye la rejilla real de franjas del horario (unión de las
+    # horas que sí aparecen en cualquier día, más los huecos entre franjas
+    # consecutivas) y se rellena con "Libre" cualquier franja de esa rejilla
+    # que falte en un día que ya tiene alguna franja (no se inventan días
+    # enteros sin ninguna fila, por si ese día simplemente no es lectivo).
+
+    franjas_reales = sorted(
+        {(f["hora_inicio"], f["hora_fin"]) for f in filas},
+        key=lambda p: _a_minutos(p[0])
+    )
+
+    rejilla = list(franjas_reales)
+
+    for (_, fin_a), (ini_b, _) in zip(franjas_reales, franjas_reales[1:]):
+        if _a_minutos(fin_a) < _a_minutos(ini_b):
+            rejilla.append((fin_a, ini_b))
+
+    rejilla.sort(key=lambda p: _a_minutos(p[0]))
+
+    franjas_por_dia = {}
+
+    for f in filas:
+        franjas_por_dia.setdefault(f["dia"], set()).add((f["hora_inicio"], f["hora_fin"]))
+
+    for dia, ocupadas in franjas_por_dia.items():
+        for hora_inicio, hora_fin in rejilla:
+            if (hora_inicio, hora_fin) not in ocupadas:
+                filas.append({
+                    "dia": dia,
+                    "hora_inicio": hora_inicio,
+                    "hora_fin": hora_fin,
+                    "grupo": None,
+                    "asignatura": "Libre",
+                    "aula": None,
+                    "ensenanza": None
+                })
+
+    return filas
+
+
 def _fusionar_codigos_grupo(codigos):
 
     # Varias "Unidad" en la misma hora/día/materia son un único grupo
@@ -114,10 +166,11 @@ def extraer_filas_pdf(contenido_bytes):
                         errores.append(f"Horas no reconocidas en el PDF: '{p['horas']}'")
                         return
 
-                    asignatura = p["materia"] or p["actividad"]
-
-                    if not asignatura:
-                        return
+                    # Sin "Materia" ni "Actividad" es una franja libre (hora
+                    # sin docencia ni guardia asignada) tal cual la marca el
+                    # PDF oficial: se conserva como tal en vez de descartarla,
+                    # para que quede reflejada en el horario importado.
+                    asignatura = p["materia"] or p["actividad"] or "Libre"
 
                     if p["unidades"]:
                         grupo_nombre = _fusionar_codigos_grupo(p["unidades"])
@@ -185,5 +238,7 @@ def extraer_filas_pdf(contenido_bytes):
                         periodo_actual["ensenanzas"].append(ensenanza)
 
                 _flush()
+
+    filas_extraidas = _completar_franjas_libres(filas_extraidas)
 
     return filas_extraidas, errores

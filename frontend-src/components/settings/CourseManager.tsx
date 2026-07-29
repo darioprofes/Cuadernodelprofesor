@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import type { ClassData, Course } from '../../types';
-import { TrashIcon } from '../Icons';
+import { PencilIcon, TrashIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
+import IconButton from '../IconButton';
 
 const CourseManager: React.FC<{
     courses: Course[];
@@ -13,9 +14,33 @@ const CourseManager: React.FC<{
     const [newLevel, setNewLevel] = useState('1º ESO');
     const [newSubject, setNewSubject] = useState('');
     const [newOtherName, setNewOtherName] = useState('');
+    const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+    const [editLevel, setEditLevel] = useState('');
+    const [editSubject, setEditSubject] = useState('');
 
     const academicCourses = courses.filter(c => c.type !== 'other');
     const otherOccupations = courses.filter(c => c.type === 'other');
+
+    const handleStartEdit = (course: Course) => {
+        setEditingCourseId(course.id);
+        setEditLevel(course.level);
+        setEditSubject(course.subject);
+    };
+
+    const handleCancelEdit = () => {
+        setEditingCourseId(null);
+    };
+
+    const handleSaveEdit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (editSubject.trim() === '' || !editingCourseId) return;
+
+        setCourses(prev => prev.map(c => c.id === editingCourseId
+            ? { ...c, subject: editSubject.trim(), level: c.type === 'other' ? c.level : editLevel }
+            : c
+        ));
+        setEditingCourseId(null);
+    };
 
     const handleAddCourse = (e: React.FormEvent) => {
         e.preventDefault();
@@ -87,10 +112,32 @@ const CourseManager: React.FC<{
                     <h4 className="text-lg font-semibold text-slate-700 mb-2">Cursos Académicos</h4>
                     <div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50/50">
                         {academicCourses.length > 0 ? academicCourses.map(course => (
-                            <div key={course.id} className="flex items-center justify-between bg-white p-2 rounded-md border">
-                                <p><span className="font-semibold text-slate-700">{course.level}</span> - {course.subject}</p>
-                                <button onClick={() => handleDeleteCourse(course.id)} className="p-1 text-slate-400 hover:text-red-500 rounded-full" title="Eliminar curso"><TrashIcon className="w-4 h-4"/></button>
-                            </div>
+                            editingCourseId === course.id ? (
+                                <form key={course.id} onSubmit={handleSaveEdit} className="flex flex-col sm:flex-row items-end gap-2 bg-white p-2 rounded-md border">
+                                    <div className="w-full sm:w-auto flex-grow">
+                                        <Select value={editLevel} onChange={e => setEditLevel(e.target.value)} className="w-full">
+                                            <option>1º ESO</option> <option>2º ESO</option> <option>3º ESO</option> <option>4º ESO</option>
+                                            <option>3º ESO (PDC)</option> <option>4º ESO (PDC)</option>
+                                            <option>1º Bachillerato</option> <option>2º Bachillerato</option>
+                                        </Select>
+                                    </div>
+                                    <div className="w-full sm:w-auto flex-grow">
+                                        <Input type="text" value={editSubject} onChange={e => setEditSubject(e.target.value)} className="w-full" autoFocus/>
+                                    </div>
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                        <button type="submit" className="bg-blue-600 text-white text-sm font-semibold py-1.5 px-3 rounded-lg hover:bg-blue-700">Guardar</button>
+                                        <button type="button" onClick={handleCancelEdit} className="text-slate-500 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-100">Cancelar</button>
+                                    </div>
+                                </form>
+                            ) : (
+                                <div key={course.id} className="flex items-center justify-between bg-white p-2 rounded-md border">
+                                    <p><span className="font-semibold text-slate-700">{course.level}</span> - {course.subject}</p>
+                                    <div className="flex items-center gap-1">
+                                        <IconButton label="Editar curso" onClick={() => handleStartEdit(course)}><PencilIcon className="w-4 h-4"/></IconButton>
+                                        <IconButton label="Eliminar curso" tone="danger" onClick={() => handleDeleteCourse(course.id)}><TrashIcon className="w-4 h-4"/></IconButton>
+                                    </div>
+                                </div>
+                            )
                         )) : <p className="text-slate-500 text-center py-4">No hay cursos académicos definidos.</p>}
                     </div>
                     <form onSubmit={handleAddCourse} className="flex flex-col sm:flex-row items-end gap-2 p-3 border rounded-lg">
@@ -116,10 +163,25 @@ const CourseManager: React.FC<{
                     </p>
                      <div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50/50">
                         {otherOccupations.length > 0 ? otherOccupations.map(course => (
-                            <div key={course.id} className="flex items-center justify-between bg-white p-2 rounded-md border">
-                                <p>{course.subject}</p>
-                                <button onClick={() => handleDeleteCourse(course.id)} className="p-1 text-slate-400 hover:text-red-500 rounded-full" title="Eliminar ocupación"><TrashIcon className="w-4 h-4"/></button>
-                            </div>
+                            editingCourseId === course.id ? (
+                                <form key={course.id} onSubmit={handleSaveEdit} className="flex items-end gap-2 bg-white p-2 rounded-md border">
+                                    <div className="w-full flex-grow">
+                                        <Input type="text" value={editSubject} onChange={e => setEditSubject(e.target.value)} className="w-full" autoFocus/>
+                                    </div>
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                        <button type="submit" className="bg-green-600 text-white text-sm font-semibold py-1.5 px-3 rounded-lg hover:bg-green-700">Guardar</button>
+                                        <button type="button" onClick={handleCancelEdit} className="text-slate-500 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-100">Cancelar</button>
+                                    </div>
+                                </form>
+                            ) : (
+                                <div key={course.id} className="flex items-center justify-between bg-white p-2 rounded-md border">
+                                    <p>{course.subject}</p>
+                                    <div className="flex items-center gap-1">
+                                        <IconButton label="Editar ocupación" onClick={() => handleStartEdit(course)}><PencilIcon className="w-4 h-4"/></IconButton>
+                                        <IconButton label="Eliminar ocupación" tone="danger" onClick={() => handleDeleteCourse(course.id)}><TrashIcon className="w-4 h-4"/></IconButton>
+                                    </div>
+                                </div>
+                            )
                         )) : <p className="text-slate-500 text-center py-4">No hay otras ocupaciones definidas.</p>}
                     </div>
                     <form onSubmit={handleAddOtherOccupation} className="flex items-end gap-2 p-3 border rounded-lg">
