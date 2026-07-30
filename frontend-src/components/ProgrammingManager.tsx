@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import type { ProgrammingUnit, Course, SessionDetail, EvaluationCriterion, BasicKnowledge, ClassData, AcademicConfiguration } from '../types';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon } from './Icons';
 import Modal from './Modal';
@@ -8,11 +9,20 @@ import { TYPOGRAPHY } from '../theme/typography';
 import Select from './Select';
 import { checkboxClassName } from '../theme/components/Input';
 import { formatFechaEs } from '../utils';
+import { useProgrammingUnits, useCreateProgrammingUnit, useUpdateProgrammingUnit, useDeleteProgrammingUnit } from '../hooks/useProgrammingUnits';
+import { useEvaluationCriteria } from '../hooks/useEvaluationCriteria';
+import { useBasicKnowledge } from '../hooks/useBasicKnowledge';
 
 interface ProgrammingManagerProps {
     courses: Course[];
+    // units/setUnits: fallback de escritorio (blob) — en web el componente
+    // usa internamente useProgrammingUnits, igual que CurriculumManager hace
+    // con specificCompetences/evaluationCriteria/basicKnowledge (Fase 5
+    // fusionada, bloque 3), porque la consulta depende de selectedCourseId.
     units: ProgrammingUnit[];
     setUnits: (updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => void;
+    // criteria/basicKnowledge: mismo motivo, fallback de escritorio; en web
+    // se piden con useEvaluationCriteria/useBasicKnowledge por curso.
     criteria: EvaluationCriterion[];
     basicKnowledge: BasicKnowledge[];
     classes: ClassData[];
@@ -34,15 +44,30 @@ const addDays = (date: Date, days: number): Date => {
 
 
 const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courses, units, setUnits, criteria, basicKnowledge, classes, academicConfiguration }) => {
+    const isDesktop = isTauri();
     const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id || '');
     const [unitEditorState, setUnitEditorState] = useState<{ mode: 'create' } | { mode: 'edit', unit: ProgrammingUnit } | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
 
+    const remoteUnits = useProgrammingUnits(selectedCourseId, { enabled: !isDesktop });
+    const createUnitMutation = useCreateProgrammingUnit();
+    const updateUnitMutation = useUpdateProgrammingUnit();
+    const deleteUnitMutation = useDeleteProgrammingUnit();
+    const remoteCriteria = useEvaluationCriteria(selectedCourseId, { enabled: !isDesktop });
+    const remoteBasicKnowledge = useBasicKnowledge(selectedCourseId, { enabled: !isDesktop });
+
     const selectedCourse = useMemo(() => courses.find(c => c.id === selectedCourseId), [courses, selectedCourseId]);
-    
-    const filteredUnits = useMemo(() => units.filter(u => u.courseId === selectedCourseId), [units, selectedCourseId]);
-    const filteredCriteria = useMemo(() => criteria.filter(c => c.courseId === selectedCourseId), [criteria, selectedCourseId]);
-    const filteredBasicKnowledge = useMemo(() => basicKnowledge.filter(sb => sb.courseId === selectedCourseId), [basicKnowledge, selectedCourseId]);
+
+    const filteredUnits = useMemo(() => {
+        if (isDesktop) return units.filter(u => u.courseId === selectedCourseId);
+        return (remoteUnits.data ?? []) as unknown as ProgrammingUnit[];
+    }, [isDesktop, units, remoteUnits.data, selectedCourseId]);
+    const filteredCriteria = useMemo(() => {
+        return isDesktop ? criteria.filter(c => c.courseId === selectedCourseId) : (remoteCriteria.data ?? []);
+    }, [isDesktop, criteria, remoteCriteria.data, selectedCourseId]);
+    const filteredBasicKnowledge = useMemo(() => {
+        return isDesktop ? basicKnowledge.filter(sb => sb.courseId === selectedCourseId) : (remoteBasicKnowledge.data ?? []);
+    }, [isDesktop, basicKnowledge, remoteBasicKnowledge.data, selectedCourseId]);
 
     const unitDateRanges = useMemo(() => {
         const ranges = new Map<string, { start?: Date, end?: Date }>();
@@ -58,7 +83,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courses, units,
             });
         };
 
-        const unitsForCourse = units.filter(u => u.courseId === selectedCourseId);
+        const unitsForCourse = filteredUnits;
         const classesForCourse = classes.filter(c => c.courseId === selectedCourseId);
         
         // We calculate valid school dates first
@@ -139,27 +164,47 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courses, units,
         });
 
         return ranges;
-    }, [selectedCourseId, classes, academicConfiguration, units]);
+    }, [selectedCourseId, classes, academicConfiguration, filteredUnits]);
 
 
     const handleSave = (unit: ProgrammingUnit) => {
+        if (isDesktop) {
+            if (unitEditorState?.mode === 'edit') {
+                setUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
+            } else { // create
+                const newUnit: ProgrammingUnit = {
+                    ...unit,
+                    id: `pu-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                    courseId: selectedCourseId,
+                };
+                setUnits(prev => [...prev, newUnit]);
+            }
+            setUnitEditorState(null);
+            return;
+        }
+
+        const data = {
+            name: unit.name,
+            sessions: unit.sessions,
+            startDate: unit.startDate || undefined,
+            sessionDetails: unit.sessionDetails,
+            linkedCriteriaIds: unit.linkedCriteriaIds,
+            linkedBasicKnowledgeIds: unit.linkedBasicKnowledgeIds,
+        };
         if (unitEditorState?.mode === 'edit') {
-            setUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
-        } else { // create
-             const newUnit: ProgrammingUnit = {
-                ...unit,
-                id: `pu-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-                courseId: selectedCourseId,
-            };
-            setUnits(prev => [...prev, newUnit]);
+            updateUnitMutation.mutate({ id: unit.id, courseId: selectedCourseId, data }, { onSuccess: () => setUnitEditorState(null) });
+        } else {
+            createUnitMutation.mutate({ courseId: selectedCourseId, data }, { onSuccess: () => setUnitEditorState(null) });
         }
-        setUnitEditorState(null);
     };
-    
+
     const handleDelete = (unitId: string) => {
-        if (window.confirm("¿Seguro que quieres eliminar esta unidad de programación?")) {
+        if (!window.confirm("¿Seguro que quieres eliminar esta unidad de programación?")) return;
+        if (isDesktop) {
             setUnits(prev => prev.filter(u => u.id !== unitId));
+            return;
         }
+        deleteUnitMutation.mutate({ id: unitId, courseId: selectedCourseId });
     };
 
     const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,7 +222,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courses, units,
         if (event.target) event.target.value = '';
     };
 
-    const parseAndImportCSV = (csvText: string) => {
+    const parseAndImportCSV = async (csvText: string) => {
         try {
             const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
             if (lines.length < 2) {
@@ -264,7 +309,23 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courses, units,
             }
 
             if (newUnits.length > 0) {
-                setUnits(prev => [...prev, ...newUnits]);
+                if (isDesktop) {
+                    setUnits(prev => [...prev, ...newUnits]);
+                } else {
+                    for (const u of newUnits) {
+                        await createUnitMutation.mutateAsync({
+                            courseId: selectedCourseId,
+                            data: {
+                                name: u.name,
+                                sessions: u.sessions,
+                                startDate: u.startDate,
+                                sessionDetails: u.sessionDetails,
+                                linkedCriteriaIds: u.linkedCriteriaIds,
+                                linkedBasicKnowledgeIds: u.linkedBasicKnowledgeIds,
+                            },
+                        });
+                    }
+                }
                 alert(`Se han importado ${newUnits.length} unidades correctamente al curso seleccionado.`);
                 setShowImportHelp(false);
             } else {
