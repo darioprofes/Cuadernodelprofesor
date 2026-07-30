@@ -20,6 +20,10 @@ export interface SettingsModalProps {
     onOpenExportModal: () => void;
     courses: Course[];
     setCourses: (updater: React.SetStateAction<Course[]>) => void;
+    // Materias del backend nuevo (bloque 3) — solo para CurriculumManager/
+    // ProgrammingManager, distintas de `courses` (blob viejo, todo lo demás).
+    curriculumCourses: Course[];
+    onUpdateCourse: (id: string, data: Partial<{ level: string; subject: string; type: 'academic' | 'other'; pesoCriteriosManual: boolean }>) => Promise<void>;
     classes: ClassData[];
     setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
     keyCompetences: KeyCompetence[];
@@ -53,7 +57,7 @@ export interface SettingsModalProps {
 type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'academicYears' | 'curriculum' | 'planner' | 'evaluationTools' | 'backup';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
-    const { isOpen, onClose, classes, setClasses, courses, setCourses, onOpenExportModal, academicConfiguration, setAcademicConfiguration, programmingUnits, setProgrammingUnits, evaluationTools, onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria } = props;
+    const { isOpen, onClose, classes, setClasses, courses, setCourses, curriculumCourses, onUpdateCourse, onOpenExportModal, academicConfiguration, setAcademicConfiguration, programmingUnits, setProgrammingUnits, evaluationTools, onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria } = props;
     const [activeView, setActiveView] = useState<SettingsView>('academicConfig');
 
     const renderView = () => {
@@ -69,10 +73,10 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
             case 'academicYears':
                 return <AcademicYearManager />;
             case 'curriculum':
-                return <CurriculumManager {...props} />;
+                return <CurriculumManager {...props} courses={curriculumCourses} onUpdateCourse={onUpdateCourse} />;
             case 'planner':
                 return <ProgrammingManager
-                    courses={courses}
+                    courses={curriculumCourses}
                     units={programmingUnits}
                     setUnits={setProgrammingUnits}
                     criteria={props.evaluationCriteria}

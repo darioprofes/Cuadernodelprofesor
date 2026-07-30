@@ -66,7 +66,7 @@ const roundToExactSum = (values: number[], targetSum: number): number[] => {
 
 interface CurriculumManagerProps {
     courses: Course[];
-    setCourses: (updater: React.SetStateAction<Course[]>) => void;
+    onUpdateCourse: (id: string, data: Partial<{ level: string; subject: string; type: 'academic' | 'other'; pesoCriteriosManual: boolean }>) => Promise<void>;
     keyCompetences: KeyCompetence[];
     onCreateKeyCompetence: (data: { code: string; description: string }) => Promise<KeyCompetence>;
     onUpdateKeyCompetence: (id: string, data: Partial<{ code: string; description: string }>) => Promise<void>;
@@ -93,7 +93,7 @@ interface CurriculumManagerProps {
 // basicKnowledge (pendientes de migrar, siguen en el blob).
 const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     const {
-        courses, setCourses, keyCompetences,
+        courses, onUpdateCourse, keyCompetences,
         onCreateKeyCompetence, onUpdateKeyCompetence, onDeleteKeyCompetence,
         onCreateDescriptor, onUpdateDescriptor, onDeleteDescriptor,
         specificCompetences, setSpecificCompetences, evaluationCriteria, setEvaluationCriteria, basicKnowledge, setBasicKnowledge,
@@ -726,7 +726,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                         const sumaCorrecta = Math.abs(totalWeight - 100) < 0.01;
 
                         const handleToggleRepartoManual = (manual: boolean) => {
-                            setCourses((prev: Course[]) => prev.map((c: Course) => c.id === selectedCourseId ? { ...c, pesoCriteriosManual: manual } : c));
+                            onUpdateCourse(selectedCourseId, { pesoCriteriosManual: manual });
                         };
 
                         const handleAjustarPesos = () => {

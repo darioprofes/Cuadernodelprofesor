@@ -11,6 +11,7 @@ import {
     useKeyCompetences, useCreateKeyCompetence, useUpdateKeyCompetence, useDeleteKeyCompetence,
     useCreateDescriptor, useUpdateDescriptor, useDeleteDescriptor,
 } from './hooks/useKeyCompetences';
+import { useCourses, useUpdateCourse } from './hooks/useCourses';
 import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, getInitialShortcuts } from './constants';
 import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, OperationalDescriptor, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
 import { runMigrations, CURRENT_SCHEMA_VERSION } from './services/migrations';
@@ -303,6 +304,14 @@ const App = () => {
     const createDescriptor = useCreateDescriptor();
     const updateDescriptor = useUpdateDescriptor();
     const deleteDescriptor = useDeleteDescriptor();
+    // "Materias" (nivel+asignatura) del backend nuevo — usadas SOLO por
+    // CurriculumManager/ProgrammingManager (bloque 3), no por el resto de la
+    // app: `courses`/`setCoursesCallback` (ver más abajo) siguen siendo el
+    // curso del blob viejo que usan ClassManager/CourseManager/GradebookTable
+    // etc. hasta que classes migre (bloque 4) — dos listas de cursos
+    // conviven a propósito durante la transición, ver plan.
+    const remoteCourses = useCourses({ enabled: !isDesktop });
+    const updateCourseMutation = useUpdateCourse();
 
     // --- UI State ---
     const [activeClassId, setActiveClassId] = useState<string>('');
@@ -568,6 +577,17 @@ const App = () => {
         await deleteDescriptor.mutateAsync(id);
     }, [isDesktop, setKeyCompetencesCallback, deleteDescriptor]);
 
+    // Único punto de escritura que CurriculumManager necesita sobre
+    // "materias" (el toggle de reparto manual de pesos) — alta/edición/
+    // borrado de materias vive en AcademicYearManager.tsx, no aquí.
+    const handleUpdateCourse = useCallback(async (id: string, data: Partial<{ level: string; subject: string; type: 'academic' | 'other'; pesoCriteriosManual: boolean }>): Promise<void> => {
+        if (isDesktop) {
+            setCoursesCallback(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+            return;
+        }
+        await updateCourseMutation.mutateAsync({ id, data });
+    }, [isDesktop, setCoursesCallback, updateCourseMutation]);
+
     // --- Render Logic ---
     if (loading) {
         return <div className="flex items-center justify-center min-h-screen bg-slate-100 text-slate-600">Cargando base de datos...</div>;
@@ -587,6 +607,10 @@ const App = () => {
     const shortcuts = isDesktop ? appState.shortcuts : (remoteShortcuts.data ?? []);
     const evaluationTools = isDesktop ? appState.evaluationTools : (remoteEvaluationTools.data ?? []);
     const keyCompetences = isDesktop ? appState.keyCompetences : (remoteKeyCompetences.data ?? []);
+    // Ver comentario junto a useCourses() más arriba: lista de materias
+    // separada de `courses` (el curso del blob viejo), solo para
+    // CurriculumManager/ProgrammingManager.
+    const curriculumCourses = isDesktop ? courses : (remoteCourses.data ?? []);
     const academicClasses = classes.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other');
 
     const renderContent = () => {
@@ -805,6 +829,8 @@ const App = () => {
                         onOpenExportModal={() => { setIsSettingsModalOpen(false); setIsExportModalOpen(true); }}
                         classes={classes} setClasses={setClassesCallback}
                         courses={courses} setCourses={setCoursesCallback}
+                        curriculumCourses={curriculumCourses}
+                        onUpdateCourse={handleUpdateCourse}
                         keyCompetences={keyCompetences}
                         onCreateKeyCompetence={handleCreateKeyCompetence}
                         onUpdateKeyCompetence={handleUpdateKeyCompetence}
