@@ -148,6 +148,7 @@ const ScheduleManager: React.FC<{
                     setCourses={setCourses}
                     classes={classes}
                     setClasses={setClasses}
+                    academicConfiguration={academicConfiguration}
                     setAcademicConfiguration={setAcademicConfiguration}
                 />
             )}

@@ -1,5 +1,5 @@
 import type { AppState } from '../types';
-import { INITIAL_SHORTCUTS } from '../constants';
+import { getInitialShortcuts } from '../constants';
 import { getDayOfWeek1a7 } from '../utils';
 
 // Sistema de migraciones del blob guardado (ver App.tsx::useDatabase).
@@ -35,7 +35,7 @@ const MIGRATIONS: Migration[] = [
             tasks: state.tasks ?? [],
             meetings: state.meetings ?? [],
             agendaNotes: state.agendaNotes ?? [],
-            shortcuts: state.shortcuts ?? INITIAL_SHORTCUTS,
+            shortcuts: state.shortcuts ?? getInitialShortcuts(),
         }),
     },
     {

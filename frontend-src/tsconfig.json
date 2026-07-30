@@ -34,5 +34,13 @@
     // contando como un error. Con esos tipos instalados, el recuento real
     // bajó a 2 (bugs genuinos, no de tipado implícito, ya corregidos).
     "strict": true
-  }
+  },
+  // src-tauri: proyecto Rust, no TypeScript — con allowJs activado, sin este
+  // exclude tsc intenta parsear los .js generados por el build de Tauri en
+  // src-tauri/target/ (binarios con extensión .js, no JS de verdad).
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src-tauri"
+  ]
 }

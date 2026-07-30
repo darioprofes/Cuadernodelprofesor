@@ -1,4 +1,4 @@
-import type { ClassData, Course, Student } from './types';
+import type { Category, ClassData, Course, EvaluationPeriod, Student } from './types';
 
 // Nombre para mostrar al usuario: orden natural "Nombre Apellido1 Apellido2"
 export const getNombreCompleto = (student: Student): string =>
@@ -33,6 +33,27 @@ export const mergePhotos = (classes: ClassData[], photos: Record<string, string>
         ...cls,
         students: cls.students.map(s => photos[s.id] ? { ...s, foto: photos[s.id] } : s),
     }));
+
+// Categorías de evaluación con las que arranca cualquier clase nueva, una
+// tanda por período de evaluación. Único punto de esta lista: usado tanto al
+// crear una clase a mano (ClassManager) como al crear una importando el
+// horario en PDF (ImportScheduleModal) — antes solo vivía en el primero, así
+// que las clases creadas por importación se quedaban sin categorías.
+const DEFAULT_CLASS_CATEGORIES = [
+    { name: 'Trabajo diario', weight: 30 },
+    { name: 'Tareas',         weight: 40 },
+    { name: 'Controles',      weight: 30 },
+];
+
+export const buildDefaultCategories = (evaluationPeriods: EvaluationPeriod[]): Category[] =>
+    evaluationPeriods.flatMap(p =>
+        DEFAULT_CLASS_CATEGORIES.map(dc => ({
+            id: crypto.randomUUID(),
+            name: dc.name,
+            weight: dc.weight,
+            evaluationPeriodId: p.id,
+        }))
+    );
 
 // Patrón "subir imagen -> data URL" reutilizado por varios pickers de icono/
 // foto (clase, acceso directo, ficha de alumno...) que antes reimplementaban

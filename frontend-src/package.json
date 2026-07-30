@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:tauri": "vite --port 3001 --strictPort",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",

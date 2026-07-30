@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { AcademicConfiguration, ClassData, Category, Course, Student } from '../../types';
-import { formatClassLabel, getNombreCompleto } from '../../utils';
+import type { AcademicConfiguration, ClassData, Course, Student } from '../../types';
+import { formatClassLabel, getNombreCompleto, buildDefaultCategories } from '../../utils';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, UserCircleIcon } from '../Icons';
 import ClassModal from '../ClassModal';
 import BulkAddStudentModal from '../BulkAddStudentModal';
@@ -54,12 +54,6 @@ const StudentRow: React.FC<StudentRowProps> = ({ student, onDelete, onReorder, o
         </tr>
     );
 };
-
-const DEFAULT_CATEGORIES = [
-    { name: 'Trabajo diario', weight: 30 },
-    { name: 'Tareas',         weight: 40 },
-    { name: 'Controles',      weight: 30 },
-];
 
 const ClassManager: React.FC<{
     classes: ClassData[];
@@ -134,19 +128,10 @@ const ClassManager: React.FC<{
         if (classToEdit) {
             setClasses(prev => prev.map(c => c.id === classToEdit.id ? { ...c, ...classData } : c));
         } else {
-            const periods = academicConfiguration.evaluationPeriods ?? [];
-            const defaultCategories: Category[] = periods.flatMap(p =>
-                DEFAULT_CATEGORIES.map(dc => ({
-                    id: crypto.randomUUID(),
-                    name: dc.name,
-                    weight: dc.weight,
-                    evaluationPeriodId: p.id,
-                }))
-            );
             const newClass: ClassData = {
                 ...classData,
                 students: [],
-                categories: defaultCategories,
+                categories: buildDefaultCategories(academicConfiguration.evaluationPeriods ?? []),
                 assignments: [],
                 grades: [],
                 schedule: [],

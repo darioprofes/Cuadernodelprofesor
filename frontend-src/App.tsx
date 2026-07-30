@@ -4,7 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import initSqlJs, { type Database } from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { dbAdapter, VersionConflictError } from './services/dbAdapter';
-import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, INITIAL_SHORTCUTS } from './constants';
+import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, getInitialShortcuts } from './constants';
 import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
 import { runMigrations, CURRENT_SCHEMA_VERSION } from './services/migrations';
 import ShortcutsBar from './components/ShortcutsBar';
@@ -93,7 +93,7 @@ function useDatabase() {
                         tasks: INITIAL_TASKS,
                         meetings: INITIAL_MEETINGS,
                         agendaNotes: INITIAL_AGENDA_NOTES,
-                        shortcuts: INITIAL_SHORTCUTS,
+                        shortcuts: getInitialShortcuts(),
                     };
                     const stateToStore = { ...initialState, classes: dbAdapter.stripPhotosForStorage(initialState.classes) };
                     db.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(stateToStore)]);
@@ -237,7 +237,7 @@ function useDatabase() {
                 tasks: [],
                 meetings: [],
                 agendaNotes: [],
-                shortcuts: INITIAL_SHORTCUTS,
+                shortcuts: getInitialShortcuts(),
             };
             dbRef.current.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(blankState)]);
             const binaryDb = dbRef.current.export();

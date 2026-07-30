@@ -5,7 +5,7 @@ import Button from './Button';
 import { ArrowUpTrayIcon } from './Icons';
 import ClassLabel from './ClassLabel';
 import type { ClassData, Course, AcademicConfiguration } from '../types';
-import { HUE_PRESETS } from '../utils';
+import { HUE_PRESETS, buildDefaultCategories } from '../utils';
 
 interface FilaHorario {
     dia: number; // 0=Lunes ... 4=Viernes (formato del backend)
@@ -24,6 +24,7 @@ interface ImportScheduleModalProps {
     setCourses: (updater: React.SetStateAction<Course[]>) => void;
     classes: ClassData[];
     setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
+    academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
 }
 
@@ -62,7 +63,7 @@ const normalizarNivel = (raw: string): string => {
 // que YA existían pero a los que esta importación no les toca ninguna
 // franja (ya no aparecen en el PDF actual): true los borra del todo
 // (alumnado y calificaciones incluidos), false los deja tal cual estaban.
-const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[], borrarAcademicasSinUsar: boolean) => {
+const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[], evaluationPeriods: AcademicConfiguration['evaluationPeriods'], borrarAcademicasSinUsar: boolean) => {
     // La materia puede venir vacía (franja sin nada asignado en el PDF,
     // p.ej. el recreo): se importa igual, sin nombre por defecto.
     const filasValidas = filas.filter(f => f.hora_inicio && f.hora_fin);
@@ -127,7 +128,7 @@ const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: Class
                 courseId,
                 colorAcento,
                 students: [],
-                categories: [],
+                categories: grupo !== undefined ? buildDefaultCategories(evaluationPeriods ?? []) : [],
                 assignments: [],
                 grades: [],
                 schedule: [],
@@ -190,7 +191,7 @@ const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: Class
     };
 };
 
-const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClose, courses, setCourses, classes, setClasses, setAcademicConfiguration }) => {
+const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClose, courses, setCourses, classes, setClasses, academicConfiguration, setAcademicConfiguration }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -237,7 +238,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
         }
     };
 
-    const plan = filas ? buildImportPlan(filas, courses, classes, borrarAcademicasSinUsar) : null;
+    const plan = filas ? buildImportPlan(filas, courses, classes, academicConfiguration.evaluationPeriods, borrarAcademicasSinUsar) : null;
 
     const handleConfirm = () => {
         if (!plan) return;

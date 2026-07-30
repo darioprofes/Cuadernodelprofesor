@@ -1,5 +1,6 @@
 
 import type { KeyCompetence, EvaluationCriterion, SpecificCompetence, ClassData, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Task, Meeting, AgendaNote, Shortcut } from './types';
+import { isTauri } from '@tauri-apps/api/core';
 
 // Constants for ACNEAE tags and their priority order
 export const ACNEAE_TAGS = ['RE ACA', 'RE EC', 'RE', 'PRE ES1', 'PRE ES2', 'PRE ES3', 'PRE ES4', 'PAC', 'PAC EP1', 'PAC EP2', 'PAC EP3', 'PAC EP4', 'PAC EP5', 'PAC EP6', 'ACS', 'FPEX', 'NN', 'ABS'];
@@ -87,6 +88,12 @@ export const INITIAL_SHORTCUTS: Shortcut[] = [
     { id: 'sc-educastur', label: 'Educastur', url: 'https://www.educastur.es', icon: '/shortcut-icons/educastur.svg' },
     { id: 'sc-copilot', label: 'Copilot', url: 'https://copilot.microsoft.com/', icon: '/shortcut-icons/copilot.svg' },
 ];
+
+// La versión de escritorio es una copia local independiente, sin ningún
+// vínculo con la infraestructura propia (nube.lamarejada.es) — no tiene
+// sentido sembrarla con accesos directos a esa infraestructura personal.
+export const getInitialShortcuts = (): Shortcut[] =>
+    isTauri() ? INITIAL_SHORTCUTS.filter(s => !s.url.includes('lamarejada.es')) : INITIAL_SHORTCUTS;
 
 // ACADEMIC CONFIGURATION
 // Calcula el año de inicio del curso académico en el momento de cargar la app:
