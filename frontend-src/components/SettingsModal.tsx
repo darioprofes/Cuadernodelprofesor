@@ -39,13 +39,15 @@ export interface SettingsModalProps {
     programmingUnits: ProgrammingUnit[];
     setProgrammingUnits: (updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => void;
     evaluationTools: EvaluationTool[];
-    setEvaluationTools: (updater: React.SetStateAction<EvaluationTool[]>) => void;
+    onCreateEvaluationTool: (data: Omit<EvaluationTool, 'id'>) => void;
+    onUpdateEvaluationTool: (id: string, data: Omit<EvaluationTool, 'id'>) => void;
+    onDeleteEvaluationTool: (id: string) => void;
 }
 
 type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'backup';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
-    const { isOpen, onClose, classes, setClasses, courses, setCourses, onOpenExportModal, academicConfiguration, setAcademicConfiguration, programmingUnits, setProgrammingUnits, evaluationTools, setEvaluationTools, evaluationCriteria } = props;
+    const { isOpen, onClose, classes, setClasses, courses, setCourses, onOpenExportModal, academicConfiguration, setAcademicConfiguration, programmingUnits, setProgrammingUnits, evaluationTools, onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria } = props;
     const [activeView, setActiveView] = useState<SettingsView>('academicConfig');
 
     const renderView = () => {
@@ -73,7 +75,9 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
             case 'evaluationTools':
                 return <EvaluationToolManager
                     evaluationTools={evaluationTools}
-                    setEvaluationTools={setEvaluationTools}
+                    onCreate={onCreateEvaluationTool}
+                    onUpdate={onUpdateEvaluationTool}
+                    onDelete={onDeleteEvaluationTool}
                     criteria={evaluationCriteria}
                     courses={courses}
                     classes={classes}

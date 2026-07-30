@@ -5,15 +5,18 @@ import ShortcutModal from './ShortcutModal';
 
 interface ShortcutsBarProps {
     shortcuts: Shortcut[];
-    setShortcuts: (updater: React.SetStateAction<Shortcut[]>) => void;
+    onCreate: (data: Omit<Shortcut, 'id'>) => void;
+    onUpdate: (id: string, data: Omit<Shortcut, 'id'>) => void;
+    onDelete: (id: string) => void;
 }
 
 // Fila de accesos directos solo-icono (con tooltip al pasar por encima),
 // inspirada en las secciones de enlaces editables del panel ("La
 // Marejada"), pero autocontenida aquí: los iconos viven en
-// public/shortcut-icons/ y el listado se guarda en el propio blob de la
-// app, editable con el lápiz de al lado.
-const ShortcutsBar: React.FC<ShortcutsBarProps> = ({ shortcuts, setShortcuts }) => {
+// public/shortcut-icons/. El listado se persiste vía onCreate/onUpdate/
+// onDelete, granulares (backend propio en web; blob local en escritorio,
+// ver App.tsx) — este componente no conoce cuál de los dos es.
+const ShortcutsBar: React.FC<ShortcutsBarProps> = ({ shortcuts, onCreate, onUpdate, onDelete }) => {
     const [editMode, setEditMode] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [shortcutToEdit, setShortcutToEdit] = useState<Shortcut | null>(null);
@@ -30,15 +33,15 @@ const ShortcutsBar: React.FC<ShortcutsBarProps> = ({ shortcuts, setShortcuts }) 
 
     const handleSave = (data: Omit<Shortcut, 'id'>) => {
         if (shortcutToEdit) {
-            setShortcuts(prev => prev.map(s => s.id === shortcutToEdit.id ? { ...s, ...data } : s));
+            onUpdate(shortcutToEdit.id, data);
         } else {
-            setShortcuts(prev => [...prev, { id: `sc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, ...data }]);
+            onCreate(data);
         }
         setIsModalOpen(false);
     };
 
     const handleDelete = (id: string) => {
-        setShortcuts(prev => prev.filter(s => s.id !== id));
+        onDelete(id);
     };
 
     return (

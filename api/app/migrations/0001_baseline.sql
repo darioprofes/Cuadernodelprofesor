@@ -1,15 +1,16 @@
 -- ==========================================================
--- Blob único de la app (fork de CuadernMestre)
+-- Migración base: contenido exacto de schema.sql (sistema de blob único)
 -- ==========================================================
 --
--- Todo el estado de la app (clases, alumnado, calificaciones, currículo,
--- programación, configuración académica...) vive serializado como una base
--- SQLite completa (sql.js) en el propio navegador, exportada a binario. Aquí
--- solo se persiste ese binario tal cual, en una fila singleton (uso
--- personal, sin multi-tenant): CHECK(id) fuerza que "id" solo pueda ser
--- true, y la PRIMARY KEY sobre esa única columna booleana garantiza que
--- nunca haya más de una fila.
+-- Esta migración es una foto exacta del schema.sql que existía antes de
+-- introducir el sistema de migraciones — no cambia ni una tabla. Su único
+-- propósito es que el nuevo runner (apply_migrations(), ver services/db.py)
+-- tome el control del arranque sin alterar el estado actual de la base. Las
+-- tablas nuevas del modelo relacional (curso académico, alumnado, notas...)
+-- llegan en migraciones posteriores, numeradas a partir de aquí.
 --
+-- Como toda migración ya publicada: no se edita nunca. Un cambio de forma
+-- se hace con una migración nueva.
 
 CREATE TABLE IF NOT EXISTS app_db (
 
@@ -67,6 +68,13 @@ CREATE TABLE IF NOT EXISTS app_db_history (
 -- nada (db.export() siempre serializa el fichero entero igual), así que
 -- viven en su propia tabla de Postgres, con su propio endpoint
 -- (routers/photos.py) al margen del ciclo de autoguardado del blob.
+--
+-- NOTA: esta forma (student_id TEXT, data_url TEXT) es la de hoy, sin FK
+-- porque el alumnado solo existe dentro del blob. Cuando el modelo
+-- relacional tenga una tabla students real, una migración posterior
+-- reemplaza esta tabla por la nueva forma (student_id UUID FK, BYTEA) —
+-- no se toca aquí para mantener esta migración como una foto fiel de lo
+-- que ya existía.
 
 CREATE TABLE IF NOT EXISTS student_photos (
 

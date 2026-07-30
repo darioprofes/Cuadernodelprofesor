@@ -3,7 +3,10 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import initSqlJs, { type Database } from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
+import { isTauri } from '@tauri-apps/api/core';
 import { dbAdapter, VersionConflictError } from './services/dbAdapter';
+import { useShortcuts, useCreateShortcut, useUpdateShortcut, useDeleteShortcut } from './hooks/useShortcuts';
+import { useEvaluationTools, useCreateEvaluationTool, useUpdateEvaluationTool, useDeleteEvaluationTool } from './hooks/useEvaluationTools';
 import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, getInitialShortcuts } from './constants';
 import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
 import { runMigrations, CURRENT_SCHEMA_VERSION } from './services/migrations';
@@ -274,6 +277,22 @@ const ViewLoadingFallback: React.FC = () => (
 const App = () => {
     const { appState, loading, error, updateState, importDatabase, exportDatabase, resetDatabase } = useDatabase();
 
+    // shortcuts/evaluationTools: migrados al backend granular nuevo (Fase 4),
+    // pero solo en web — en escritorio (Tauri) no hay comandos granulares
+    // todavía (Fase 8), así que siguen viviendo en el blob local de
+    // useDatabase() de arriba hasta entonces. Los hooks de react-query están
+    // desactivados en escritorio (enabled: !isDesktop) para no intentar
+    // llamadas de red que no tienen destino.
+    const isDesktop = isTauri();
+    const remoteShortcuts = useShortcuts({ enabled: !isDesktop });
+    const createShortcut = useCreateShortcut();
+    const updateShortcut = useUpdateShortcut();
+    const deleteShortcut = useDeleteShortcut();
+    const remoteEvaluationTools = useEvaluationTools({ enabled: !isDesktop });
+    const createEvaluationTool = useCreateEvaluationTool();
+    const updateEvaluationTool = useUpdateEvaluationTool();
+    const deleteEvaluationTool = useDeleteEvaluationTool();
+
     // --- UI State ---
     const [activeClassId, setActiveClassId] = useState<string>('');
     const [activeView, setActiveViewRaw] = useState<View>('hoy');
@@ -418,8 +437,60 @@ const App = () => {
     const setTasksCallback = useCallback((updater: React.SetStateAction<Task[]>) => updateState(prev => ({ ...prev, tasks: typeof updater === 'function' ? updater(prev.tasks) : updater })), [updateState]);
     const setMeetingsCallback = useCallback((updater: React.SetStateAction<Meeting[]>) => updateState(prev => ({ ...prev, meetings: typeof updater === 'function' ? updater(prev.meetings) : updater })), [updateState]);
     const setAgendaNotesCallback = useCallback((updater: React.SetStateAction<AgendaNote[]>) => updateState(prev => ({ ...prev, agendaNotes: typeof updater === 'function' ? updater(prev.agendaNotes) : updater })), [updateState]);
+    // Compat de escritorio para shortcuts: idéntico patrón de updater que el
+    // resto de callbacks de arriba (setEvaluationToolsCallback, justo encima,
+    // cumple el mismo papel para evaluationTools), pero solo se usa mientras
+    // isDesktop — en web este campo del blob queda sin tocar (ver handlers
+    // granulares más abajo).
     const setShortcutsCallback = useCallback((updater: React.SetStateAction<Shortcut[]>) => updateState(prev => ({ ...prev, shortcuts: typeof updater === 'function' ? updater(prev.shortcuts) : updater })), [updateState]);
 
+    const handleCreateShortcut = useCallback((data: Omit<Shortcut, 'id'>) => {
+        if (isDesktop) {
+            setShortcutsCallback(prev => [...prev, { id: `sc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, ...data }]);
+        } else {
+            createShortcut.mutate(data);
+        }
+    }, [isDesktop, setShortcutsCallback, createShortcut]);
+
+    const handleUpdateShortcut = useCallback((id: string, data: Omit<Shortcut, 'id'>) => {
+        if (isDesktop) {
+            setShortcutsCallback(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
+        } else {
+            updateShortcut.mutate({ id, data });
+        }
+    }, [isDesktop, setShortcutsCallback, updateShortcut]);
+
+    const handleDeleteShortcut = useCallback((id: string) => {
+        if (isDesktop) {
+            setShortcutsCallback(prev => prev.filter(s => s.id !== id));
+        } else {
+            deleteShortcut.mutate(id);
+        }
+    }, [isDesktop, setShortcutsCallback, deleteShortcut]);
+
+    const handleCreateEvaluationTool = useCallback((data: Omit<EvaluationTool, 'id'>) => {
+        if (isDesktop) {
+            setEvaluationToolsCallback(prev => [...prev, { ...data, id: `tool-${Date.now()}` } as EvaluationTool]);
+        } else {
+            createEvaluationTool.mutate(data);
+        }
+    }, [isDesktop, setEvaluationToolsCallback, createEvaluationTool]);
+
+    const handleUpdateEvaluationTool = useCallback((id: string, data: Omit<EvaluationTool, 'id'>) => {
+        if (isDesktop) {
+            setEvaluationToolsCallback(prev => prev.map(t => t.id === id ? ({ ...t, ...data } as EvaluationTool) : t));
+        } else {
+            updateEvaluationTool.mutate({ id, data });
+        }
+    }, [isDesktop, setEvaluationToolsCallback, updateEvaluationTool]);
+
+    const handleDeleteEvaluationTool = useCallback((id: string) => {
+        if (isDesktop) {
+            setEvaluationToolsCallback(prev => prev.filter(t => t.id !== id));
+        } else {
+            deleteEvaluationTool.mutate(id);
+        }
+    }, [isDesktop, setEvaluationToolsCallback, deleteEvaluationTool]);
 
     // --- Render Logic ---
     if (loading) {
@@ -434,7 +505,11 @@ const App = () => {
         return <div className="flex items-center justify-center min-h-screen bg-slate-100 text-slate-600">Inicializando...</div>;
     }
 
-    const { classes, criteria, competences, keyCompetences, journalEntries, courses, programmingUnits, basicKnowledge, academicConfiguration, evaluationTools, tasks, meetings, agendaNotes, shortcuts } = appState;
+    const { classes, criteria, competences, keyCompetences, journalEntries, courses, programmingUnits, basicKnowledge, academicConfiguration, tasks, meetings, agendaNotes } = appState;
+    // Fuente resuelta según plataforma (ver handlers granulares más arriba):
+    // blob local en escritorio, backend nuevo en web.
+    const shortcuts = isDesktop ? appState.shortcuts : (remoteShortcuts.data ?? []);
+    const evaluationTools = isDesktop ? appState.evaluationTools : (remoteEvaluationTools.data ?? []);
     const academicClasses = classes.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other');
 
     const renderContent = () => {
@@ -622,7 +697,7 @@ const App = () => {
 
             <div className="flex-1 flex flex-col min-w-0 pt-14 md:pt-0">
                 <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200 px-4 py-2 flex items-center justify-between sticky top-0 z-30">
-                    <ShortcutsBar shortcuts={shortcuts} setShortcuts={setShortcutsCallback} />
+                    <ShortcutsBar shortcuts={shortcuts} onCreate={handleCreateShortcut} onUpdate={handleUpdateShortcut} onDelete={handleDeleteShortcut} />
                     <div className="flex items-center gap-2">
                         {/* Informes y Cuaderno usan la clase seleccionada aquí */}
                         {(REPORT_VIEWS.includes(activeView) || activeView === 'gradebook') && academicClasses.length > 0 && (
@@ -660,7 +735,10 @@ const App = () => {
                         basicKnowledge={basicKnowledge} setBasicKnowledge={setBasicKnowledgeCallback}
                         academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfigurationCallback}
                         programmingUnits={programmingUnits} setProgrammingUnits={setProgrammingUnitsCallback}
-                        evaluationTools={evaluationTools} setEvaluationTools={setEvaluationToolsCallback}
+                        evaluationTools={evaluationTools}
+                        onCreateEvaluationTool={handleCreateEvaluationTool}
+                        onUpdateEvaluationTool={handleUpdateEvaluationTool}
+                        onDeleteEvaluationTool={handleDeleteEvaluationTool}
                         importDatabase={importDatabase}
                         exportDatabase={exportDatabase}
                         resetDatabase={resetDatabase}

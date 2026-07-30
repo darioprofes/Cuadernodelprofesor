@@ -272,6 +272,7 @@ export interface Shortcut {
   label: string;
   url: string;
   icon?: string; // ruta a /shortcut-icons/... o data URL si es un icono propio
+  sortOrder?: number; // solo en el backend nuevo (web); ausente en el blob de escritorio
 }
 
 export interface Meeting {

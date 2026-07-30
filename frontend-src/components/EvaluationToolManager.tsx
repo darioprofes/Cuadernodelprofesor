@@ -30,14 +30,16 @@ interface ToolDraft {
 
 interface EvaluationToolManagerProps {
     evaluationTools: EvaluationTool[];
-    setEvaluationTools: (updater: React.SetStateAction<EvaluationTool[]>) => void;
+    onCreate: (data: Omit<EvaluationTool, 'id'>) => void;
+    onUpdate: (id: string, data: Omit<EvaluationTool, 'id'>) => void;
+    onDelete: (id: string) => void;
     criteria: EvaluationCriterion[];
     courses: Course[];
     classes: ClassData[];
     setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
 }
 
-const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluationTools, setEvaluationTools, criteria, courses, classes, setClasses }) => {
+const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluationTools, onCreate, onUpdate, onDelete, criteria, courses, classes, setClasses }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [toolToEdit, setToolToEdit] = useState<EvaluationTool | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
@@ -51,19 +53,21 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                 );
                 if (!confirmed) return;
             }
-            setEvaluationTools(prev => prev.map(t => t.id === tool.id ? tool : t));
+            const { id, ...data } = tool;
+            onUpdate(id, data);
             if (affected > 0) {
                 setClasses(prev => recalculateGradesForTool(prev, tool));
             }
         } else {
-            setEvaluationTools(prev => [...prev, { ...tool, id: `tool-${Date.now()}` }]);
+            const { id: _unused, ...data } = tool;
+            onCreate(data);
         }
         setIsModalOpen(false);
     };
 
     const handleDelete = (toolId: string) => {
         if (window.confirm("¿Seguro que quieres eliminar este instrumento? Esta acción no se puede deshacer.")) {
-            setEvaluationTools(prev => prev.filter(t => t.id !== toolId));
+            onDelete(toolId);
         }
     };
 
@@ -211,7 +215,10 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
             }
 
             if (toolsMap.size > 0) {
-                setEvaluationTools(prev => [...prev, ...Array.from(toolsMap.values())]);
+                toolsMap.forEach(tool => {
+                    const { id: _unused, ...data } = tool;
+                    onCreate(data);
+                });
                 alert(`Se han importado ${toolsMap.size} instrumentos correctamente.`);
             } else {
                 alert("No se encontraron instrumentos válidos en el archivo.");
