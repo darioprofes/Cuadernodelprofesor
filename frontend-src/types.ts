@@ -3,6 +3,9 @@ export interface OperationalDescriptor {
   id: string;
   code: string;
   description: string;
+  // 'eso'|'bachillerato'|null (genérico); solo presente en el backend
+  // nuevo (web) — ausente en el blob de escritorio. Ver services/api.ts.
+  stage?: 'eso' | 'bachillerato' | null;
 }
 
 export interface KeyCompetence {

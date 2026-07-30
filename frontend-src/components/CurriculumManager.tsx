@@ -68,7 +68,12 @@ interface CurriculumManagerProps {
     courses: Course[];
     setCourses: (updater: React.SetStateAction<Course[]>) => void;
     keyCompetences: KeyCompetence[];
-    setKeyCompetences: (updater: React.SetStateAction<KeyCompetence[]>) => void;
+    onCreateKeyCompetence: (data: { code: string; description: string }) => Promise<KeyCompetence>;
+    onUpdateKeyCompetence: (id: string, data: Partial<{ code: string; description: string }>) => Promise<void>;
+    onDeleteKeyCompetence: (id: string) => Promise<void>;
+    onCreateDescriptor: (keyCompetenceId: string, data: { code: string; description: string; stage?: 'eso' | 'bachillerato' }) => Promise<OperationalDescriptor>;
+    onUpdateDescriptor: (id: string, data: Partial<{ code: string; description: string; stage: 'eso' | 'bachillerato' }>) => Promise<void>;
+    onDeleteDescriptor: (id: string) => Promise<void>;
     specificCompetences: SpecificCompetence[];
     setSpecificCompetences: (updater: React.SetStateAction<SpecificCompetence[]>) => void;
     evaluationCriteria: EvaluationCriterion[];
@@ -80,8 +85,19 @@ interface CurriculumManagerProps {
 // Recibe {...props} desde SettingsModal (todas las props de Ajustes), pero
 // solo usa este subconjunto — de ahí que el tipo no sea "SettingsModalProps"
 // completo, sino justo lo que se destructura aquí abajo.
+//
+// keyCompetences/operational_descriptors ya vienen del backend granular
+// nuevo (ver plan, "Fase 5 fusionada", bloque 3) — de ahí que sus
+// operaciones sean async (onCreate.../onUpdate...) en vez del patrón
+// setX(prev => ...) que todavía usan specificCompetences/evaluationCriteria/
+// basicKnowledge (pendientes de migrar, siguen en el blob).
 const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
-    const { courses, setCourses, keyCompetences, setKeyCompetences, specificCompetences, setSpecificCompetences, evaluationCriteria, setEvaluationCriteria, basicKnowledge, setBasicKnowledge } = props;
+    const {
+        courses, setCourses, keyCompetences,
+        onCreateKeyCompetence, onUpdateKeyCompetence, onDeleteKeyCompetence,
+        onCreateDescriptor, onUpdateDescriptor, onDeleteDescriptor,
+        specificCompetences, setSpecificCompetences, evaluationCriteria, setEvaluationCriteria, basicKnowledge, setBasicKnowledge,
+    } = props;
     const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id || '');
     // Elemento recién creado (criterio, competencia específica/clave o
     // descriptor): se abre directamente en modo edición para que se rellenen
@@ -120,7 +136,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
             }
             case 'kc': {
                 const keyCompetence = item as KeyCompetence;
-                setKeyCompetences(prev => prev.map(i => i.id === keyCompetence.id ? keyCompetence : i));
+                onUpdateKeyCompetence(keyCompetence.id, { code: keyCompetence.code, description: keyCompetence.description });
                 break;
             }
             case 'sb': {
@@ -129,13 +145,8 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                 break;
             }
             case 'od': {
-                // Los descriptores viven anidados dentro de su competencia clave
-                // (KeyCompetence.descriptors), no en un array propio.
                 const descriptor = item as OperationalDescriptor;
-                setKeyCompetences(prev => prev.map(kc => ({
-                    ...kc,
-                    descriptors: (kc.descriptors || []).map(d => d.id === descriptor.id ? descriptor : d),
-                })));
+                onUpdateDescriptor(descriptor.id, { code: descriptor.code, description: descriptor.description });
                 break;
             }
         }
@@ -169,20 +180,14 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         }
     };
 
-    const handleAddKeyCompetence = () => {
-        const newId = `kc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        const newKc: KeyCompetence = { id: newId, code: '', description: '', descriptors: [] };
-        setKeyCompetences((prev: KeyCompetence[]) => [...prev, newKc]);
-        setNewlyAddedId(newId);
+    const handleAddKeyCompetence = async () => {
+        const created = await onCreateKeyCompetence({ code: '', description: '' });
+        setNewlyAddedId(created.id);
     };
 
-    const handleAddDescriptor = (kcId: string) => {
-        const newId = `od-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        const newDescriptor: OperationalDescriptor = { id: newId, code: '', description: '' };
-        setKeyCompetences((prev: KeyCompetence[]) => prev.map((kc: KeyCompetence) =>
-            kc.id === kcId ? { ...kc, descriptors: [...(kc.descriptors || []), newDescriptor] } : kc
-        ));
-        setNewlyAddedId(newId);
+    const handleAddDescriptor = async (kcId: string) => {
+        const created = await onCreateDescriptor(kcId, { code: '', description: '' });
+        setNewlyAddedId(created.id);
     };
 
     const handleAddSpecificCompetence = () => {
@@ -206,10 +211,10 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         return window.confirm(confirmationMessage);
     };
 
-    const importarTexto = (text: string) => {
+    const importarTexto = async (text: string) => {
         try {
             const parsedData = parseCurriculumCsv(text, selectedCourseId, specificCompetences);
-            updateCurriculumState(parsedData, selectedCourseId);
+            await updateCurriculumState(parsedData, selectedCourseId);
         } catch (error) {
             console.error('Error parsing CSV:', error);
             alert('Error al procesar el archivo CSV. Comprueba el formato, el contenido y la codificación del archivo (UTF-8 o UTF-16).');
@@ -306,7 +311,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
             const response = await fetch(preset.ruta);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const text = await response.text();
-            importarTexto(text);
+            await importarTexto(text);
         } catch (error) {
             console.error('Error cargando currículo preseleccionado:', error);
             alert('No se pudo cargar el currículo seleccionado.');
@@ -420,7 +425,71 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         return { newKCs, newODs, newSCs, newECs, newSBs };
     };
 
-    const updateCurriculumState = ({ newKCs, newODs, newSCs, newECs, newSBs }: {
+    // KC/OD: fusión inteligente por código, pero contra el backend nuevo —
+    // no hay "reemplazar el array entero" en la API, así que en vez de
+    // construir el estado final de golpe (como hacía el setKeyCompetences
+    // de antes), se calcula ese mismo estado final KC a KC y se emiten solo
+    // las llamadas (crear/actualizar) necesarias para llegar a él. Devuelve
+    // el mapa de sustitución de IDs (id del CSV -> id real, ya sea uno
+    // reutilizado por coincidencia de código o uno recién creado) para que
+    // las Competencias Específicas puedan resolver sus enlaces después.
+    const syncKeyCompetencesFromImport = async (
+        newKCs: (Omit<KeyCompetence, 'descriptors'>)[],
+        augmentedODs: (OperationalDescriptor & { parentKcId: string })[],
+        stage: 'eso' | 'bachillerato',
+    ): Promise<Map<string, string>> => {
+        const odIdReplacementMap = new Map<string, string>();
+        const importKcIdToCodeMap = new Map(newKCs.map(kc => [kc.id, kc.code]));
+
+        const newODsByParentCode = new Map<string, (OperationalDescriptor & { parentKcId: string })[]>();
+        augmentedODs.forEach(od => {
+            const parentCode = importKcIdToCodeMap.get(od.parentKcId);
+            if (parentCode) {
+                if (!newODsByParentCode.has(parentCode)) newODsByParentCode.set(parentCode, []);
+                newODsByParentCode.get(parentCode)!.push(od);
+            }
+        });
+
+        const kcByCode = new Map(keyCompetences.map(kc => [kc.code, kc]));
+
+        for (const nkc of newKCs) {
+            let kc = kcByCode.get(nkc.code);
+            if (!kc) {
+                const created = await onCreateKeyCompetence({ code: nkc.code, description: nkc.description });
+                kc = { ...created, descriptors: [] };
+                kcByCode.set(nkc.code, kc);
+            } else if (kc.description !== nkc.description) {
+                await onUpdateKeyCompetence(kc.id, { description: nkc.description });
+            }
+
+            // Igual que antes: solo se tocan los descriptores de la etapa de
+            // este curso (ESO o Bachillerato) — los de la otra etapa, si los
+            // hay, se quedan intactos sin ni siquiera leerse aquí. La etapa
+            // vive en operational_descriptors.stage (columna real); el
+            // sistema anterior la codificaba en el propio id, algo que no es
+            // posible con ids reales de Postgres (ver migración 0004).
+            const currentStageDescriptors = (kc.descriptors || []).filter(d => d.stage === stage);
+            const existingByCode = new Map(currentStageDescriptors.map(d => [d.code, d]));
+            const newDescriptorsForThisKC = newODsByParentCode.get(nkc.code) || [];
+
+            for (const newDesc of newDescriptorsForThisKC) {
+                const existing = existingByCode.get(newDesc.code);
+                if (existing) {
+                    odIdReplacementMap.set(newDesc.id, existing.id);
+                    if (existing.description !== newDesc.description) {
+                        await onUpdateDescriptor(existing.id, { description: newDesc.description });
+                    }
+                } else {
+                    const createdDescriptor = await onCreateDescriptor(kc.id, { code: newDesc.code, description: newDesc.description, stage });
+                    odIdReplacementMap.set(newDesc.id, createdDescriptor.id);
+                }
+            }
+        }
+
+        return odIdReplacementMap;
+    };
+
+    const updateCurriculumState = async ({ newKCs, newODs, newSCs, newECs, newSBs }: {
         newKCs: (Omit<KeyCompetence, 'descriptors'>)[];
         newODs: (OperationalDescriptor & { parentKcId: string })[];
         newSCs: SpecificCompetence[];
@@ -438,6 +507,10 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         const isBachStage = isBachilleratoStage(course.level);
         const stage = isBachStage ? 'Bachillerato' : 'ESO';
         const suffix = isBachStage ? '-bach' : '-eso';
+        // stageValue: valor real que se guarda en operational_descriptors.stage
+        // (ver syncKeyCompetencesFromImport) — distinto de `suffix`, que solo
+        // sirve para namespacing de ids DENTRO del propio CSV importado.
+        const stageValue: 'eso' | 'bachillerato' = isBachStage ? 'bachillerato' : 'eso';
 
         const augmentId = (id: string, suffixToAdd: string) => {
             if (id.endsWith('-eso') || id.endsWith('-bach')) {
@@ -446,14 +519,8 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
             return id + suffixToAdd;
         };
 
-        // Map to track ID substitutions for Descriptors. 
-        // Key: Import ID (with suffix), Value: Resolved/Existing System ID
-        const odIdReplacementMap = new Map<string, string>();
-
         // Augment IDs in the new data to make them stage-specific
         const augmentedODs = newODs.map(od => ({ ...od, id: augmentId(od.id, suffix) }));
-        
-        // We will process SC links later, after resolving descriptor IDs
 
         setEvaluationCriteria((prevCriteria: EvaluationCriterion[]) => {
             const criteriaFromOtherCourses = prevCriteria.filter(c => c.courseId !== courseId);
@@ -464,75 +531,8 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
             const sbsFromOtherCourses = prevSBs.filter(sb => sb.courseId !== courseId);
             return [...sbsFromOtherCourses, ...newSBs].sort((a, b) => compararCodigo(a.code, b.code));
         });
-        
-        // KEY COMPETENCES AND DESCRIPTORS MERGING LOGIC
-        setKeyCompetences((prevKCs: KeyCompetence[]) => {
-            const nextKCs = JSON.parse(JSON.stringify(prevKCs)) as KeyCompetence[];
-            const kcMapByCode = new Map<string, KeyCompetence>(nextKCs.map(kc => [kc.code, kc]));
-            const importKcIdToCodeMap = new Map(newKCs.map(kc => [kc.id, kc.code]));
 
-            newKCs.forEach(nkc => {
-                if (kcMapByCode.has(nkc.code)) {
-                    kcMapByCode.get(nkc.code)!.description = nkc.description;
-                } else {
-                    const newFullKc: KeyCompetence = { ...nkc, descriptors: [] };
-                    kcMapByCode.set(nkc.code, newFullKc);
-                }
-            });
-
-            const newODsByParentCode = new Map<string, OperationalDescriptor[]>();
-            augmentedODs.forEach(od => {
-                const parentCode = importKcIdToCodeMap.get(od.parentKcId);
-                if (parentCode) {
-                    if (!newODsByParentCode.has(parentCode)) newODsByParentCode.set(parentCode, []);
-                    const { parentKcId, ...descriptorData } = od;
-                    newODsByParentCode.get(parentCode)!.push(descriptorData);
-                }
-            });
-            
-            for (const kc of kcMapByCode.values()) {
-                const stageIdentifier = suffix;
-                
-                const otherStageDescriptors = (kc.descriptors || []).filter(d => !d.id.endsWith(stageIdentifier));
-                const currentStageDescriptors = (kc.descriptors || []).filter(d => d.id.endsWith(stageIdentifier));
-                
-                const newDescriptorsForThisKC = newODsByParentCode.get(kc.code) || [];
-
-                // SMART MERGE: Map by CODE (e.g. "CCL1"), not just ID.
-                // This allows merging 'od_bg3_ccl1' and 'od_bg4_ccl1' if they share the code "CCL1".
-                const mergedDescriptorsByCode = new Map<string, OperationalDescriptor>();
-                
-                // 1. Populate with existing descriptors
-                currentStageDescriptors.forEach(d => {
-                     mergedDescriptorsByCode.set(d.code, d);
-                });
-
-                // 2. Process new descriptors
-                newDescriptorsForThisKC.forEach(newDesc => {
-                    if (mergedDescriptorsByCode.has(newDesc.code)) {
-                        // Conflict detected by Code: Reuse the EXISTING ID.
-                        const existing = mergedDescriptorsByCode.get(newDesc.code)!;
-                        
-                        // Record that any reference to newDesc.id should point to existing.id
-                        odIdReplacementMap.set(newDesc.id, existing.id);
-                        
-                        // Update description from import, but keep existing ID
-                        mergedDescriptorsByCode.set(newDesc.code, { 
-                            ...newDesc, 
-                            id: existing.id 
-                        });
-                    } else {
-                        // No conflict, add as new
-                        mergedDescriptorsByCode.set(newDesc.code, newDesc);
-                    }
-                });
-
-                kc.descriptors = [...otherStageDescriptors, ...Array.from(mergedDescriptorsByCode.values())]
-                    .sort((a, b) => compararCodigo(a.code, b.code));
-            }
-
-            return Array.from(kcMapByCode.values());
-        });
+        const odIdReplacementMap = await syncKeyCompetencesFromImport(newKCs, augmentedODs, stageValue);
 
         // SPECIFIC COMPETENCES MERGING (WITH LINK RESOLUTION)
         setSpecificCompetences((prev: SpecificCompetence[]) => {
@@ -564,7 +564,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         alert(`Currículo para '${courseName}' (${stage.toUpperCase()}) importado con éxito.\n\nSe ha aplicado una fusión inteligente de Descriptores Operativos para evitar duplicados entre cursos.`);
     };
 
-    const handleDeleteCurriculum = () => {
+    const handleDeleteCurriculum = async () => {
         if (!selectedCourseId) {
             alert("Por favor, selecciona un curso para definir el nivel educativo a eliminar (ESO o Bachillerato).");
             return;
@@ -575,8 +575,8 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
 
         const isBachStage = isBachilleratoStage(course.level);
         const stage = isBachStage ? 'Bachillerato' : 'ESO';
-        const stageIdentifier = isBachStage ? '-bach' : '-eso';
-        
+        const stageValue: 'eso' | 'bachillerato' = isBachStage ? 'bachillerato' : 'eso';
+
         const courseIdsForStage = courses
             .filter((c: Course) => isBachilleratoStage(c.level) === isBachStage)
             .map((c: Course) => c.id);
@@ -600,15 +600,20 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
             setSpecificCompetences((prev: SpecificCompetence[]) => prev.filter(item => !courseIdsSet.has(item.courseId)));
             setBasicKnowledge((prev: BasicKnowledge[]) => prev.filter(item => !courseIdsSet.has(item.courseId)));
 
-            setKeyCompetences((prevKCs: KeyCompetence[]) => {
-                const kcsWithFilteredDescriptors = prevKCs.map(kc => {
-                    const remainingDescriptors = (kc.descriptors || []).filter(d => !d.id.endsWith(stageIdentifier));
-                    return { ...kc, descriptors: remainingDescriptors };
-                });
-                
-                return kcsWithFilteredDescriptors.filter(kc => kc.descriptors.length > 0);
-            });
-            
+            // Borra primero los descriptores de la etapa, luego la propia
+            // competencia clave si se ha quedado sin ninguno — el backend no
+            // tiene un "reemplazar todo de golpe", así que se hace uno a uno.
+            for (const kc of keyCompetences) {
+                const toDelete = (kc.descriptors || []).filter(d => d.stage === stageValue);
+                for (const d of toDelete) {
+                    await onDeleteDescriptor(d.id);
+                }
+                const remaining = (kc.descriptors || []).length - toDelete.length;
+                if (remaining === 0 && toDelete.length > 0) {
+                    await onDeleteKeyCompetence(kc.id);
+                }
+            }
+
             alert(`El currículo para la etapa ${stage} ha sido eliminado.`);
         }
     };
@@ -633,9 +638,9 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     }, [filteredCriteria, filteredCompetences]);
 
     const selectedCourse = useMemo(() => courses.find((c: Course) => c.id === selectedCourseId), [courses, selectedCourseId]);
-    const selectedStageSuffix = useMemo(() => {
+    const selectedStage = useMemo((): 'eso' | 'bachillerato' | null => {
         if (!selectedCourse) return null;
-        return isBachilleratoStage(selectedCourse.level) ? '-bach' : '-eso';
+        return isBachilleratoStage(selectedCourse.level) ? 'bachillerato' : 'eso';
     }, [selectedCourse]);
 
     return (
@@ -661,9 +666,9 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                     <div className="space-y-4">
                         {keyCompetences.map((kc: KeyCompetence) => {
                              const descriptorsToShow = (kc.descriptors || []).filter(d =>
-                                !selectedStageSuffix || // show all if no course selected
-                                d.id.endsWith(selectedStageSuffix) || // show if matches stage
-                                (!d.id.endsWith('-eso') && !d.id.endsWith('-bach')) // always show generic
+                                !selectedStage || // show all if no course selected
+                                d.stage === selectedStage || // show if matches stage
+                                !d.stage // always show generic
                             ).sort((a, b) => compararCodigo(a.code, b.code));
 
                             return (

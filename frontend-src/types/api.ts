@@ -36,11 +36,14 @@ export interface OperationalDescriptor {
     keyCompetenceId: string;
     code: string;
     description: string;
+    // null = descriptor genérico, sin variante por etapa.
+    stage?: 'eso' | 'bachillerato' | null;
 }
 
 export interface OperationalDescriptorInput {
     code: string;
     description: string;
+    stage?: 'eso' | 'bachillerato' | null;
 }
 
 export interface KeyCompetence {

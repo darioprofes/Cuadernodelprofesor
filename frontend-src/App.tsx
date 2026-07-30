@@ -7,8 +7,12 @@ import { isTauri } from '@tauri-apps/api/core';
 import { dbAdapter, VersionConflictError } from './services/dbAdapter';
 import { useShortcuts, useCreateShortcut, useUpdateShortcut, useDeleteShortcut } from './hooks/useShortcuts';
 import { useEvaluationTools, useCreateEvaluationTool, useUpdateEvaluationTool, useDeleteEvaluationTool } from './hooks/useEvaluationTools';
+import {
+    useKeyCompetences, useCreateKeyCompetence, useUpdateKeyCompetence, useDeleteKeyCompetence,
+    useCreateDescriptor, useUpdateDescriptor, useDeleteDescriptor,
+} from './hooks/useKeyCompetences';
 import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, getInitialShortcuts } from './constants';
-import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
+import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, OperationalDescriptor, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
 import { runMigrations, CURRENT_SCHEMA_VERSION } from './services/migrations';
 import ShortcutsBar from './components/ShortcutsBar';
 import Select from './components/Select';
@@ -292,6 +296,13 @@ const App = () => {
     const createEvaluationTool = useCreateEvaluationTool();
     const updateEvaluationTool = useUpdateEvaluationTool();
     const deleteEvaluationTool = useDeleteEvaluationTool();
+    const remoteKeyCompetences = useKeyCompetences({ enabled: !isDesktop });
+    const createKeyCompetence = useCreateKeyCompetence();
+    const updateKeyCompetence = useUpdateKeyCompetence();
+    const deleteKeyCompetence = useDeleteKeyCompetence();
+    const createDescriptor = useCreateDescriptor();
+    const updateDescriptor = useUpdateDescriptor();
+    const deleteDescriptor = useDeleteDescriptor();
 
     // --- UI State ---
     const [activeClassId, setActiveClassId] = useState<string>('');
@@ -492,6 +503,71 @@ const App = () => {
         }
     }, [isDesktop, setEvaluationToolsCallback, deleteEvaluationTool]);
 
+    // keyCompetences/descriptors: a diferencia de shortcuts/evaluationTools
+    // (Fase 4), CurriculumManager necesita poder encadenar estas llamadas
+    // (crear una competencia clave y, con su id real, crear sus descriptores)
+    // — de ahí que devuelvan Promise<...> en vez de ser "dispara y olvida".
+    const handleCreateKeyCompetence = useCallback(async (data: { code: string; description: string }): Promise<KeyCompetence> => {
+        if (isDesktop) {
+            const newKc: KeyCompetence = { id: `kc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, ...data, descriptors: [] };
+            setKeyCompetencesCallback(prev => [...prev, newKc]);
+            return newKc;
+        }
+        return createKeyCompetence.mutateAsync(data);
+    }, [isDesktop, setKeyCompetencesCallback, createKeyCompetence]);
+
+    const handleUpdateKeyCompetence = useCallback(async (id: string, data: Partial<{ code: string; description: string }>): Promise<void> => {
+        if (isDesktop) {
+            setKeyCompetencesCallback(prev => prev.map(kc => kc.id === id ? { ...kc, ...data } : kc));
+            return;
+        }
+        await updateKeyCompetence.mutateAsync({ id, data });
+    }, [isDesktop, setKeyCompetencesCallback, updateKeyCompetence]);
+
+    // Sin uso desde la UI normal (borrar KC/OD está bloqueado a propósito,
+    // ver EditableItem) — solo lo usa el borrado de una etapa curricular
+    // completa, que sí necesita poder quitar una competencia clave que se
+    // quede sin descriptores.
+    const handleDeleteKeyCompetence = useCallback(async (id: string): Promise<void> => {
+        if (isDesktop) {
+            setKeyCompetencesCallback(prev => prev.filter(kc => kc.id !== id));
+            return;
+        }
+        await deleteKeyCompetence.mutateAsync(id);
+    }, [isDesktop, setKeyCompetencesCallback, deleteKeyCompetence]);
+
+    const handleCreateDescriptor = useCallback(async (keyCompetenceId: string, data: { code: string; description: string; stage?: 'eso' | 'bachillerato' }): Promise<OperationalDescriptor> => {
+        if (isDesktop) {
+            const newDescriptor: OperationalDescriptor = { id: `od-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, ...data };
+            setKeyCompetencesCallback(prev => prev.map(kc => kc.id === keyCompetenceId ? { ...kc, descriptors: [...(kc.descriptors || []), newDescriptor] } : kc));
+            return newDescriptor;
+        }
+        return createDescriptor.mutateAsync({ keyCompetenceId, data });
+    }, [isDesktop, setKeyCompetencesCallback, createDescriptor]);
+
+    const handleUpdateDescriptor = useCallback(async (id: string, data: Partial<{ code: string; description: string; stage: 'eso' | 'bachillerato' }>): Promise<void> => {
+        if (isDesktop) {
+            setKeyCompetencesCallback(prev => prev.map(kc => ({
+                ...kc,
+                descriptors: (kc.descriptors || []).map(d => d.id === id ? { ...d, ...data } : d),
+            })));
+            return;
+        }
+        await updateDescriptor.mutateAsync({ id, data });
+    }, [isDesktop, setKeyCompetencesCallback, updateDescriptor]);
+
+    // Igual que handleDeleteKeyCompetence: solo lo usa el borrado de etapa.
+    const handleDeleteDescriptor = useCallback(async (id: string): Promise<void> => {
+        if (isDesktop) {
+            setKeyCompetencesCallback(prev => prev.map(kc => ({
+                ...kc,
+                descriptors: (kc.descriptors || []).filter(d => d.id !== id),
+            })));
+            return;
+        }
+        await deleteDescriptor.mutateAsync(id);
+    }, [isDesktop, setKeyCompetencesCallback, deleteDescriptor]);
+
     // --- Render Logic ---
     if (loading) {
         return <div className="flex items-center justify-center min-h-screen bg-slate-100 text-slate-600">Cargando base de datos...</div>;
@@ -505,11 +581,12 @@ const App = () => {
         return <div className="flex items-center justify-center min-h-screen bg-slate-100 text-slate-600">Inicializando...</div>;
     }
 
-    const { classes, criteria, competences, keyCompetences, journalEntries, courses, programmingUnits, basicKnowledge, academicConfiguration, tasks, meetings, agendaNotes } = appState;
+    const { classes, criteria, competences, journalEntries, courses, programmingUnits, basicKnowledge, academicConfiguration, tasks, meetings, agendaNotes } = appState;
     // Fuente resuelta según plataforma (ver handlers granulares más arriba):
     // blob local en escritorio, backend nuevo en web.
     const shortcuts = isDesktop ? appState.shortcuts : (remoteShortcuts.data ?? []);
     const evaluationTools = isDesktop ? appState.evaluationTools : (remoteEvaluationTools.data ?? []);
+    const keyCompetences = isDesktop ? appState.keyCompetences : (remoteKeyCompetences.data ?? []);
     const academicClasses = classes.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other');
 
     const renderContent = () => {
@@ -728,7 +805,13 @@ const App = () => {
                         onOpenExportModal={() => { setIsSettingsModalOpen(false); setIsExportModalOpen(true); }}
                         classes={classes} setClasses={setClassesCallback}
                         courses={courses} setCourses={setCoursesCallback}
-                        keyCompetences={keyCompetences} setKeyCompetences={setKeyCompetencesCallback}
+                        keyCompetences={keyCompetences}
+                        onCreateKeyCompetence={handleCreateKeyCompetence}
+                        onUpdateKeyCompetence={handleUpdateKeyCompetence}
+                        onDeleteKeyCompetence={handleDeleteKeyCompetence}
+                        onCreateDescriptor={handleCreateDescriptor}
+                        onUpdateDescriptor={handleUpdateDescriptor}
+                        onDeleteDescriptor={handleDeleteDescriptor}
                         specificCompetences={competences} setSpecificCompetences={setSpecificCompetencesCallback}
                         evaluationCriteria={criteria} setEvaluationCriteria={setEvaluationCriteriaCallback}
                         journalEntries={journalEntries} setJournalEntries={setJournalEntriesCallback}

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import type { KeyCompetence, KeyCompetenceInput, OperationalDescriptorInput } from '../types/api';
+import type { KeyCompetence, KeyCompetenceInput, OperationalDescriptor, OperationalDescriptorInput } from '../types/api';
 
 const QUERY_KEY = ['keyCompetences'];
 
@@ -41,7 +41,16 @@ export function useCreateDescriptor() {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: ({ keyCompetenceId, data }: { keyCompetenceId: string; data: OperationalDescriptorInput }) =>
-            api.post(`/key-competences/${keyCompetenceId}/descriptors`, data),
+            api.post<OperationalDescriptor>(`/key-competences/${keyCompetenceId}/descriptors`, data),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: QUERY_KEY }),
+    });
+}
+
+export function useUpdateDescriptor() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, data }: { id: string; data: Partial<OperationalDescriptorInput> }) =>
+            api.patch<OperationalDescriptor>(`/key-competences/descriptors/${id}`, data),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: QUERY_KEY }),
     });
 }

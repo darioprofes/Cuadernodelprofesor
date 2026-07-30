@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import Modal from './Modal';
 import { UserGroupIcon, AcademicCapIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, ListBulletIcon, BeakerIcon, DocumentDuplicateIcon } from './Icons';
-import type { ClassData, Course, KeyCompetence, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
+import type { ClassData, Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
 import CurriculumManager from './CurriculumManager';
 import ProgrammingManager from './ProgrammingManager';
 import EvaluationToolManager from './EvaluationToolManager';
@@ -23,7 +23,12 @@ export interface SettingsModalProps {
     classes: ClassData[];
     setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
     keyCompetences: KeyCompetence[];
-    setKeyCompetences: (updater: React.SetStateAction<KeyCompetence[]>) => void;
+    onCreateKeyCompetence: (data: { code: string; description: string }) => Promise<KeyCompetence>;
+    onUpdateKeyCompetence: (id: string, data: Partial<{ code: string; description: string }>) => Promise<void>;
+    onDeleteKeyCompetence: (id: string) => Promise<void>;
+    onCreateDescriptor: (keyCompetenceId: string, data: { code: string; description: string; stage?: 'eso' | 'bachillerato' }) => Promise<OperationalDescriptor>;
+    onUpdateDescriptor: (id: string, data: Partial<{ code: string; description: string; stage: 'eso' | 'bachillerato' }>) => Promise<void>;
+    onDeleteDescriptor: (id: string) => Promise<void>;
     specificCompetences: SpecificCompetence[];
     setSpecificCompetences: (updater: React.SetStateAction<SpecificCompetence[]>) => void;
     evaluationCriteria: EvaluationCriterion[];

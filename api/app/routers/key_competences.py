@@ -7,12 +7,14 @@ from services.key_competences import (
     KeyCompetencePatch,
     OperationalDescriptor,
     OperationalDescriptorInput,
+    OperationalDescriptorPatch,
     list_key_competences,
     get_key_competence,
     create_key_competence,
     update_key_competence,
     delete_key_competence,
     create_descriptor,
+    update_descriptor,
     delete_descriptor,
 )
 
@@ -64,6 +66,17 @@ def delete_one_key_competence(key_competence_id: str):
 def post_descriptor(key_competence_id: str, data: OperationalDescriptorInput):
 
     return create_descriptor(key_competence_id, data)
+
+
+@router.patch("/descriptors/{descriptor_id}", response_model=OperationalDescriptor)
+def patch_descriptor(descriptor_id: str, data: OperationalDescriptorPatch):
+
+    descriptor = update_descriptor(descriptor_id, data)
+
+    if descriptor is None:
+        raise HTTPException(status_code=404, detail="Descriptor no encontrado.")
+
+    return descriptor
 
 
 @router.delete("/descriptors/{descriptor_id}", status_code=204)

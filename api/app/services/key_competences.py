@@ -1,16 +1,26 @@
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from services.db import get_conn
 from services.schemas import ApiModel
 
 _KC_COLUMNS = "id, code, description"
-_DESC_COLUMNS = "id, key_competence_id, code, description"
+_DESC_COLUMNS = "id, key_competence_id, code, description, stage"
 
 
 class OperationalDescriptorInput(ApiModel):
     code: str
     description: str
+    # None = descriptor genérico, sin variante por etapa (equivalente al
+    # "generic" del sistema anterior, que mostraba el mismo descriptor en
+    # ESO y Bachillerato sin distinción).
+    stage: Optional[Literal["eso", "bachillerato"]] = None
+
+
+class OperationalDescriptorPatch(ApiModel):
+    code: Optional[str] = None
+    description: Optional[str] = None
+    stage: Optional[Literal["eso", "bachillerato"]] = None
 
 
 class OperationalDescriptor(OperationalDescriptorInput):
@@ -150,13 +160,41 @@ def create_descriptor(key_competence_id: str, data: OperationalDescriptorInput) 
 
             cur.execute(
                 f"""
-                INSERT INTO operational_descriptors (key_competence_id, code, description)
-                VALUES (%s, %s, %s) RETURNING {_DESC_COLUMNS}
+                INSERT INTO operational_descriptors (key_competence_id, code, description, stage)
+                VALUES (%s, %s, %s, %s) RETURNING {_DESC_COLUMNS}
                 """,
-                [key_competence_id, data.code, data.description]
+                [key_competence_id, data.code, data.description, data.stage]
             )
 
             return OperationalDescriptor.model_validate(cur.fetchone())
+
+
+def update_descriptor(descriptor_id: str, data: OperationalDescriptorPatch) -> Optional[OperationalDescriptor]:
+
+    fields = data.model_dump(exclude_unset=True)
+
+    with get_conn() as conn:
+
+        with conn.cursor() as cur:
+
+            if fields:
+
+                set_clause = ", ".join(f"{key} = %s" for key in fields)
+
+                cur.execute(
+                    f"UPDATE operational_descriptors SET {set_clause} WHERE id = %s RETURNING {_DESC_COLUMNS}",
+                    [*fields.values(), descriptor_id]
+                )
+
+                row = cur.fetchone()
+
+            else:
+
+                cur.execute(f"SELECT {_DESC_COLUMNS} FROM operational_descriptors WHERE id = %s", [descriptor_id])
+
+                row = cur.fetchone()
+
+            return OperationalDescriptor.model_validate(row) if row else None
 
 
 def delete_descriptor(descriptor_id: str) -> bool:
