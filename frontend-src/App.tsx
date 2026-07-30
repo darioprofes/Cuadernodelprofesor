@@ -653,7 +653,7 @@ const App = () => {
         if (activeView === 'clases') {
             return <ClasesView
                 classes={classes}
-                courses={courses}
+                courses={curriculumCourses}
                 academicConfiguration={academicConfiguration}
                 criteria={criteria}
                 specificCompetences={competences}

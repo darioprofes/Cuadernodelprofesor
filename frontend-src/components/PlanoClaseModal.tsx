@@ -10,7 +10,8 @@ interface PlanoClaseModalProps {
     onClose: () => void;
     classData: ClassData;
     materia: string;
-    onUpdateClass: (updated: ClassData) => void;
+    onUpdateMesaProfesor: (x: number, y: number) => void;
+    onUpdateStudentPosition: (studentId: string, x: number, y: number) => void;
     onOpenFicha: (student: Student) => void;
 }
 
@@ -23,7 +24,7 @@ const MESA_PROFESOR_ID = '__mesa_profesor__';
 // arrastran por primera vez), pero abriendo la ficha del alumno al hacer
 // clic en vez del antiguo menú contextual de foto/color (eso ya se edita
 // desde la propia ficha).
-const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, classData, materia, onUpdateClass, onOpenFicha }) => {
+const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, classData, materia, onUpdateMesaProfesor, onUpdateStudentPosition, onOpenFicha }) => {
     const [editMode, setEditMode] = useState(false);
     const [draggingId, setDraggingId] = useState<string | null>(null);
     const [livePos, setLivePos] = useState<Record<string, { x: number; y: number }>>({});
@@ -98,12 +99,9 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
         }
         if (!pos) return;
         if (id === MESA_PROFESOR_ID) {
-            onUpdateClass({ ...classData, mesaProfesorX: pos.x, mesaProfesorY: pos.y });
+            onUpdateMesaProfesor(pos.x, pos.y);
         } else {
-            onUpdateClass({
-                ...classData,
-                students: classData.students.map(s => s.id === id ? { ...s, planoX: pos.x, planoY: pos.y } : s),
-            });
+            onUpdateStudentPosition(id, pos.x, pos.y);
         }
     };
 

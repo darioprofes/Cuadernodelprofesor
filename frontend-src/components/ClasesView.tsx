@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import type { ClassData, Course, AcademicConfiguration, View, EvaluationCriterion, SpecificCompetence, KeyCompetence, Student } from '../types';
 import { UserGroupIcon, ClockIcon, BookOpenIcon, ChevronDownIcon, CalendarDaysIcon, AcademicCapIcon } from './Icons';
 import PageHeader from './PageHeader';
@@ -11,6 +12,11 @@ import { RADIUS } from '../theme/radius';
 import { SHADOW } from '../theme/shadows';
 import { SEMANTIC } from '../theme/palette';
 import EmptyState from './EmptyState';
+import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
+import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
+import { useApiStudents, useUpdateStudent } from '../hooks/useApiStudents';
+import { useEnrollmentsForClasses, useUpdateEnrollment } from '../hooks/useEnrollments';
+import { apiClassToLocal, joinStudentEnrollment, splitStudentPatch } from '../services/apiAdapters';
 
 interface ClasesViewProps {
     classes: ClassData[];
@@ -59,11 +65,40 @@ const StudentAvatar: React.FC<{ student: Student; bgColor: string; className?: s
 // Cuaderno de cada una y a la ficha de cada alumno. La edición (alta/baja,
 // alumnado...) sigue en Ajustes → Clases y Alumnado.
 const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfiguration, criteria, specificCompetences, keyCompetences, onUpdateClass, setActiveView, setActiveClassId }) => {
+    const isDesktop = isTauri();
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [fichaTarget, setFichaTarget] = useState<{ student: Student; classData: ClassData } | null>(null);
     const [fichaEditTarget, setFichaEditTarget] = useState<{ student: Student; classData: ClassData } | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; student: Student; classData: ClassData } | null>(null);
     const [planoTarget, setPlanoTarget] = useState<ClassData | null>(null);
+
+    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+    const yearId = currentYear.data?.id ?? '';
+    const remoteClasses = useApiClasses(yearId, { enabled: !isDesktop && !!yearId });
+    const remoteStudents = useApiStudents({ enabled: !isDesktop });
+    const remoteClassIds = useMemo(() => (remoteClasses.data ?? []).map(c => c.id), [remoteClasses.data]);
+    const enrollmentQueries = useEnrollmentsForClasses(remoteClassIds, { enabled: !isDesktop });
+    const updateClassMutation = useUpdateClass();
+    const updateEnrollmentMutation = useUpdateEnrollment();
+    const updateStudentMutation = useUpdateStudent();
+
+    // Hidrata cada clase del backend nuevo con su alumnado real (STUDENT
+    // global + ENROLLMENT de esta clase, ver services/apiAdapters.ts) — en
+    // escritorio `classes` ya trae el alumnado embebido, sin más que hacer.
+    const effectiveClasses: ClassData[] = useMemo(() => {
+        if (isDesktop) return classes;
+        const studentsById = new Map((remoteStudents.data ?? []).map(s => [s.id, s]));
+        return (remoteClasses.data ?? []).map((cls, i) => {
+            const enrollments = enrollmentQueries[i]?.data ?? [];
+            const students = enrollments
+                .map(e => {
+                    const student = studentsById.get(e.studentId);
+                    return student ? joinStudentEnrollment(student, e) : null;
+                })
+                .filter((s): s is Student => !!s);
+            return { ...apiClassToLocal(cls), students };
+        });
+    }, [isDesktop, classes, remoteClasses.data, remoteStudents.data, enrollmentQueries]);
 
     useEffect(() => {
         if (!contextMenu) return;
@@ -73,14 +108,57 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
         return () => document.removeEventListener('keydown', onKey);
     }, [contextMenu]);
 
-    const handleSaveFichaEdit = (studentId: string, data: Partial<Student>) => {
+    const handleSaveFichaEdit = async (studentId: string, data: Partial<Student>) => {
         if (!fichaEditTarget) return;
+
+        if (isDesktop) {
+            const updatedClass: ClassData = {
+                ...fichaEditTarget.classData,
+                students: fichaEditTarget.classData.students.map(s => s.id === studentId ? { ...s, ...data } : s),
+            };
+            onUpdateClass(updatedClass);
+            setFichaEditTarget(prev => prev ? { ...prev, classData: updatedClass } : null);
+            return;
+        }
+
+        const enrollment = fichaEditTarget.classData.students.find(s => s.id === studentId);
+        const { studentPatch, enrollmentPatch } = splitStudentPatch(data);
+        if (Object.keys(studentPatch).length > 0) {
+            await updateStudentMutation.mutateAsync({ id: studentId, data: studentPatch });
+        }
+        if (enrollment?.enrollmentId && Object.keys(enrollmentPatch).length > 0) {
+            await updateEnrollmentMutation.mutateAsync({ id: enrollment.enrollmentId, classId: fichaEditTarget.classData.id, data: enrollmentPatch });
+        }
         const updatedClass: ClassData = {
             ...fichaEditTarget.classData,
             students: fichaEditTarget.classData.students.map(s => s.id === studentId ? { ...s, ...data } : s),
         };
-        onUpdateClass(updatedClass);
         setFichaEditTarget(prev => prev ? { ...prev, classData: updatedClass } : null);
+    };
+
+    const handleUpdateMesaProfesor = async (classData: ClassData, x: number, y: number) => {
+        if (isDesktop) {
+            const updated = { ...classData, mesaProfesorX: x, mesaProfesorY: y };
+            onUpdateClass(updated);
+            setPlanoTarget(updated);
+            return;
+        }
+        setPlanoTarget(prev => prev ? { ...prev, mesaProfesorX: x, mesaProfesorY: y } : null);
+        await updateClassMutation.mutateAsync({ id: classData.id, yearId, data: { mesaProfesorX: x, mesaProfesorY: y } });
+    };
+
+    const handleUpdateStudentPosition = async (classData: ClassData, studentId: string, x: number, y: number) => {
+        if (isDesktop) {
+            const updated = { ...classData, students: classData.students.map(s => s.id === studentId ? { ...s, planoX: x, planoY: y } : s) };
+            onUpdateClass(updated);
+            setPlanoTarget(updated);
+            return;
+        }
+        setPlanoTarget(prev => prev ? { ...prev, students: prev.students.map(s => s.id === studentId ? { ...s, planoX: x, planoY: y } : s) } : null);
+        const student = classData.students.find(s => s.id === studentId);
+        if (student?.enrollmentId) {
+            await updateEnrollmentMutation.mutateAsync({ id: student.enrollmentId, classId: classData.id, data: { planoX: x, planoY: y } });
+        }
     };
 
     const openContextMenu = (e: React.MouseEvent, student: Student, classData: ClassData) => {
@@ -89,7 +167,7 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
     };
 
     const academicCourseIds = new Set(courses.filter(c => c.type !== 'other').map(c => c.id));
-    const academicClasses = classes.filter(c => academicCourseIds.has(c.courseId));
+    const academicClasses = effectiveClasses.filter(c => academicCourseIds.has(c.courseId));
 
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -350,7 +428,8 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                 onClose={() => setPlanoTarget(null)}
                 classData={planoTarget}
                 materia={getMateria(planoTarget, courses)}
-                onUpdateClass={(updated) => { onUpdateClass(updated); setPlanoTarget(updated); }}
+                onUpdateMesaProfesor={(x, y) => handleUpdateMesaProfesor(planoTarget, x, y)}
+                onUpdateStudentPosition={(studentId, x, y) => handleUpdateStudentPosition(planoTarget, studentId, x, y)}
                 onOpenFicha={(student) => setFichaTarget({ student, classData: planoTarget })}
             />
         )}

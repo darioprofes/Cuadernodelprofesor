@@ -52,6 +52,13 @@ export interface Tutor {
 // fechaNacimiento, tampoco se guarda.
 export interface Student {
   id: string;
+  // Id de la matrícula (ENROLLMENT) de esta persona en la clase actual —
+  // solo presente en el backend nuevo (web, bloque 5); ausente en el blob
+  // de escritorio, donde `id` ya identifica tanto a la persona como a su
+  // presencia en la clase (no hay ENROLLMENT separado ahí). Necesario para
+  // saber qué matrícula tocar al borrar/mover en el plano/editar campos
+  // propios de ENROLLMENT — ver services/apiAdapters.ts.
+  enrollmentId?: string;
   nombre?: string;
   primerApellido?: string;
   segundoApellido?: string;

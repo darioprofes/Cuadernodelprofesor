@@ -11,32 +11,13 @@ import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tabl
 import { isTauri } from '@tauri-apps/api/core';
 import { useCurrentAcademicYear } from '../../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../../hooks/useApiClasses';
+import { apiClassToLocal } from '../../services/apiAdapters';
 
 // La importación de horario en PDF depende del backend Python (pdfplumber,
 // ver api/app/services/horario_pdf.py) — no existe en la versión de
 // escritorio, que no tiene servidor. El horario se sigue pudiendo editar a
 // mano en la rejilla de abajo.
 const IS_DESKTOP = isTauri();
-
-// classes (Postgres) todavía no tiene alumnado/categorías/tareas/notas
-// embebidos (bloques 5/6) — se rellenan vacíos aquí porque nada de este
-// fichero los lee ni los escribe, solo hace que el objeto cumpla el tipo
-// ClassData completo que ya usan ClassLabel/formatClassLabel.
-const apiClassToLocal = (cls: { id: string; courseId: string; grupo?: string; schedule?: unknown[]; skippedDays?: unknown[]; icono?: string; colorAcento?: number; mesaProfesorX?: number; mesaProfesorY?: number }): ClassData => ({
-    id: cls.id,
-    grupo: cls.grupo,
-    courseId: cls.courseId,
-    students: [],
-    categories: [],
-    assignments: [],
-    grades: [],
-    schedule: (cls.schedule ?? []) as ClassData['schedule'],
-    skippedDays: (cls.skippedDays ?? []) as ClassData['skippedDays'],
-    icono: cls.icono,
-    colorAcento: cls.colorAcento,
-    mesaProfesorX: cls.mesaProfesorX,
-    mesaProfesorY: cls.mesaProfesorY,
-});
 
 interface ScheduleSlotInfo {
     classId: string;
