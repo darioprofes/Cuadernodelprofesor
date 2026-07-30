@@ -1,7 +1,7 @@
 // Cliente HTTP mínimo para el backend granular nuevo (ver fase-0-ddl-y-api.md).
 // Solo se usa en web: en escritorio, las entidades aún no migradas (ver
 // hooks/use*.ts) siguen leyendo/escribiendo del blob local a través de
-// dbAdapter.ts/useDatabase(), sin pasar por aquí — ver Fase 8 del plan.
+// dbAdapter.ts/useDatabase(), sin pasar por aquí — ver Fase 7 del plan.
 
 const API_BASE = '/api';
 
@@ -40,5 +40,6 @@ export const api = {
     get: <T>(path: string) => request<T>(path),
     post: <T>(path: string, data: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(data) }),
     patch: <T>(path: string, data: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(data) }),
+    put: <T>(path: string, data: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (path: string) => request<void>(path, { method: 'DELETE' }),
 };
