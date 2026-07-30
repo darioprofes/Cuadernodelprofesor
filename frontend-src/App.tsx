@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import initSqlJs, { type Database } from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
+import { dbAdapter, VersionConflictError } from './services/dbAdapter';
 import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, INITIAL_SHORTCUTS } from './constants';
 import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
 import { runMigrations, CURRENT_SCHEMA_VERSION } from './services/migrations';
@@ -35,75 +36,8 @@ import ClasesView from './components/ClasesView';
 import ReunionesView from './components/ReunionesView';
 import ExamenesView from './components/ExamenesView';
 import ClassLabel from './components/ClassLabel';
-import { formatClassLabel, getClassName, compararCodigo, extractPhotos, stripPhotos, mergePhotos } from './utils';
+import { formatClassLabel, getClassName, compararCodigo } from './utils';
 import { backgroundPatternStyle } from './theme/backgroundPattern';
-
-// Se lanza cuando el servidor rechaza un PUT /db porque la versión enviada
-// ya no es la vigente (otra pestaña/dispositivo guardó primero) — distinta
-// de un error de red genérico para poder mostrar un mensaje específico en
-// vez de un "algo falló" ambiguo.
-class VersionConflictError extends Error {}
-
-// Persistencia en el servidor propio (en vez de IndexedDB del navegador):
-// el blob SQLite completo se guarda/lee vía /api/db, detrás de Authentik.
-// Cada blob lleva una versión entera (cabecera X-Blob-Version) que el
-// servidor incrementa en cada PUT aceptado; mandarla de vuelta en el
-// siguiente PUT es lo que permite detectar una sobrescritura por una
-// pestaña vieja en vez de aceptarla en silencio (ver api/app/services/app_db.py).
-const remoteDb = {
-  get: async (): Promise<{ data: Uint8Array; version: number } | undefined> => {
-    const response = await fetch('/api/db');
-    if (response.status === 204) {
-      return undefined;
-    }
-    if (!response.ok) {
-      throw new Error(`No se pudo cargar la base de datos del servidor (HTTP ${response.status}).`);
-    }
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength === 0) {
-      return undefined;
-    }
-    const versionHeader = response.headers.get('X-Blob-Version');
-    return { data: new Uint8Array(buffer), version: versionHeader ? parseInt(versionHeader, 10) : 1 };
-  },
-  set: async (data: Uint8Array, expectedVersion: number | null): Promise<number> => {
-    const headers: Record<string, string> = {};
-    if (expectedVersion !== null) headers['X-Blob-Version'] = String(expectedVersion);
-    const response = await fetch('/api/db', { method: 'PUT', body: data, headers });
-    if (response.status === 409) {
-      const body = await response.json().catch(() => ({}));
-      throw new VersionConflictError(body.detail || 'La base de datos se ha modificado desde otra pestaña o dispositivo. Recarga la página antes de seguir editando.');
-    }
-    if (!response.ok) {
-      throw new Error(`No se pudo guardar la base de datos en el servidor (HTTP ${response.status}).`);
-    }
-    const result = await response.json();
-    return result.version;
-  },
-};
-
-// Fotos de alumnado, al margen del blob (ver utils.ts: extractPhotos/
-// stripPhotos/mergePhotos y el comentario en schema.sql sobre por qué).
-const photosApi = {
-  getAll: async (): Promise<Record<string, string>> => {
-    const response = await fetch('/api/photos');
-    if (!response.ok) return {};
-    return response.json();
-  },
-  set: async (studentId: string, dataUrl: string): Promise<void> => {
-    await fetch(`/api/photos/${studentId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataUrl }),
-    });
-  },
-  remove: async (studentId: string): Promise<void> => {
-    await fetch(`/api/photos/${studentId}`, { method: 'DELETE' });
-  },
-  removeAll: async (): Promise<void> => {
-    await fetch('/api/photos', { method: 'DELETE' });
-  },
-};
 
 // Custom hook for SQLite database management
 function useDatabase() {
@@ -111,13 +45,10 @@ function useDatabase() {
     const [appState, setAppState] = useState<AppState | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    // Últimas fotos que sabemos que ya están en el servidor (services/
-    // student_photos.py), para solo subir las que de verdad han cambiado en
-    // vez de resubirlas todas en cada autoguardado.
-    const photosRef = useRef<Record<string, string>>({});
-    // Versión del blob que sabemos vigente en el servidor; null hasta que
-    // exista al menos una fila (primer PUT). Se manda de vuelta en cada
-    // autoguardado para detectar sobrescrituras concurrentes (ver remoteDb).
+    // Versión del blob que sabemos vigente en el servidor; null en escritorio
+    // (sin control de versión, ver services/dbAdapter.ts) y hasta que exista
+    // al menos una fila en web (primer PUT). Se manda de vuelta en cada
+    // autoguardado para detectar sobrescrituras concurrentes.
     const versionRef = useRef<number | null>(null);
 
     const loadDataFromDb = (db: Database) => {
@@ -139,7 +70,7 @@ function useDatabase() {
         const initialize = async () => {
             try {
                 const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl });
-                const savedDb = await remoteDb.get();
+                const savedDb = await dbAdapter.get();
                 let db;
                 if (savedDb) {
                     db = new SQL.Database(savedDb.data);
@@ -164,17 +95,15 @@ function useDatabase() {
                         agendaNotes: INITIAL_AGENDA_NOTES,
                         shortcuts: INITIAL_SHORTCUTS,
                     };
-                    // Initial save
-                    db.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify({ ...initialState, classes: stripPhotos(initialState.classes) })]);
+                    const stateToStore = { ...initialState, classes: dbAdapter.stripPhotosForStorage(initialState.classes) };
+                    db.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(stateToStore)]);
                     const binaryDb = db.export();
-                    versionRef.current = await remoteDb.set(binaryDb, null);
+                    versionRef.current = await dbAdapter.set(binaryDb, null);
                 }
                 dbRef.current = db;
                 const data = loadDataFromDb(db);
                 if (data) {
-                    const photos = await photosApi.getAll();
-                    photosRef.current = photos;
-                    data.classes = mergePhotos(data.classes, photos);
+                    data.classes = await dbAdapter.hydratePhotosOnLoad(data.classes);
                 }
                 setAppState(data);
             } catch (err) {
@@ -200,27 +129,11 @@ function useDatabase() {
                 if (!dbRef.current) return;
                 try {
                     const db = dbRef.current;
-                    // Las fotos NUNCA entran en el blob principal — ver
-                    // schema.sql/photosApi. Se sincronizan aparte, y solo las
-                    // que de verdad han cambiado desde la última vez.
-                    const strippedState = { ...appState, classes: stripPhotos(appState.classes) };
-                    db.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(strippedState)]);
+                    const stateToStore = { ...appState, classes: dbAdapter.stripPhotosForStorage(appState.classes) };
+                    db.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(stateToStore)]);
                     const binaryDb = db.export();
-                    versionRef.current = await remoteDb.set(binaryDb, versionRef.current);
-
-                    const currentPhotos = extractPhotos(appState.classes);
-                    const prevPhotos = photosRef.current;
-                    const photoOps: Promise<void>[] = [];
-                    Object.entries(currentPhotos).forEach(([studentId, foto]) => {
-                        if (prevPhotos[studentId] !== foto) photoOps.push(photosApi.set(studentId, foto));
-                    });
-                    Object.keys(prevPhotos).forEach(studentId => {
-                        if (!(studentId in currentPhotos)) photoOps.push(photosApi.remove(studentId));
-                    });
-                    if (photoOps.length > 0) {
-                        await Promise.all(photoOps);
-                        photosRef.current = currentPhotos;
-                    }
+                    versionRef.current = await dbAdapter.set(binaryDb, versionRef.current);
+                    await dbAdapter.syncPhotosAfterSave(appState.classes);
                 } catch (e) {
                     console.error("Failed to autosave database:", e);
                     if (e instanceof VersionConflictError) {
@@ -260,30 +173,16 @@ function useDatabase() {
                 // El .db importado puede traer fotos embebidas (si viene de
                 // exportDatabase, que las incluye para que la copia sea
                 // autocontenida) — se tratan como la verdad definitiva de la
-                // restauración: se sincroniza el servidor para que coincida
-                // exactamente (añadir/actualizar las que trae, borrar las
-                // que ya no están), no solo se añaden.
-                const importedPhotos = extractPhotos(data.classes);
-                const serverPhotos = await photosApi.getAll();
-                const photoOps: Promise<void>[] = [];
-                Object.entries(importedPhotos).forEach(([studentId, foto]) => {
-                    if (serverPhotos[studentId] !== foto) photoOps.push(photosApi.set(studentId, foto));
-                });
-                Object.keys(serverPhotos).forEach(studentId => {
-                    if (!(studentId in importedPhotos)) photoOps.push(photosApi.remove(studentId));
-                });
-                await Promise.all(photoOps);
-                photosRef.current = importedPhotos;
-                data.classes = mergePhotos(data.classes, importedPhotos);
-
+                // restauración.
+                await dbAdapter.syncPhotosForImport(data.classes);
                 setAppState(data);
-                const strippedState = { ...data, classes: stripPhotos(data.classes) };
-                dbRef.current.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(strippedState)]);
+                const stateToStore = { ...data, classes: dbAdapter.stripPhotosForStorage(data.classes) };
+                dbRef.current.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(stateToStore)]);
                 const binaryDb = db.export(); // Get binary data from the new DB
                 // Importar es una restauración explícita y deliberada: se
-                // acepta pase lo que pase en el servidor (expectedVersion null),
+                // acepta pase lo que pase en el almacén (expectedVersion null),
                 // no tiene sentido bloquearla por un conflicto de versión.
-                versionRef.current = await remoteDb.set(binaryDb, null);
+                versionRef.current = await dbAdapter.set(binaryDb, null);
                 alert("Base de datos importada con éxito.");
             } else {
                 throw new Error("El archivo de base de datos no es válido o está vacío.");
@@ -305,19 +204,7 @@ function useDatabase() {
     const exportDatabase = useCallback(async (): Promise<Uint8Array | null> => {
         if (!dbRef.current) return null;
         const db = dbRef.current;
-        try {
-            const res = db.exec("SELECT data FROM app_data WHERE key = 'main'");
-            if (res.length > 0 && res[0].values.length > 0) {
-                // data es TEXT en el esquema de app_data (siempre JSON.stringify
-                // al guardar), sql.js solo lo tipa como SqlValue en general.
-                const currentMain = JSON.parse(res[0].values[0][0] as string);
-                const photos = await photosApi.getAll();
-                const withPhotos = { ...currentMain, classes: mergePhotos(currentMain.classes, photos) };
-                db.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(withPhotos)]);
-            }
-        } catch (e) {
-            console.error("No se pudieron incrustar las fotos en la copia de seguridad, se exporta sin ellas:", e);
-        }
+        await dbAdapter.embedPhotosForExport(db);
         return db.export();
     }, []);
 
@@ -332,8 +219,9 @@ function useDatabase() {
 
         setLoading(true);
         try {
-            // FIX: The blankState was missing required properties for AcademicConfiguration and AppState.
-            // Added empty arrays for holidays, evaluationPeriods, and evaluationTools to satisfy the types.
+            // Reutiliza la misma configuración académica (evaluaciones, festivos,
+            // franjas horarias) que se usa al crear la base de datos por primera
+            // vez, para no dejar el curso sin evaluaciones tras un restablecimiento.
             const blankState: AppState = {
                 schemaVersion: CURRENT_SCHEMA_VERSION,
                 classes: [],
@@ -344,31 +232,17 @@ function useDatabase() {
                 courses: [],
                 programmingUnits: [],
                 basicKnowledge: [],
-                academicConfiguration: {
-                    academicYearStart: `${new Date().getFullYear()}-09-01`,
-                    academicYearEnd: `${new Date().getFullYear() + 1}-06-21`,
-                    holidays: [],
-                    evaluationPeriods: [],
-                    evaluationPeriodWeights: {},
-                    periods: [
-                        '1ª Hora (8:00-8:55)', '2ª Hora (8:55-9:50)', 'Recreo (9:50-10:20)',
-                        '3ª Hora (10:20-11:15)', '4ª Hora (11:15-12:10)', 'Recreo (12:10-12:40)',
-                        '5ª Hora (12:40-13:35)', '6ª Hora (13:35-14:30)',
-                    ],
-                    defaultStartView: 'hoy',
-                    defaultCalendarView: 'month'
-                },
+                academicConfiguration: INITIAL_ACADEMIC_CONFIGURATION,
                 evaluationTools: [],
                 tasks: [],
                 meetings: [],
                 agendaNotes: [],
-                shortcuts: [],
+                shortcuts: INITIAL_SHORTCUTS,
             };
             dbRef.current.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(blankState)]);
             const binaryDb = dbRef.current.export();
-            versionRef.current = await remoteDb.set(binaryDb, null);
-            await photosApi.removeAll();
-            photosRef.current = {};
+            versionRef.current = await dbAdapter.set(binaryDb, null);
+            await dbAdapter.resetPhotos();
             setAppState(blankState);
             alert("Todos los datos han sido borrados. La aplicación se recargará.");
             window.location.reload();

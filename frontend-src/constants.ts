@@ -89,22 +89,29 @@ export const INITIAL_SHORTCUTS: Shortcut[] = [
 ];
 
 // ACADEMIC CONFIGURATION
+// Calcula el año de inicio del curso académico en el momento de cargar la app:
+// julio-diciembre → el curso arranca ESE año; enero-junio → arrancó el año anterior.
+const _ahora = new Date();
+const _añoInicio = _ahora.getMonth() >= 6 ? _ahora.getFullYear() : _ahora.getFullYear() - 1;
+const _y = String(_añoInicio);
+const _ny = String(_añoInicio + 1);
+
 export const INITIAL_ACADEMIC_CONFIGURATION: AcademicConfiguration = {
-    academicYearStart: '2024-09-09',
-    academicYearEnd: '2025-06-20',
+    academicYearStart: `${_y}-09-09`,
+    academicYearEnd: `${_ny}-06-20`,
     holidays: [
-        { id: 'h-1', name: 'Vacaciones de Navidad', startDate: '2024-12-23', endDate: '2025-01-07' },
-        { id: 'h-2', name: 'Semana Santa', startDate: '2025-04-14', endDate: '2025-04-21' },
+        { id: 'h-1', name: 'Vacaciones de Navidad', startDate: `${_y}-12-23`, endDate: `${_ny}-01-07` },
+        { id: 'h-2', name: 'Semana Santa', startDate: `${_ny}-04-14`, endDate: `${_ny}-04-21` },
     ],
     evaluationPeriods: [
-        { id: 'ep-1', name: '1ª Evaluación', startDate: '2024-09-09', endDate: '2024-12-20' },
-        { id: 'ep-2', name: '2ª Evaluación', startDate: '2025-01-08', endDate: '2025-03-28' },
-        { id: 'ep-3', name: '3ª Evaluación', startDate: '2025-03-31', endDate: '2025-06-20' },
+        { id: 'ep-1', name: '1ª Evaluación', startDate: `${_y}-09-09`, endDate: `${_y}-12-20` },
+        { id: 'ep-2', name: '2ª Evaluación', startDate: `${_ny}-01-08`, endDate: `${_ny}-03-28` },
+        { id: 'ep-3', name: '3ª Evaluación', startDate: `${_ny}-03-31`, endDate: `${_ny}-06-20` },
     ],
     evaluationPeriodWeights: {
         'ep-1': 1,
         'ep-2': 1,
-        'ep-3': 1
+        'ep-3': 1,
     },
     layoutMode: 'tablet',
     periods: [
@@ -125,5 +132,5 @@ export const INITIAL_ACADEMIC_CONFIGURATION: AcademicConfiguration = {
         { min: 6, color: 'yellow', label: 'Bien' },
         { min: 5, color: 'orange', label: 'Suficiente' },
         { min: 0, color: 'red', label: 'Insuficiente' },
-    ]
+    ],
 };

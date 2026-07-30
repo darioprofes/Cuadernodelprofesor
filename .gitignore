@@ -9,6 +9,7 @@ CLAUDE.md
 # Backend Python
 api/**/__pycache__/
 api/**/*.pyc
+api/*.log
 
 # Frontend: node_modules y build (frontend-src/ tiene su propio .gitignore
 # más completo, esto es un refuerzo a nivel de raíz)
@@ -16,6 +17,12 @@ node_modules/
 frontend-src/dist/
 frontend-src/dist-ssr/
 *.local
+
+# Versión de escritorio (Tauri): artefactos de compilación de Rust y la
+# carpeta de entrega del .exe/instalador — se regeneran con
+# npm run tauri:build, no tiene sentido versionarlos.
+frontend-src/src-tauri/target/
+desktop-dist/
 
 # Editor
 .vscode/*
