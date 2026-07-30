@@ -9,12 +9,34 @@ import ClassLabel from '../ClassLabel';
 import ImportScheduleModal from '../ImportScheduleModal';
 import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../../theme/components/Table';
 import { isTauri } from '@tauri-apps/api/core';
+import { useCurrentAcademicYear } from '../../hooks/useAcademicYears';
+import { useApiClasses, useUpdateClass } from '../../hooks/useApiClasses';
 
 // La importación de horario en PDF depende del backend Python (pdfplumber,
 // ver api/app/services/horario_pdf.py) — no existe en la versión de
 // escritorio, que no tiene servidor. El horario se sigue pudiendo editar a
 // mano en la rejilla de abajo.
 const IS_DESKTOP = isTauri();
+
+// classes (Postgres) todavía no tiene alumnado/categorías/tareas/notas
+// embebidos (bloques 5/6) — se rellenan vacíos aquí porque nada de este
+// fichero los lee ni los escribe, solo hace que el objeto cumpla el tipo
+// ClassData completo que ya usan ClassLabel/formatClassLabel.
+const apiClassToLocal = (cls: { id: string; courseId: string; grupo?: string; schedule?: unknown[]; skippedDays?: unknown[]; icono?: string; colorAcento?: number; mesaProfesorX?: number; mesaProfesorY?: number }): ClassData => ({
+    id: cls.id,
+    grupo: cls.grupo,
+    courseId: cls.courseId,
+    students: [],
+    categories: [],
+    assignments: [],
+    grades: [],
+    schedule: (cls.schedule ?? []) as ClassData['schedule'],
+    skippedDays: (cls.skippedDays ?? []) as ClassData['skippedDays'],
+    icono: cls.icono,
+    colorAcento: cls.colorAcento,
+    mesaProfesorX: cls.mesaProfesorX,
+    mesaProfesorY: cls.mesaProfesorY,
+});
 
 interface ScheduleSlotInfo {
     classId: string;
@@ -81,47 +103,75 @@ const ScheduleManager: React.FC<{
     classes: ClassData[];
     setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
     courses: Course[];
-    setCourses: (updater: React.SetStateAction<Course[]>) => void;
     academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
-}> = ({ classes, setClasses, courses, setCourses, academicConfiguration, setAcademicConfiguration }) => {
+}> = ({ classes, setClasses, courses, academicConfiguration, setAcademicConfiguration }) => {
     const daysOfWeek = [{label: 'Lunes', value: 1}, {label: 'Martes', value: 2}, {label: 'Miércoles', value: 3}, {label: 'Jueves', value: 4}, {label: 'Viernes', value: 5}];
     const periods = academicConfiguration.periods || [];
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [editingSlot, setEditingSlot] = useState<{ day: number; periodIndex: number } | null>(null);
 
-    const handleSaveSlot = (day: number, periodIndex: number, newClassId: string, aula: string, nota: string) => {
-        setClasses(prevClasses => {
-            return prevClasses.map(c => {
-                const oldSchedule = c.schedule || [];
-                const hasSlot = oldSchedule.some(slot => slot.day === day && slot.periodIndex === periodIndex);
+    const currentYear = useCurrentAcademicYear({ enabled: !IS_DESKTOP });
+    const yearId = currentYear.data?.id ?? '';
+    const remoteClasses = useApiClasses(yearId, { enabled: !IS_DESKTOP && !!yearId });
+    const updateClassMutation = useUpdateClass();
 
-                if (c.id === newClassId) {
-                    const newSlot: { day: number; periodIndex: number; aula?: string; nota?: string } = { day, periodIndex };
-                    if (aula.trim()) newSlot.aula = aula.trim();
-                    if (nota.trim()) newSlot.nota = nota.trim();
-                    const withoutSlot = oldSchedule.filter(slot => !(slot.day === day && slot.periodIndex === periodIndex));
-                    return { ...c, schedule: [...withoutSlot, newSlot] };
-                }
+    const effectiveClasses: ClassData[] = useMemo(() => {
+        if (IS_DESKTOP) return classes;
+        return (remoteClasses.data ?? []).map(apiClassToLocal);
+    }, [classes, remoteClasses.data]);
 
-                if (hasSlot) {
-                    return { ...c, schedule: oldSchedule.filter(slot => !(slot.day === day && slot.periodIndex === periodIndex)) };
-                }
+    const handleSaveSlot = async (day: number, periodIndex: number, newClassId: string, aula: string, nota: string) => {
+        if (IS_DESKTOP) {
+            setClasses(prevClasses => {
+                return prevClasses.map(c => {
+                    const oldSchedule = c.schedule || [];
+                    const hasSlot = oldSchedule.some(slot => slot.day === day && slot.periodIndex === periodIndex);
 
-                return c;
+                    if (c.id === newClassId) {
+                        const newSlot: { day: number; periodIndex: number; aula?: string; nota?: string } = { day, periodIndex };
+                        if (aula.trim()) newSlot.aula = aula.trim();
+                        if (nota.trim()) newSlot.nota = nota.trim();
+                        const withoutSlot = oldSchedule.filter(slot => !(slot.day === day && slot.periodIndex === periodIndex));
+                        return { ...c, schedule: [...withoutSlot, newSlot] };
+                    }
+
+                    if (hasSlot) {
+                        return { ...c, schedule: oldSchedule.filter(slot => !(slot.day === day && slot.periodIndex === periodIndex)) };
+                    }
+
+                    return c;
+                });
             });
-        });
+            return;
+        }
+
+        const oldHolder = effectiveClasses.find(c => (c.schedule || []).some(slot => slot.day === day && slot.periodIndex === periodIndex));
+        if (oldHolder && oldHolder.id !== newClassId) {
+            const newSchedule = (oldHolder.schedule || []).filter(slot => !(slot.day === day && slot.periodIndex === periodIndex));
+            await updateClassMutation.mutateAsync({ id: oldHolder.id, yearId, data: { schedule: newSchedule } });
+        }
+        if (newClassId) {
+            const target = effectiveClasses.find(c => c.id === newClassId);
+            if (target) {
+                const newSlot: { day: number; periodIndex: number; aula?: string; nota?: string } = { day, periodIndex };
+                if (aula.trim()) newSlot.aula = aula.trim();
+                if (nota.trim()) newSlot.nota = nota.trim();
+                const withoutSlot = (target.schedule || []).filter(slot => !(slot.day === day && slot.periodIndex === periodIndex));
+                await updateClassMutation.mutateAsync({ id: newClassId, yearId, data: { schedule: [...withoutSlot, newSlot] } });
+            }
+        }
     };
 
     const scheduleGrid = useMemo(() => {
         const grid = new Map<string, ScheduleSlotInfo>(); // key: "day-period"
-        classes.forEach(c => {
+        effectiveClasses.forEach(c => {
             (c.schedule || []).forEach(slot => {
                 grid.set(`${slot.day}-${slot.periodIndex}`, { classId: c.id, aula: slot.aula, nota: slot.nota });
             });
         });
         return grid;
-    }, [classes]);
+    }, [effectiveClasses]);
 
     return (
         <div>
@@ -145,9 +195,8 @@ const ScheduleManager: React.FC<{
                     isOpen={isImportModalOpen}
                     onClose={() => setIsImportModalOpen(false)}
                     courses={courses}
-                    setCourses={setCourses}
-                    classes={classes}
-                    setClasses={setClasses}
+                    classes={effectiveClasses}
+                    yearId={yearId}
                     academicConfiguration={academicConfiguration}
                     setAcademicConfiguration={setAcademicConfiguration}
                 />
@@ -168,7 +217,7 @@ const ScheduleManager: React.FC<{
                                 <td className="p-2 font-medium text-slate-600 border-r">{periodName}</td>
                                 {daysOfWeek.map(day => {
                                     const slotInfo = scheduleGrid.get(`${day.value}-${periodIndex}`);
-                                    const classInSlot = slotInfo ? classes.find(c => c.id === slotInfo.classId) : undefined;
+                                    const classInSlot = slotInfo ? effectiveClasses.find(c => c.id === slotInfo.classId) : undefined;
                                     const detalle = [slotInfo?.aula, slotInfo?.nota].filter(Boolean).join(' · ');
                                     return (
                                         <td key={`${day.value}-${periodIndex}`} className="p-1 border-r">
@@ -200,7 +249,7 @@ const ScheduleManager: React.FC<{
                     onClose={() => setEditingSlot(null)}
                     dayLabel={daysOfWeek.find(d => d.value === editingSlot.day)?.label || ''}
                     periodLabel={periods[editingSlot.periodIndex] || ''}
-                    classes={classes}
+                    classes={effectiveClasses}
                     courses={courses}
                     initialSlot={scheduleGrid.get(`${editingSlot.day}-${editingSlot.periodIndex}`)}
                     onSave={(classId, aula, nota) => handleSaveSlot(editingSlot.day, editingSlot.periodIndex, classId, aula, nota)}

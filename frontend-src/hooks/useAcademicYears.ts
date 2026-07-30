@@ -45,6 +45,14 @@ export function useDeleteAcademicYear() {
     });
 }
 
+// Wrapper de conveniencia sobre useAcademicYears(): el curso académico
+// `isCurrent` es lo que necesitan classes/enrollments/... (bloque 4 en
+// adelante) para saber a qué academic_year_id colgar sus altas.
+export function useCurrentAcademicYear(options?: { enabled?: boolean }) {
+    const query = useAcademicYears(options);
+    return { ...query, data: query.data?.find(y => y.isCurrent) };
+}
+
 export function useEvaluationPeriods(yearId: string, options?: { enabled?: boolean }) {
     return useQuery({
         queryKey: periodsQueryKey(yearId),

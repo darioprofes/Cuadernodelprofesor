@@ -1,10 +1,21 @@
 import React, { useState } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import type { ClassData, Course } from '../../types';
 import { PencilIcon, TrashIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
 import IconButton from '../IconButton';
 import { HUE_PRESETS, ACCENT_WHITE, ACCENT_BLACK } from '../../utils';
+import { useCreateCourse, useUpdateCourse, useDeleteCourse } from '../../hooks/useCourses';
+import { useCurrentAcademicYear } from '../../hooks/useAcademicYears';
+import { useApiClasses, useCreateClass, useUpdateClass, useDeleteClass } from '../../hooks/useApiClasses';
+
+// Solo se usan los campos "cáscara" de una clase (id/courseId/colorAcento/
+// schedule) — nunca alumnado/categorías/tareas/notas, así que no hace falta
+// el tipo ClassData completo (types.ts) para la lista resuelta por
+// plataforma; students/categories/assignments/grades siguen en el blob
+// hasta los bloques 5/6, sin tocarlos aquí.
+type ClassShell = { id: string; courseId: string; colorAcento?: number; schedule?: unknown[] };
 
 const CourseManager: React.FC<{
     courses: Course[];
@@ -12,6 +23,19 @@ const CourseManager: React.FC<{
     classes: ClassData[];
     setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
 }> = ({ courses, setCourses, classes, setClasses }) => {
+    const isDesktop = isTauri();
+    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+    const yearId = currentYear.data?.id ?? '';
+    const remoteClasses = useApiClasses(yearId, { enabled: !isDesktop && !!yearId });
+    const createCourseMutation = useCreateCourse();
+    const updateCourseMutation = useUpdateCourse();
+    const deleteCourseMutation = useDeleteCourse();
+    const createClassMutation = useCreateClass();
+    const updateClassMutation = useUpdateClass();
+    const deleteClassMutation = useDeleteClass();
+
+    const effectiveClasses: ClassShell[] = isDesktop ? classes : (remoteClasses.data ?? []);
+
     const [newLevel, setNewLevel] = useState('1º ESO');
     const [newSubject, setNewSubject] = useState('');
     const [newOtherName, setNewOtherName] = useState('');
@@ -27,83 +51,103 @@ const CourseManager: React.FC<{
         setEditingCourseId(course.id);
         setEditLevel(course.level);
         setEditSubject(course.subject);
-        setEditColorAcento(classes.find(cl => cl.courseId === course.id)?.colorAcento);
+        setEditColorAcento(effectiveClasses.find(cl => cl.courseId === course.id)?.colorAcento);
     };
 
     const handleCancelEdit = () => {
         setEditingCourseId(null);
     };
 
-    const handleSaveEdit = (e: React.FormEvent) => {
+    const handleSaveEdit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (editSubject.trim() === '' || !editingCourseId) return;
 
         const editingCourse = courses.find(c => c.id === editingCourseId);
+        const newLevelValue = editingCourse?.type === 'other' ? editingCourse.level : editLevel;
 
-        setCourses(prev => prev.map(c => c.id === editingCourseId
-            ? { ...c, subject: editSubject.trim(), level: c.type === 'other' ? c.level : editLevel }
-            : c
-        ));
-
-        // El color de acento vive en la clase, no en el curso — solo se toca
-        // aquí para "Otras Ocupaciones", que siempre tienen una única clase
-        // asociada (a diferencia de un curso académico, que puede tener
-        // varios grupos con colores distintos gestionados desde Clases).
-        if (editingCourse?.type === 'other') {
-            setClasses(prev => prev.map(cl => cl.courseId === editingCourseId
-                ? { ...cl, colorAcento: editColorAcento }
-                : cl
+        if (isDesktop) {
+            setCourses(prev => prev.map(c => c.id === editingCourseId
+                ? { ...c, subject: editSubject.trim(), level: newLevelValue }
+                : c
             ));
+
+            // El color de acento vive en la clase, no en el curso — solo se toca
+            // aquí para "Otras Ocupaciones", que siempre tienen una única clase
+            // asociada (a diferencia de un curso académico, que puede tener
+            // varios grupos con colores distintos gestionados desde Clases).
+            if (editingCourse?.type === 'other') {
+                setClasses(prev => prev.map(cl => cl.courseId === editingCourseId
+                    ? { ...cl, colorAcento: editColorAcento }
+                    : cl
+                ));
+            }
+        } else {
+            await updateCourseMutation.mutateAsync({ id: editingCourseId, data: { subject: editSubject.trim(), level: newLevelValue } });
+            if (editingCourse?.type === 'other') {
+                const cls = effectiveClasses.find(cl => cl.courseId === editingCourseId);
+                if (cls) {
+                    await updateClassMutation.mutateAsync({ id: cls.id, yearId, data: { colorAcento: editColorAcento } });
+                }
+            }
         }
 
         setEditingCourseId(null);
     };
 
-    const handleAddCourse = (e: React.FormEvent) => {
+    const handleAddCourse = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newSubject.trim() === '') return;
-        const newCourse: Course = {
-            id: `course-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            level: newLevel,
-            subject: newSubject.trim(),
-            type: 'academic',
-        };
-        setCourses(prev => [...prev, newCourse]);
+        if (isDesktop) {
+            const newCourse: Course = {
+                id: `course-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                level: newLevel,
+                subject: newSubject.trim(),
+                type: 'academic',
+            };
+            setCourses(prev => [...prev, newCourse]);
+        } else {
+            await createCourseMutation.mutateAsync({ level: newLevel, subject: newSubject.trim(), type: 'academic' });
+        }
         setNewSubject('');
     };
 
-    const handleAddOtherOccupation = (e: React.FormEvent) => {
+    const handleAddOtherOccupation = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newOtherName.trim() === '') return;
 
-        const newCourse: Course = {
-            id: `course-other-${Date.now()}`,
-            level: 'Otro',
-            subject: newOtherName.trim(),
-            type: 'other'
-        };
+        if (isDesktop) {
+            const newCourse: Course = {
+                id: `course-other-${Date.now()}`,
+                level: 'Otro',
+                subject: newOtherName.trim(),
+                type: 'other'
+            };
 
-        const newClass: ClassData = {
-            id: `class-other-${Date.now()}`,
-            courseId: newCourse.id,
-            students: [],
-            categories: [],
-            assignments: [],
-            grades: [],
-            schedule: [],
-        };
+            const newClass: ClassData = {
+                id: `class-other-${Date.now()}`,
+                courseId: newCourse.id,
+                students: [],
+                categories: [],
+                assignments: [],
+                grades: [],
+                schedule: [],
+            };
 
-        setCourses(prev => [...prev, newCourse]);
-        setClasses(prev => [...prev, newClass]);
+            setCourses(prev => [...prev, newCourse]);
+            setClasses(prev => [...prev, newClass]);
+        } else {
+            const newCourse = await createCourseMutation.mutateAsync({ level: 'Otro', subject: newOtherName.trim(), type: 'other' });
+            await createClassMutation.mutateAsync({ yearId, data: { courseId: newCourse.id, schedule: [] } });
+        }
         setNewOtherName('');
     };
 
-    const handleDeleteCourse = (courseId: string) => {
+    const handleDeleteCourse = async (courseId: string) => {
         const courseToDelete = courses.find(c => c.id === courseId);
         if (!courseToDelete) return;
 
         const isAcademic = courseToDelete.type !== 'other';
-        const associatedClasses = classes.filter(c => c.courseId === courseId);
+        const associatedClasses = effectiveClasses.filter(c => c.courseId === courseId);
 
         let confirmationMessage = isAcademic
             ? `¿Seguro que quieres eliminar el curso '${courseToDelete.subject}'?`
@@ -115,9 +159,16 @@ const CourseManager: React.FC<{
             confirmationMessage += `\n\nEsto también eliminará la entrada correspondiente de tu horario semanal.`;
         }
 
-        if (window.confirm(confirmationMessage)) {
+        if (!window.confirm(confirmationMessage)) return;
+
+        if (isDesktop) {
             setCourses(prev => prev.filter(c => c.id !== courseId));
             setClasses(prev => prev.filter(c => c.courseId !== courseId));
+        } else {
+            for (const cls of associatedClasses) {
+                await deleteClassMutation.mutateAsync({ id: cls.id, yearId });
+            }
+            await deleteCourseMutation.mutateAsync(courseId);
         }
     };
 

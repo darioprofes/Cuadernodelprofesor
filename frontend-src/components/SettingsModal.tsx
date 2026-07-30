@@ -65,9 +65,9 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
             case 'classes':
                 return <ClassManager classes={classes} setClasses={setClasses} courses={courses} academicConfiguration={academicConfiguration} />;
             case 'schedule':
-                return <ScheduleManager classes={classes} setClasses={setClasses} courses={courses} setCourses={setCourses} academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
+                return <ScheduleManager classes={classes} setClasses={setClasses} courses={curriculumCourses} academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
             case 'courses':
-                return <CourseManager courses={courses} setCourses={setCourses} classes={classes} setClasses={setClasses} />;
+                return <CourseManager courses={curriculumCourses} setCourses={setCourses} classes={classes} setClasses={setClasses} />;
              case 'academicConfig':
                 return <AcademicConfigManager academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
             case 'academicYears':

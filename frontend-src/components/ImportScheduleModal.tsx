@@ -6,6 +6,8 @@ import { ArrowUpTrayIcon } from './Icons';
 import ClassLabel from './ClassLabel';
 import type { ClassData, Course, AcademicConfiguration } from '../types';
 import { HUE_PRESETS, buildDefaultCategories } from '../utils';
+import { useCreateCourse, useDeleteCourse } from '../hooks/useCourses';
+import { useCreateClass, useUpdateClass, useDeleteClass } from '../hooks/useApiClasses';
 
 interface FilaHorario {
     dia: number; // 0=Lunes ... 4=Viernes (formato del backend)
@@ -20,10 +22,14 @@ interface FilaHorario {
 interface ImportScheduleModalProps {
     isOpen: boolean;
     onClose: () => void;
+    // courses/classes: ya resueltos por ScheduleManager (curriculumCourses /
+    // clases del backend nuevo mapeadas a la forma local) — este componente
+    // solo se renderiza en web (nunca en escritorio, ver ScheduleManager),
+    // así que aplica el plan siempre contra el backend nuevo, sin rama
+    // isDesktop propia.
     courses: Course[];
-    setCourses: (updater: React.SetStateAction<Course[]>) => void;
     classes: ClassData[];
-    setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
+    yearId: string;
     academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
 }
@@ -188,10 +194,12 @@ const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: Class
         clasesCreadas: idsClasesNuevas.size,
         clasesActualizadas: idsClasesActualizadas.size,
         clasesAcademicasSinUsar,
+        idsClasesNuevas,
+        idsClasesActualizadas,
     };
 };
 
-const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClose, courses, setCourses, classes, setClasses, academicConfiguration, setAcademicConfiguration }) => {
+const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClose, courses, classes, yearId, academicConfiguration, setAcademicConfiguration }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -199,6 +207,13 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
     const [erroresExtraccion, setErroresExtraccion] = useState<string[]>([]);
     const [applied, setApplied] = useState(false);
     const [borrarAcademicasSinUsar, setBorrarAcademicasSinUsar] = useState(false);
+    const [applying, setApplying] = useState(false);
+
+    const createCourseMutation = useCreateCourse();
+    const deleteCourseMutation = useDeleteCourse();
+    const createClassMutation = useCreateClass();
+    const updateClassMutation = useUpdateClass();
+    const deleteClassMutation = useDeleteClass();
 
     const handleClose = () => {
         setFilas(null);
@@ -240,12 +255,53 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
 
     const plan = filas ? buildImportPlan(filas, courses, classes, academicConfiguration.evaluationPeriods, borrarAcademicasSinUsar) : null;
 
-    const handleConfirm = () => {
+    const handleConfirm = async () => {
         if (!plan) return;
-        setAcademicConfiguration(prev => ({ ...prev, periods: plan.periods }));
-        setCourses(plan.courses);
-        setClasses(plan.classes);
-        setApplied(true);
+        setApplying(true);
+        try {
+            // 1. Cursos que desaparecen del plan: "otras ocupaciones" siempre
+            //    (se sustituyen por completo, buildImportPlan ya las excluyó de
+            //    newCourses de entrada) + académicas sin usar solo si el
+            //    usuario marcó el checkbox. Hay que borrar sus clases antes que
+            //    el curso (course_id es RESTRICT).
+            const coursesToDelete = courses.filter(c => !plan.courses.some(pc => pc.id === c.id));
+            for (const course of coursesToDelete) {
+                const classesToDelete = classes.filter(cl => cl.courseId === course.id);
+                for (const cls of classesToDelete) {
+                    await deleteClassMutation.mutateAsync({ id: cls.id, yearId });
+                }
+                await deleteCourseMutation.mutateAsync(course.id);
+            }
+
+            // 2. Cursos nuevos del plan (académicos nuevos + "otras
+            //    ocupaciones" recién creadas) — se necesita el id real para
+            //    poder crear sus clases después.
+            const idMap = new Map<string, string>();
+            for (const course of plan.courses) {
+                if (!courses.some(c => c.id === course.id)) {
+                    const created = await createCourseMutation.mutateAsync({ level: course.level, subject: course.subject, type: course.type ?? 'academic' });
+                    idMap.set(course.id, created.id);
+                }
+            }
+
+            // 3. Clases nuevas o con franjas añadidas/cambiadas.
+            for (const cls of plan.classes) {
+                const realCourseId = idMap.get(cls.courseId) ?? cls.courseId;
+                if (plan.idsClasesNuevas.has(cls.id)) {
+                    await createClassMutation.mutateAsync({
+                        yearId,
+                        data: { courseId: realCourseId, grupo: cls.grupo, schedule: cls.schedule ?? [], colorAcento: cls.colorAcento },
+                    });
+                } else if (plan.idsClasesActualizadas.has(cls.id)) {
+                    await updateClassMutation.mutateAsync({ id: cls.id, yearId, data: { schedule: cls.schedule ?? [] } });
+                }
+            }
+
+            setAcademicConfiguration(prev => ({ ...prev, periods: plan.periods }));
+            setApplied(true);
+        } finally {
+            setApplying(false);
+        }
     };
 
     return (
@@ -348,7 +404,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                                 </div>
                                 <div className="flex justify-end gap-2 pt-2">
                                     <Button variant="secondary" onClick={handleClose}>Cancelar</Button>
-                                    <Button variant="primary" onClick={handleConfirm}>Confirmar Importación</Button>
+                                    <Button variant="primary" onClick={handleConfirm} disabled={applying}>{applying ? 'Aplicando…' : 'Confirmar Importación'}</Button>
                                 </div>
                             </div>
                         )}
