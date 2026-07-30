@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import Modal from './Modal';
-import { UserGroupIcon, AcademicCapIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, ListBulletIcon, BeakerIcon } from './Icons';
+import { UserGroupIcon, AcademicCapIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, ListBulletIcon, BeakerIcon, DocumentDuplicateIcon } from './Icons';
 import type { ClassData, Course, KeyCompetence, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
 import CurriculumManager from './CurriculumManager';
 import ProgrammingManager from './ProgrammingManager';
@@ -10,6 +10,7 @@ import ClassManager from './settings/ClassManager';
 import ScheduleManager from './settings/ScheduleManager';
 import CourseManager from './settings/CourseManager';
 import AcademicConfigManager from './settings/AcademicConfigManager';
+import AcademicYearManager from './settings/AcademicYearManager';
 import BackupManager from './settings/BackupManager';
 import { SEMANTIC } from '../theme/palette';
 
@@ -44,7 +45,7 @@ export interface SettingsModalProps {
     onDeleteEvaluationTool: (id: string) => void;
 }
 
-type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'backup';
+type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'academicYears' | 'curriculum' | 'planner' | 'evaluationTools' | 'backup';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const { isOpen, onClose, classes, setClasses, courses, setCourses, onOpenExportModal, academicConfiguration, setAcademicConfiguration, programmingUnits, setProgrammingUnits, evaluationTools, onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria } = props;
@@ -60,6 +61,8 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                 return <CourseManager courses={courses} setCourses={setCourses} classes={classes} setClasses={setClasses} />;
              case 'academicConfig':
                 return <AcademicConfigManager academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
+            case 'academicYears':
+                return <AcademicYearManager />;
             case 'curriculum':
                 return <CurriculumManager {...props} />;
             case 'planner':
@@ -96,6 +99,7 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                 <nav className="flex-shrink-0 md:w-56 flex flex-col">
                     <ul className="space-y-2">
                         <SettingsNavItem icon={<CalendarDaysIcon />} label="Configuración del Curso" view="academicConfig" activeView={activeView} setActiveView={setActiveView} />
+                        <SettingsNavItem icon={<DocumentDuplicateIcon />} label="Cursos Académicos" view="academicYears" activeView={activeView} setActiveView={setActiveView} />
                         <SettingsNavItem icon={<BookOpenIcon />} label="Cursos y Materias" view="courses" activeView={activeView} setActiveView={setActiveView} />
                         <SettingsNavItem icon={<UserGroupIcon />} label="Clases y Alumnado" view="classes" activeView={activeView} setActiveView={setActiveView} />
                         <SettingsNavItem icon={<ClockIcon />} label="Horario Semanal" view="schedule" activeView={activeView} setActiveView={setActiveView} />

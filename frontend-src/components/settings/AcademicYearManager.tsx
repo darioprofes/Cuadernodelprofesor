@@ -1,0 +1,85 @@
+import React, { useState } from 'react';
+import { useAcademicYears, useCreateAcademicYear, useActivateAcademicYear } from '../../hooks/useAcademicYears';
+import { CheckCircleIcon } from '../Icons';
+import Input from '../Input';
+import Button from '../Button';
+
+// Primera pieza de UI del backend granular nuevo (ver plan, "Fase 5
+// fusionada", bloque 2): gestiona academic_years en Postgres, en paralelo
+// a "Configuración del Curso" (que sigue gobernando el academicConfiguration
+// del blob viejo hasta que classes migre — bloque 4). Deliberadamente
+// mínimo por ahora: listar/crear/activar, sin editar ni borrar todavía.
+const AcademicYearManager: React.FC = () => {
+    const { data: years = [], isLoading } = useAcademicYears();
+    const createYear = useCreateAcademicYear();
+    const activateYear = useActivateAcademicYear();
+
+    const [label, setLabel] = useState('');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!label.trim() || !startDate || !endDate) return;
+        createYear.mutate(
+            { label: label.trim(), startDate, endDate },
+            { onSuccess: () => { setLabel(''); setStartDate(''); setEndDate(''); } }
+        );
+    };
+
+    return (
+        <div>
+            <h3 className="text-xl font-bold text-slate-800 mb-4">Cursos Académicos</h3>
+            <p className="text-sm text-slate-600 mb-4">
+                Cada curso académico archiva sus propias clases, matrículas y notas por separado. Solo uno puede estar activo a la vez.
+            </p>
+
+            <div className="space-y-2 mb-4 max-h-64 overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50/50">
+                {isLoading && <p className="text-slate-500 text-center py-4">Cargando…</p>}
+                {!isLoading && years.length === 0 && (
+                    <p className="text-slate-500 text-center py-4">No hay cursos académicos creados todavía.</p>
+                )}
+                {years.map(year => (
+                    <div key={year.id} className="flex items-center justify-between bg-white p-2 rounded-md border">
+                        <div>
+                            <p className="font-semibold text-slate-700">{year.label}</p>
+                            <p className="text-xs text-slate-500">{year.startDate} — {year.endDate}</p>
+                        </div>
+                        {year.isCurrent ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-700 text-sm font-medium">
+                                <CheckCircleIcon className="w-4 h-4" /> Actual
+                            </span>
+                        ) : (
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => activateYear.mutate(year.id)}
+                                disabled={activateYear.isPending}
+                            >
+                                Marcar como actual
+                            </Button>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row items-end gap-2 p-3 border rounded-lg">
+                <div className="w-full sm:w-auto flex-grow">
+                    <label className="text-xs font-medium text-slate-600">Nombre</label>
+                    <Input type="text" value={label} onChange={e => setLabel(e.target.value)} placeholder="Ej: 2026-2027" className="w-full mt-1" />
+                </div>
+                <div className="w-full sm:w-auto">
+                    <label className="text-xs font-medium text-slate-600">Inicio</label>
+                    <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full mt-1" />
+                </div>
+                <div className="w-full sm:w-auto">
+                    <label className="text-xs font-medium text-slate-600">Fin</label>
+                    <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full mt-1" />
+                </div>
+                <Button type="submit" disabled={createYear.isPending}>Añadir curso académico</Button>
+            </form>
+        </div>
+    );
+};
+
+export default AcademicYearManager;
