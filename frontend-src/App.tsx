@@ -5,6 +5,7 @@ import initSqlJs, { type Database } from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { isTauri } from '@tauri-apps/api/core';
 import { dbAdapter, VersionConflictError } from './services/dbAdapter';
+import { api } from './services/api';
 import { useShortcuts, useCreateShortcut, useUpdateShortcut, useDeleteShortcut } from './hooks/useShortcuts';
 import { useEvaluationTools, useCreateEvaluationTool, useUpdateEvaluationTool, useDeleteEvaluationTool } from './hooks/useEvaluationTools';
 import {
@@ -237,6 +238,36 @@ function useDatabase() {
 
         setLoading(true);
         try {
+            // En web, classes/students/courses/currículo/evaluationTools ya
+            // no viven en el blob (Fase 5 fusionada) — hay que borrarlos
+            // también en el backend nuevo, si no el reset deja de cumplir
+            // lo que promete el diálogo de arriba. Orden: academic_years
+            // primero (su DELETE ya borra classes explícitamente antes que
+            // el propio año — ver comentario en delete_academic_year — así
+            // que al llegar aquí no quedan classes/enrollments/categories/
+            // assignments/grades/journalEntries/tasks/meetings/agendaNotes
+            // colgando); luego courses (cascada su currículo) y
+            // keyCompetences (cascada sus descriptores) en cualquier orden
+            // entre sí; students al final, ya sin matrículas que los
+            // bloqueen (RESTRICT).
+            if (!isTauri()) {
+                const [years, courses, keyComps, students, tools, oldShortcuts] = await Promise.all([
+                    api.get<{ id: string }[]>('/academic-years'),
+                    api.get<{ id: string }[]>('/courses'),
+                    api.get<{ id: string }[]>('/key-competences'),
+                    api.get<{ id: string }[]>('/students'),
+                    api.get<{ id: string }[]>('/evaluation-tools'),
+                    api.get<{ id: string }[]>('/shortcuts'),
+                ]);
+                for (const y of years) await api.delete(`/academic-years/${y.id}`);
+                await Promise.all(courses.map(c => api.delete(`/courses/${c.id}`)));
+                await Promise.all(keyComps.map(k => api.delete(`/key-competences/${k.id}`)));
+                await Promise.all(students.map(s => api.delete(`/students/${s.id}`)));
+                await Promise.all(tools.map(t => api.delete(`/evaluation-tools/${t.id}`)));
+                await Promise.all(oldShortcuts.map(s => api.delete(`/shortcuts/${s.id}`)));
+                await Promise.all(getInitialShortcuts().map(({ id: _id, ...s }) => api.post('/shortcuts', s)));
+            }
+
             // Reutiliza la misma configuración académica (evaluaciones, festivos,
             // franjas horarias) que se usa al crear la base de datos por primera
             // vez, para no dejar el curso sin evaluaciones tras un restablecimiento.

@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from psycopg.types.json import Json
@@ -78,6 +78,27 @@ def get_academic_year(year_id: str) -> Optional[AcademicYear]:
             return AcademicYear.model_validate(row) if row else None
 
 
+# Los 3 periodos de evaluación por defecto (1ª/2ª/3ª) que antes sembraba
+# INITIAL_ACADEMIC_CONFIGURATION (constants.ts) solo una vez, la primera
+# vez que arrancaba la app con la base vacía — con el modelo nuevo, crear
+# un curso académico es una acción explícita y repetible, así que el
+# sembrado va aquí para que se repita en cada curso nuevo, no una sola vez.
+def _default_evaluation_periods(start_date: date, end_date: date) -> list[tuple[str, date, date]]:
+
+    total_days = (end_date - start_date).days
+
+    third = total_days // 3
+
+    p1_end = start_date + timedelta(days=third)
+    p2_end = start_date + timedelta(days=2 * third)
+
+    return [
+        ("1ª Evaluación", start_date, p1_end),
+        ("2ª Evaluación", p1_end + timedelta(days=1), p2_end),
+        ("3ª Evaluación", p2_end + timedelta(days=1), end_date),
+    ]
+
+
 def create_academic_year(data: AcademicYearInput) -> AcademicYear:
 
     with get_conn() as conn:
@@ -92,7 +113,18 @@ def create_academic_year(data: AcademicYearInput) -> AcademicYear:
                 [data.label, data.start_date, data.end_date]
             )
 
-            return AcademicYear.model_validate(cur.fetchone())
+            year = AcademicYear.model_validate(cur.fetchone())
+
+            for name, period_start, period_end in _default_evaluation_periods(data.start_date, data.end_date):
+                cur.execute(
+                    """
+                    INSERT INTO evaluation_periods (academic_year_id, name, start_date, end_date, weight)
+                    VALUES (%s, %s, %s, %s, 1)
+                    """,
+                    [year.id, name, period_start, period_end]
+                )
+
+            return year
 
 
 def update_academic_year(year_id: str, data: AcademicYearPatch) -> Optional[AcademicYear]:
@@ -155,6 +187,18 @@ def delete_academic_year(year_id: str) -> bool:
     with get_conn() as conn:
 
         with conn.cursor() as cur:
+
+            # Borrar classes explícitamente ANTES que academic_years: si no,
+            # la cascada directa academic_years→evaluation_periods intenta
+            # borrar periodos que categories/assignments todavía referencian
+            # (RESTRICT) mientras la cascada indirecta academic_years→
+            # classes→categories/assignments no ha llegado aún a limpiarlos
+            # — Postgres no reordena dos caminos de cascada que convergen en
+            # la misma fila, así que revienta con RestrictViolation (probado
+            # con datos reales). Borrando classes primero, su propia cascada
+            # (categories/assignments/grades/enrollments vía class_id) deja
+            # evaluation_periods libre antes de que academic_years lo toque.
+            cur.execute("DELETE FROM classes WHERE academic_year_id = %s", [year_id])
 
             cur.execute("DELETE FROM academic_years WHERE id = %s", [year_id])
 
