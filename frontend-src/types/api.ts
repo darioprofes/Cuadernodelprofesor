@@ -141,6 +141,8 @@ export interface EvaluationPeriodInput {
     weight?: number;
 }
 
+export interface EvaluationPeriodPatch extends Partial<EvaluationPeriodInput> {}
+
 export interface AcademicYear {
     id: string;
     label: string;

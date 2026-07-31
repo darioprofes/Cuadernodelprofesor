@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type { Grade, GradeInput } from '../types/api';
 
@@ -9,6 +9,18 @@ export function useGrades(classId: string, options?: { enabled?: boolean }) {
         queryKey: queryKey(classId),
         queryFn: () => api.get<Grade[]>(`/classes/${classId}/grades`),
         enabled: (options?.enabled ?? true) && !!classId,
+    });
+}
+
+// Para hidratar varias clases a la vez (App.tsx, ver bloque 6) — mismo
+// patrón que useEnrollmentsForClasses (bloque 5).
+export function useGradesForClasses(classIds: string[], options?: { enabled?: boolean }) {
+    return useQueries({
+        queries: classIds.map(classId => ({
+            queryKey: queryKey(classId),
+            queryFn: () => api.get<Grade[]>(`/classes/${classId}/grades`),
+            enabled: (options?.enabled ?? true) && !!classId,
+        })),
     });
 }
 

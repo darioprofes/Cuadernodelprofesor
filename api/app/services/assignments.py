@@ -1,5 +1,9 @@
 import uuid
-from datetime import date, datetime
+# date importado con alias: un campo Pydantic llamado igual que su propio
+# tipo ("date: Optional[date]") hace que, al resolver la anotación, el
+# nombre de la propia clase se autoeclipse y pydantic la trata como
+# NoneType (repro mínima confirmada) — con alias no hay colisión de nombre.
+from datetime import date as date_type, datetime
 from typing import Literal, Optional
 
 from psycopg.types.json import Json
@@ -31,7 +35,7 @@ class AssignmentInput(ApiModel):
     evaluation_tool_id: Optional[uuid.UUID] = None
     programming_unit_id: Optional[uuid.UUID] = None
     name: str
-    date: Optional[date] = None
+    date: Optional[date_type] = None
     evaluation_method: str
     linked_criteria: list[LinkedCriterion] = []
     recovers_assignment_ids: list[uuid.UUID] = []
@@ -46,7 +50,7 @@ class AssignmentPatch(ApiModel):
     evaluation_tool_id: Optional[uuid.UUID] = None
     programming_unit_id: Optional[uuid.UUID] = None
     name: Optional[str] = None
-    date: Optional[date] = None
+    date: Optional[date_type] = None
     evaluation_method: Optional[str] = None
     linked_criteria: Optional[list[LinkedCriterion]] = None
     recovers_assignment_ids: Optional[list[uuid.UUID]] = None
@@ -64,7 +68,7 @@ class Assignment(ApiModel):
     evaluation_tool_id: Optional[uuid.UUID] = None
     programming_unit_id: Optional[uuid.UUID] = None
     name: str
-    date: Optional[date] = None
+    date: Optional[date_type] = None
     evaluation_method: str
     linked_criteria: list[LinkedCriterion] = []
     recovers_assignment_ids: list[uuid.UUID] = []
@@ -82,7 +86,13 @@ def _process(fields: dict) -> dict:
     for key, value in fields.items():
 
         if key in _JSON_FIELDS:
-            processed[key] = Json([item.model_dump(by_alias=True) if isinstance(item, ApiModel) else item for item in value])
+            # mode="json" es imprescindible aquí: sin él, model_dump() deja
+            # UUID de verdad (criterion_id, selected_descriptor_ids) dentro
+            # de los dicts, y el json.dumps estándar que usa Json() no sabe
+            # serializar UUID (TypeError, descubierto en la Fase 5 fusionada
+            # bloque 6 al probar por primera vez un assignment con
+            # linkedCriteria no vacío).
+            processed[key] = Json([item.model_dump(by_alias=True, mode="json") if isinstance(item, ApiModel) else item for item in value])
         elif key in _UUID_FIELDS and value is not None:
             processed[key] = str(value)
         elif key in _UUID_ARRAY_FIELDS:
@@ -119,7 +129,13 @@ def get_assignment(assignment_id: str) -> Optional[Assignment]:
 
 def create_assignment(class_id: str, data: AssignmentInput) -> Assignment:
 
-    fields = _process(data.model_dump())
+    # mode="json": sin él, model_dump() ya deja los LinkedCriterion de
+    # linked_criteria aplanados a dict ANTES de que _process() los vea (por
+    # eso el mode="json" de ahí abajo, en el propio dict, no bastaba —
+    # nunca llegaba a ejecutarse porque isinstance(item, ApiModel) ya daba
+    # falso). Con mode="json" aquí, los UUID anidados salen como string
+    # desde el principio.
+    fields = _process(data.model_dump(mode="json"))
 
     with get_conn() as conn:
 
@@ -141,7 +157,7 @@ def create_assignment(class_id: str, data: AssignmentInput) -> Assignment:
 
 def update_assignment(assignment_id: str, data: AssignmentPatch) -> tuple[Literal["ok", "not_found", "conflict"], Optional[Assignment]]:
 
-    fields = data.model_dump(exclude_unset=True, exclude={"expected_updated_at"})
+    fields = data.model_dump(exclude_unset=True, exclude={"expected_updated_at"}, mode="json")
 
     with get_conn() as conn:
 

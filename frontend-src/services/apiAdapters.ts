@@ -6,14 +6,19 @@
 // reales (qué campo pertenece a STUDENT vs a ENROLLMENT, ver el ERD del
 // plan) que no queremos duplicar ni desincronizar.
 
-import type { ClassData, Student } from '../types';
+import type { ClassData, Student, Category, Assignment, Grade, EvaluationTool, ImportanciaActividad } from '../types';
 import type {
     ClassData as ApiClassData,
     Student as ApiStudent,
     Enrollment as ApiEnrollment,
     StudentPatch as ApiStudentPatch,
     EnrollmentPatch as ApiEnrollmentPatch,
+    Category as ApiCategory,
+    Assignment as ApiAssignment,
+    Grade as ApiGrade,
+    GradeInput as ApiGradeInput,
 } from '../types/api';
+import { calculateToolGlobalScore, calculateCriterionScoresFromTool } from './gradeCalculations';
 
 // classes (Postgres) todavía no tiene alumnado/categorías/tareas/notas
 // embebidos (bloques 5/6) — se rellenan vacíos aquí; cada consumidor los
@@ -120,4 +125,185 @@ export const splitStudentPatch = (data: Partial<Student>): { studentPatch: ApiSt
     if ('planoColor' in data) enrollmentPatch.planoColor = data.planoColor;
 
     return { studentPatch, enrollmentPatch };
+};
+
+// ============================================================
+// categories / assignments — traducción de forma casi directa (mismos
+// campos, la API añade classId/createdAt/updatedAt que la forma vieja no
+// tenía porque vivía embebida dentro de la propia ClassData).
+// ============================================================
+
+export const apiCategoryToLocal = (c: ApiCategory): Category => ({
+    id: c.id,
+    name: c.name,
+    weight: c.weight,
+    evaluationPeriodId: c.evaluationPeriodId,
+    type: c.type,
+});
+
+export const apiAssignmentToLocal = (a: ApiAssignment): Assignment => ({
+    id: a.id,
+    name: a.name,
+    categoryId: a.categoryId,
+    evaluationPeriodId: a.evaluationPeriodId,
+    date: a.date,
+    evaluationMethod: a.evaluationMethod,
+    evaluationToolId: a.evaluationToolId,
+    linkedCriteria: a.linkedCriteria,
+    programmingUnitId: a.programmingUnitId,
+    recoversAssignmentIds: a.recoversAssignmentIds,
+    pesoEnCategoria: a.pesoEnCategoria,
+    importancia: a.importancia as ImportanciaActividad | undefined,
+    importanciaPersonalizada: a.importanciaPersonalizada,
+});
+
+// ============================================================
+// grades — el punto delicado de todo el bloque 6. gradeCalculations/*.ts
+// (que NO se toca, ver plan) opera siempre sobre `Grade.criterionScores`,
+// un mapa {criterioId|'direct_score'|'recovery_grade': nota} que en el blob
+// viejo se computaba UNA VEZ al guardar y se guardaba tal cual. El backend
+// nuevo, a propósito (ver fase-0-ddl-y-api.md), no tiene esa columna —
+// grades solo guarda directScore/recoveryScore/toolResults. La solución no
+// es guardar menos información, es guardar la MISMA información de otra
+// forma y reconstruir criterionScores al leer, con las mismas fórmulas que
+// ya existían (calculateToolGlobalScore/calculateCriterionScoresFromTool),
+// solo que ahora se ejecutan en cada lectura en vez de una vez al guardar:
+//
+//   - Recuperación (criterionScores = {recovery_grade: N})      -> recoveryScore
+//   - Nota única sin criterios (criterionScores = {direct_score: N}) -> directScore
+//   - Instrumento (checklist/escala/rúbrica): criterionScores SIEMPRE
+//     derivable de toolResults + la definición del instrumento (vigente,
+//     no una copia congelada) -> se guarda solo toolResults, nunca
+//     criterionScores; esto además vuelve innecesario el parche
+//     recalculateGradesForTool al editar un instrumento (ver
+//     EvaluationToolManager.tsx) porque ya no hay nada "desincronizado"
+//     que recalcular: se deriva fresco en cada lectura.
+//   - Nota directa CON criterios vinculados (uno o varios, posiblemente con
+//     notas distintas cada uno): no cabe en un único escalar. Se guarda el
+//     mapa completo tal cual dentro de `toolResults` (nunca usado por
+//     direct_grade en el modelo viejo, así que no hay colisión posible) —
+//     un "acarreador" genérico, no una reinterpretación de qué es
+//     toolResults.
+// ============================================================
+
+export const encodeGradeInput = (
+    data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string>; criterionScores?: Record<string, number | null> },
+): ApiGradeInput => {
+    if ('toolResults' in data) {
+        // Instrumento: el crudo es lo único que hace falta guardar,
+        // criterionScores (si viene, derivado) se descarta — se recalcula
+        // igual al leer.
+        return { toolResults: data.toolResults };
+    }
+
+    const criterionScores = data.criterionScores;
+    const keys = Object.keys(criterionScores);
+
+    if (keys.length === 1 && keys[0] === 'recovery_grade') {
+        const value = criterionScores['recovery_grade'];
+        return value != null ? { recoveryScore: value } : {};
+    }
+    if (keys.length === 1 && keys[0] === 'direct_score') {
+        const value = criterionScores['direct_score'];
+        return value != null ? { directScore: value } : {};
+    }
+    // Mapa multi-criterio (o el 'manual_grade' de BulkGradeImportModal para
+    // tareas sin criterios — sentinela que calculateSingleAssignmentScore no
+    // lee hoy, comportamiento existente que no nos toca corregir aquí):
+    // se guarda el mapa completo, sin decidir aquí qué significa cada clave.
+    return { toolResults: criterionScores as unknown as Record<string, unknown> };
+};
+
+export const decodeGrade = (
+    apiGrade: Pick<ApiGrade, 'directScore' | 'recoveryScore' | 'toolResults'>,
+    studentId: string,
+    assignment: Pick<Assignment, 'id' | 'evaluationMethod' | 'evaluationToolId' | 'linkedCriteria'>,
+    evaluationTools: EvaluationTool[],
+): Grade => {
+    if (assignment.evaluationMethod !== 'direct_grade') {
+        const toolResults = (apiGrade.toolResults ?? undefined) as Record<string, boolean | string> | undefined;
+        let criterionScores: Record<string, number | null> = {};
+        if (toolResults && Object.keys(toolResults).length > 0) {
+            const tool = evaluationTools.find(t => t.id === assignment.evaluationToolId);
+            if (tool) {
+                if (assignment.linkedCriteria && assignment.linkedCriteria.length > 0) {
+                    const globalScore = calculateToolGlobalScore(tool, toolResults);
+                    assignment.linkedCriteria.forEach(lc => { criterionScores[lc.criterionId] = globalScore; });
+                } else {
+                    criterionScores = calculateCriterionScoresFromTool(tool, toolResults);
+                }
+            }
+        }
+        return { studentId, assignmentId: assignment.id, criterionScores, toolResults };
+    }
+
+    if (apiGrade.recoveryScore != null) {
+        return { studentId, assignmentId: assignment.id, criterionScores: { recovery_grade: apiGrade.recoveryScore } };
+    }
+    if (apiGrade.directScore != null) {
+        return { studentId, assignmentId: assignment.id, criterionScores: { direct_score: apiGrade.directScore } };
+    }
+    if (apiGrade.toolResults) {
+        return { studentId, assignmentId: assignment.id, criterionScores: apiGrade.toolResults as Record<string, number | null> };
+    }
+    return { studentId, assignmentId: assignment.id, criterionScores: {} };
+};
+
+// Hidrata todas las notas de una clase de una vez: necesita el enrollmentId
+// -> studentId de esa clase (las Grade de la API se indexan por matrícula,
+// no por persona) y las assignments YA en forma local (para conocer
+// evaluationMethod/linkedCriteria/evaluationToolId de cada una).
+export const hydrateGrades = (
+    apiGrades: Pick<ApiGrade, 'enrollmentId' | 'assignmentId' | 'directScore' | 'recoveryScore' | 'toolResults'>[],
+    enrollments: Pick<ApiEnrollment, 'id' | 'studentId'>[],
+    assignments: Assignment[],
+    evaluationTools: EvaluationTool[],
+): Grade[] => {
+    const studentIdByEnrollment = new Map(enrollments.map(e => [e.id, e.studentId]));
+    const assignmentById = new Map(assignments.map(a => [a.id, a]));
+    const grades: Grade[] = [];
+    for (const g of apiGrades) {
+        const studentId = studentIdByEnrollment.get(g.enrollmentId);
+        const assignment = assignmentById.get(g.assignmentId);
+        if (!studentId || !assignment) continue; // matrícula/tarea borrada entretanto, no debería pasar
+        grades.push(decodeGrade(g, studentId, assignment, evaluationTools));
+    }
+    return grades;
+};
+
+// Cruza las matrículas de UNA clase con el registro global de alumnado —
+// mismo criterio que ClassManager.tsx/ClasesView.tsx (bloque 5), factorizado
+// aquí porque App.tsx (bloque 6) también lo necesita para hidratar varias
+// clases de una vez.
+export const joinEnrolledStudents = (enrollments: ApiEnrollment[], globalStudents: ApiStudent[]): Student[] => {
+    const studentsById = new Map(globalStudents.map(s => [s.id, s]));
+    return enrollments
+        .map(e => {
+            const student = studentsById.get(e.studentId);
+            return student ? joinStudentEnrollment(student, e) : null;
+        })
+        .filter((s): s is Student => !!s);
+};
+
+// Ensambla una ClassData completa (cáscara + alumnado + currículo de
+// instancia) a partir de todas las piezas ya hidratadas por separado — la
+// única función que junta los bloques 4/5/6 en el objeto único que siguen
+// esperando GradebookTable/CalendarView/los informes de clase.
+export const hydrateClassData = (
+    shell: Pick<ApiClassData, 'id' | 'courseId' | 'grupo' | 'schedule' | 'skippedDays' | 'icono' | 'colorAcento' | 'mesaProfesorX' | 'mesaProfesorY'>,
+    enrollments: ApiEnrollment[],
+    globalStudents: ApiStudent[],
+    apiCategories: ApiCategory[],
+    apiAssignments: ApiAssignment[],
+    apiGrades: Pick<ApiGrade, 'enrollmentId' | 'assignmentId' | 'directScore' | 'recoveryScore' | 'toolResults'>[],
+    evaluationTools: EvaluationTool[],
+): ClassData => {
+    const assignments = apiAssignments.map(apiAssignmentToLocal);
+    return {
+        ...apiClassToLocal(shell),
+        students: joinEnrolledStudents(enrollments, globalStudents),
+        categories: apiCategories.map(apiCategoryToLocal),
+        assignments,
+        grades: hydrateGrades(apiGrades, enrollments, assignments, evaluationTools),
+    };
 };

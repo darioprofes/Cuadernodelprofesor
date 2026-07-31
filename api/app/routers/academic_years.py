@@ -8,6 +8,7 @@ from services.academic_years import (
     AcademicYearPatch,
     EvaluationPeriod,
     EvaluationPeriodInput,
+    EvaluationPeriodPatch,
     list_academic_years,
     get_academic_year,
     create_academic_year,
@@ -16,6 +17,7 @@ from services.academic_years import (
     delete_academic_year,
     list_evaluation_periods,
     create_evaluation_period,
+    update_evaluation_period,
     delete_evaluation_period,
 )
 
@@ -84,6 +86,17 @@ def get_evaluation_periods(year_id: str):
 def post_evaluation_period(year_id: str, data: EvaluationPeriodInput):
 
     return create_evaluation_period(year_id, data)
+
+
+@router.patch("/evaluation-periods/{period_id}", response_model=EvaluationPeriod)
+def patch_evaluation_period(period_id: str, data: EvaluationPeriodPatch):
+
+    period = update_evaluation_period(period_id, data)
+
+    if period is None:
+        raise HTTPException(status_code=404, detail="Período de evaluación no encontrado.")
+
+    return period
 
 
 @router.delete("/evaluation-periods/{period_id}", status_code=204)

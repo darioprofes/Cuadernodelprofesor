@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import type { AcademicYear, AcademicYearInput, AcademicYearPatch, EvaluationPeriod, EvaluationPeriodInput } from '../types/api';
+import type { AcademicYear, AcademicYearInput, AcademicYearPatch, EvaluationPeriod, EvaluationPeriodInput, EvaluationPeriodPatch } from '../types/api';
 
 const QUERY_KEY = ['academicYears'];
 const periodsQueryKey = (yearId: string) => ['evaluationPeriods', yearId];
@@ -70,10 +70,23 @@ export function useCreateEvaluationPeriod() {
     });
 }
 
+export function useUpdateEvaluationPeriod() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, data }: { id: string; yearId: string; data: EvaluationPeriodPatch }) =>
+            api.patch<EvaluationPeriod>(`/academic-years/evaluation-periods/${id}`, data),
+        onSuccess: (_, { yearId }) => queryClient.invalidateQueries({ queryKey: periodsQueryKey(yearId) }),
+    });
+}
+
 export function useDeleteEvaluationPeriod() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: ({ id }: { id: string; yearId: string }) => api.delete(`/evaluation-periods/${id}`),
+        // Ojo: la ruta cuelga del router /academic-years (ver
+        // routers/academic_years.py), no de /evaluation-periods a secas —
+        // bug real encontrado aquí (bloque 6, nunca antes probado porque
+        // esta UI no existía todavía).
+        mutationFn: ({ id }: { id: string; yearId: string }) => api.delete(`/academic-years/evaluation-periods/${id}`),
         onSuccess: (_, { yearId }) => queryClient.invalidateQueries({ queryKey: periodsQueryKey(yearId) }),
     });
 }

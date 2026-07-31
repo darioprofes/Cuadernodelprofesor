@@ -1,14 +1,76 @@
 import React, { useEffect } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import type { AcademicConfiguration, Holiday, EvaluationPeriod, GradeScaleRule } from '../../types';
 import { TrashIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
 import { linkClassName } from '../../theme/components/Link';
+import { useCurrentAcademicYear, useEvaluationPeriods, useCreateEvaluationPeriod, useUpdateEvaluationPeriod, useDeleteEvaluationPeriod } from '../../hooks/useAcademicYears';
 
 const AcademicConfigManager: React.FC<{
     academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
 }> = ({ academicConfiguration, setAcademicConfiguration }) => {
+    const isDesktop = isTauri();
+    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+    const yearId = currentYear.data?.id ?? '';
+    const remotePeriods = useEvaluationPeriods(yearId, { enabled: !isDesktop && !!yearId });
+    const createPeriodMutation = useCreateEvaluationPeriod();
+    const updatePeriodMutation = useUpdateEvaluationPeriod();
+    const deletePeriodMutation = useDeleteEvaluationPeriod();
+
+    // Periodos de evaluación reales (Postgres, ver bloque 6): a diferencia
+    // del resto de academicConfiguration (fechas del curso, festivos,
+    // franjas horarias, escala de notas — todo eso sigue en el blob, fuera
+    // de alcance de la Fase 5 fusionada), estos SÍ tienen que ser reales
+    // porque categories/assignments los referencian con una FK
+    // (evaluation_period_id). `weight` vive en la propia fila del período
+    // en el backend nuevo, no en un mapa aparte como en el blob viejo
+    // (evaluationPeriodWeights) — se reconstruye ese mapa aquí solo para
+    // que el resto de la app (gradeCalculations, sin tocar) siga
+    // encontrándolo donde ya lo espera.
+    const effectivePeriods: EvaluationPeriod[] = isDesktop
+        ? academicConfiguration.evaluationPeriods
+        : (remotePeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate }));
+    const effectiveWeights: Record<string, number> = isDesktop
+        ? (academicConfiguration.evaluationPeriodWeights || {})
+        : Object.fromEntries((remotePeriods.data ?? []).map(p => [p.id, p.weight]));
+
+    const handlePeriodFieldChange = async (index: number, field: 'name' | 'startDate' | 'endDate', value: string) => {
+        if (isDesktop) {
+            handleListItemChange('evaluationPeriods', index, field, value);
+            return;
+        }
+        const period = effectivePeriods[index];
+        if (!period) return;
+        const apiField = field === 'startDate' ? 'startDate' : field === 'endDate' ? 'endDate' : 'name';
+        await updatePeriodMutation.mutateAsync({ id: period.id, yearId, data: { [apiField]: value } });
+    };
+
+    const handleAddPeriod = async () => {
+        if (isDesktop) {
+            handleAddListItem('evaluationPeriods');
+            return;
+        }
+        await createPeriodMutation.mutateAsync({ yearId, data: { name: `Nueva Evaluación ${effectivePeriods.length + 1}`, startDate: academicConfiguration.academicYearStart || '', endDate: academicConfiguration.academicYearEnd || '', weight: 1 } });
+    };
+
+    const handleRemovePeriod = async (periodId: string) => {
+        if (isDesktop) {
+            handleRemoveListItem('evaluationPeriods', periodId);
+            return;
+        }
+        await deletePeriodMutation.mutateAsync({ id: periodId, yearId });
+    };
+
+    const handlePeriodWeightChange = async (periodId: string, weight: string) => {
+        if (isDesktop) {
+            handleWeightChange(periodId, weight);
+            return;
+        }
+        const numWeight = parseFloat(weight);
+        await updatePeriodMutation.mutateAsync({ id: periodId, yearId, data: { weight: isNaN(numWeight) ? 0 : numWeight } });
+    };
 
     useEffect(() => {
         // Self-healing for corrupted data.
@@ -44,10 +106,10 @@ const AcademicConfigManager: React.FC<{
         return <div className="text-center p-4">Cargando configuración...</div>;
     }
 
-    const { evaluationPeriodWeights = {} as Record<string, number>, gradeScale = [] } = academicConfiguration;
+    const { gradeScale = [] } = academicConfiguration;
     // Calculate total weight for display
     let totalWeight = 0;
-    for (const w of Object.values(evaluationPeriodWeights)) {
+    for (const w of Object.values(effectiveWeights)) {
         if (typeof w === 'number') totalWeight += w;
     }
 
@@ -149,15 +211,15 @@ const AcademicConfigManager: React.FC<{
                 <div>
                     <h4 className="font-semibold text-slate-700 mb-2">Periodos de Evaluación</h4>
                     <div className="space-y-2">
-                        {academicConfiguration.evaluationPeriods.map((period, index) => (
+                        {effectivePeriods.map((period, index) => (
                             <div key={period.id} className="flex gap-2 items-center">
-                                <Input type="text" value={period.name} onChange={e => handleListItemChange('evaluationPeriods', index, 'name', e.target.value)} className="w-1/3 text-sm" placeholder="Nombre"/>
-                                <Input type="date" value={period.startDate} onChange={e => handleListItemChange('evaluationPeriods', index, 'startDate', e.target.value)} className="w-1/3 text-sm"/>
-                                <Input type="date" value={period.endDate} onChange={e => handleListItemChange('evaluationPeriods', index, 'endDate', e.target.value)} className="w-1/3 text-sm"/>
-                                <button onClick={() => handleRemoveListItem('evaluationPeriods', period.id)} className="p-1 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="w-4 h-4"/></button>
+                                <Input type="text" value={period.name} onChange={e => handlePeriodFieldChange(index, 'name', e.target.value)} className="w-1/3 text-sm" placeholder="Nombre"/>
+                                <Input type="date" value={period.startDate} onChange={e => handlePeriodFieldChange(index, 'startDate', e.target.value)} className="w-1/3 text-sm"/>
+                                <Input type="date" value={period.endDate} onChange={e => handlePeriodFieldChange(index, 'endDate', e.target.value)} className="w-1/3 text-sm"/>
+                                <button onClick={() => handleRemovePeriod(period.id)} className="p-1 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="w-4 h-4"/></button>
                             </div>
                         ))}
-                        <button onClick={() => handleAddListItem('evaluationPeriods')} className={`text-sm ${linkClassName}`}>+ Añadir Periodo</button>
+                        <button onClick={handleAddPeriod} className={`text-sm ${linkClassName}`}>+ Añadir Periodo</button>
                     </div>
                 </div>
             </div>
@@ -167,8 +229,8 @@ const AcademicConfigManager: React.FC<{
                     <h4 className="font-semibold text-slate-700 mb-2">Ponderación de Evaluaciones</h4>
                     <p className="text-xs text-slate-500 mb-2">Asigna un peso proporcional a cada evaluación. El porcentaje se calcula automáticamente.</p>
                     <div className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                        {academicConfiguration.evaluationPeriods.map((period) => {
-                            const weight = evaluationPeriodWeights[period.id] ?? 1;
+                        {effectivePeriods.map((period) => {
+                            const weight = effectiveWeights[period.id] ?? 1;
                             const percentage = totalWeight > 0 ? ((weight / totalWeight) * 100).toFixed(1) : '0.0';
                             return (
                                 <div key={period.id} className="flex justify-between items-center">
@@ -179,7 +241,7 @@ const AcademicConfigManager: React.FC<{
                                             min="0"
                                             step="0.1"
                                             value={weight}
-                                            onChange={e => handleWeightChange(period.id, e.target.value)}
+                                            onChange={e => handlePeriodWeightChange(period.id, e.target.value)}
                                             className="w-16 text-right text-sm"
                                         />
                                         <span className="text-xs text-slate-500 w-12 text-right">{percentage}%</span>

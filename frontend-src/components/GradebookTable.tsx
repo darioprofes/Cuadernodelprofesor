@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
 import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, ArrowUpIcon, ArrowDownIcon } from './Icons';
 import IconButton from './IconButton';
@@ -19,6 +20,10 @@ import StudentSummaryModal from './StudentSummaryModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ClassLabel from './ClassLabel';
 import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getNombreOrden } from '../utils';
+import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
+import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '../hooks/useAssignments';
+import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
+import { encodeGradeInput } from '../services/apiAdapters';
 
 
 interface GradebookTableProps {
@@ -51,7 +56,16 @@ const toYYYYMMDD = (date: Date): string => {
 const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const { classData, allClasses, allCourses, criteria, specificCompetences, keyCompetences, programmingUnits, academicConfiguration, onUpdateClass, evaluationTools, onCopyAssignment } = props;
   const { evaluationPeriods } = academicConfiguration;
-  
+  const isDesktop = isTauri();
+  const createCategoryMutation = useCreateCategory();
+  const updateCategoryMutation = useUpdateCategory();
+  const deleteCategoryMutation = useDeleteCategory();
+  const createAssignmentMutation = useCreateAssignment();
+  const updateAssignmentMutation = useUpdateAssignment();
+  const deleteAssignmentMutation = useDeleteAssignment();
+  const putGradeMutation = usePutGrade();
+  const deleteGradeMutation = useDeleteGrade();
+
   // Initialize with a dummy value, will be set by useEffect
   const [activePeriodId, setActivePeriodId] = useState<string>('final');
   const [hasAutoSelectedPeriod, setHasAutoSelectedPeriod] = useState(false);
@@ -194,50 +208,95 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       return finalGrades;
   }, [classData, academicConfiguration]);
 
-  const handleSaveAssignment = (assignmentData: Omit<Assignment, 'id' | 'categoryId'> & { id?: string; categoryId?: string }) => {
+  const handleSaveAssignment = async (assignmentData: Omit<Assignment, 'id' | 'categoryId'> & { id?: string; categoryId?: string }) => {
     if (!activeCategory) return;
     const assignment = { ...assignmentData, categoryId: assignmentData.categoryId ?? activeCategory.id };
-
     const existingIndex = classData.assignments.findIndex(a => a.id === assignment.id);
-    let updatedAssignments;
-    let updatedGrades = classData.grades;
 
+    if (isDesktop) {
+      let updatedAssignments;
+      let updatedGrades = classData.grades;
+
+      if (existingIndex > -1) {
+        const previousAssignment = classData.assignments[existingIndex];
+        updatedAssignments = classData.assignments.map(a => a.id === assignment.id ? { ...a, ...assignment } : a);
+
+        // Si antes se calificaba con nota única (sin criterios) y ahora se le
+        // han vinculado criterios, copia esa nota a cada criterio nuevo en vez
+        // de perder lo ya calificado — se puede retocar a mano después.
+        const teniaNotaUnica = previousAssignment.evaluationMethod === 'direct_grade' && (previousAssignment.linkedCriteria?.length || 0) === 0;
+        const ahoraTieneCriterios = assignment.evaluationMethod === 'direct_grade' && (assignment.linkedCriteria?.length || 0) > 0;
+        if (teniaNotaUnica && ahoraTieneCriterios) {
+          updatedGrades = classData.grades.map(g => {
+            if (g.assignmentId !== assignment.id) return g;
+            const notaUnica = g.criterionScores?.['direct_score'];
+            if (notaUnica == null) return g;
+            const newCriterionScores = { ...g.criterionScores };
+            assignment.linkedCriteria!.forEach(lc => {
+              newCriterionScores[lc.criterionId] = notaUnica;
+            });
+            return { ...g, criterionScores: newCriterionScores };
+          });
+        }
+      } else {
+        updatedAssignments = [...classData.assignments, { ...assignment, id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` }];
+      }
+      onUpdateClass({ ...classData, assignments: updatedAssignments, grades: updatedGrades });
+      return;
+    }
+
+    // Web
+    const { id: _assignmentId, ...assignmentFields } = assignment;
     if (existingIndex > -1) {
       const previousAssignment = classData.assignments[existingIndex];
-      updatedAssignments = classData.assignments.map(a => a.id === assignment.id ? { ...a, ...assignment } : a);
+      await updateAssignmentMutation.mutateAsync({ id: assignment.id!, classId: classData.id, data: assignmentFields });
 
-      // Si antes se calificaba con nota única (sin criterios) y ahora se le
-      // han vinculado criterios, copia esa nota a cada criterio nuevo en vez
-      // de perder lo ya calificado — se puede retocar a mano después.
+      // Misma migración "nota única -> criterios recién vinculados" que en
+      // escritorio, pero como PUTs individuales (no hay guardado en bloque).
       const teniaNotaUnica = previousAssignment.evaluationMethod === 'direct_grade' && (previousAssignment.linkedCriteria?.length || 0) === 0;
       const ahoraTieneCriterios = assignment.evaluationMethod === 'direct_grade' && (assignment.linkedCriteria?.length || 0) > 0;
       if (teniaNotaUnica && ahoraTieneCriterios) {
-        updatedGrades = classData.grades.map(g => {
-          if (g.assignmentId !== assignment.id) return g;
+        const gradesForAssignment = classData.grades.filter(g => g.assignmentId === assignment.id);
+        for (const g of gradesForAssignment) {
           const notaUnica = g.criterionScores?.['direct_score'];
-          if (notaUnica == null) return g;
+          if (notaUnica == null) continue;
+          const student = classData.students.find(s => s.id === g.studentId);
+          if (!student?.enrollmentId) continue;
           const newCriterionScores = { ...g.criterionScores };
           assignment.linkedCriteria!.forEach(lc => {
             newCriterionScores[lc.criterionId] = notaUnica;
           });
-          return { ...g, criterionScores: newCriterionScores };
-        });
+          await putGradeMutation.mutateAsync({
+            assignmentId: assignment.id!,
+            enrollmentId: student.enrollmentId,
+            classId: classData.id,
+            data: encodeGradeInput({ criterionScores: newCriterionScores }),
+          });
+        }
       }
     } else {
-      updatedAssignments = [...classData.assignments, { ...assignment, id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` }];
+      await createAssignmentMutation.mutateAsync({ classId: classData.id, data: assignmentFields });
     }
-    onUpdateClass({ ...classData, assignments: updatedAssignments, grades: updatedGrades });
   };
-  
-  const handleSaveCategory = (category: Category) => {
+
+  const handleSaveCategory = async (category: Category) => {
       const existingIndex = classData.categories.findIndex(c => c.id === category.id);
-      let updatedCategories;
-      if (existingIndex > -1) {
-          updatedCategories = classData.categories.map(c => c.id === category.id ? category : c);
-      } else {
-          updatedCategories = [...classData.categories, category];
+      if (isDesktop) {
+          let updatedCategories;
+          if (existingIndex > -1) {
+              updatedCategories = classData.categories.map(c => c.id === category.id ? category : c);
+          } else {
+              updatedCategories = [...classData.categories, category];
+          }
+          onUpdateClass({ ...classData, categories: updatedCategories });
+          return;
       }
-      onUpdateClass({ ...classData, categories: updatedCategories });
+      const data = { name: category.name, weight: category.weight, evaluationPeriodId: category.evaluationPeriodId, type: category.type };
+      if (existingIndex > -1) {
+          await updateCategoryMutation.mutateAsync({ id: category.id, classId: classData.id, data });
+      } else {
+          await createCategoryMutation.mutateAsync({ classId: classData.id, data });
+      }
   };
 
   const handleEditAssignment = (assignment: Assignment) => {
@@ -249,23 +308,32 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     }
   };
 
-   const handleDeleteAssignment = (assignmentId: string) => {
-    if(window.confirm("¿Seguro que quieres eliminar esta tarea y todas sus calificaciones?")) {
+   const handleDeleteAssignment = async (assignmentId: string) => {
+    if (!window.confirm("¿Seguro que quieres eliminar esta tarea y todas sus calificaciones?")) return;
+    if (isDesktop) {
         const updatedAssignments = classData.assignments.filter(a => a.id !== assignmentId);
         const updatedGrades = classData.grades.filter(g => g.assignmentId !== assignmentId);
         onUpdateClass({ ...classData, assignments: updatedAssignments, grades: updatedGrades });
+        return;
     }
+    // assignment_id es ON DELETE CASCADE en grades — un único borrado basta.
+    await deleteAssignmentMutation.mutateAsync({ id: assignmentId, classId: classData.id });
   };
 
-  const handleDeleteCategory = (categoryId: string) => {
-    if(window.confirm("¿Seguro que quieres eliminar esta categoría y TODAS sus tareas y calificaciones?")) {
+  const handleDeleteCategory = async (categoryId: string) => {
+    if (!window.confirm("¿Seguro que quieres eliminar esta categoría y TODAS sus tareas y calificaciones?")) return;
+    if (isDesktop) {
         const updatedCategories = classData.categories.filter(c => c.id !== categoryId);
         const assignmentsToDelete = classData.assignments.filter(a => a.categoryId === categoryId);
         const assignmentsToDeleteIds = new Set(assignmentsToDelete.map(a => a.id));
         const updatedAssignments = classData.assignments.filter(a => a.categoryId !== categoryId);
         const updatedGrades = classData.grades.filter(g => !assignmentsToDeleteIds.has(g.assignmentId));
         onUpdateClass({ ...classData, categories: updatedCategories, assignments: updatedAssignments, grades: updatedGrades });
+        return;
     }
+    // category_id es ON DELETE CASCADE en assignments (y transitivamente en
+    // grades) — un único borrado basta.
+    await deleteCategoryMutation.mutateAsync({ id: categoryId, classId: classData.id });
   };
   
   const handleOpenGradeEntry = (student: Student, assignment: Assignment) => {
@@ -274,7 +342,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     setIsGradeEntryModalOpen(true);
   };
 
-  const handleSaveGrade = (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string> }, nextStudent: boolean = false) => {
+  const handleSaveGrade = async (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string> }, nextStudent: boolean = false) => {
     const assignment = classData.assignments.find(a => a.id === assignmentId);
     if (!assignment) return;
 
@@ -296,41 +364,53 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       (g) => g.studentId === studentId && g.assignmentId === assignmentId
     );
 
-    let updatedGrades = [...classData.grades];
-    
     const hasScores = Object.values(finalCriterionScores).some(s => s !== null);
     // Fix: Allow saving if there are tool results, even if score is null (e.g. unlinked tool)
     const hasToolResults = finalToolResults && Object.keys(finalToolResults).length > 0;
 
-    const newGradeData: Grade = {
-        studentId,
-        assignmentId,
-        criterionScores: finalCriterionScores,
-        toolResults: finalToolResults,
-    };
+    if (isDesktop) {
+        let updatedGrades = [...classData.grades];
+        const newGradeData: Grade = {
+            studentId,
+            assignmentId,
+            criterionScores: finalCriterionScores,
+            toolResults: finalToolResults,
+        };
 
-    if (existingGradeIndex > -1) {
-        if (!hasScores && !hasToolResults) {
-             // If no scores and no tool results, remove the grade entry entirely
-             updatedGrades = updatedGrades.filter((_, index) => index !== existingGradeIndex);
-        } else {
-            updatedGrades[existingGradeIndex] = { ...updatedGrades[existingGradeIndex], ...newGradeData };
+        if (existingGradeIndex > -1) {
+            if (!hasScores && !hasToolResults) {
+                 // If no scores and no tool results, remove the grade entry entirely
+                 updatedGrades = updatedGrades.filter((_, index) => index !== existingGradeIndex);
+            } else {
+                updatedGrades[existingGradeIndex] = { ...updatedGrades[existingGradeIndex], ...newGradeData };
+            }
+        } else if (hasScores || hasToolResults) {
+            updatedGrades.push(newGradeData);
         }
-    } else if (hasScores || hasToolResults) {
-        updatedGrades.push(newGradeData);
+        onUpdateClass({ ...classData, grades: updatedGrades });
+    } else {
+        const student = classData.students.find(s => s.id === studentId);
+        if (student?.enrollmentId) {
+            if (!hasScores && !hasToolResults) {
+                if (existingGradeIndex > -1) {
+                    await deleteGradeMutation.mutateAsync({ assignmentId, enrollmentId: student.enrollmentId, classId: classData.id });
+                }
+            } else {
+                const encoded = 'toolResults' in data
+                    ? encodeGradeInput({ toolResults: data.toolResults, criterionScores: finalCriterionScores })
+                    : encodeGradeInput({ criterionScores: finalCriterionScores });
+                await putGradeMutation.mutateAsync({ assignmentId, enrollmentId: student.enrollmentId, classId: classData.id, data: encoded });
+            }
+        }
     }
-
-    // Update parent state
-    onUpdateClass({ ...classData, grades: updatedGrades });
 
     if (nextStudent) {
         // Logic to switch to next student
         const currentStudentIndex = classData.students.findIndex(s => s.id === studentId);
         if (currentStudentIndex !== -1 && currentStudentIndex < classData.students.length - 1) {
-            const nextStudent = classData.students[currentStudentIndex + 1];
-            // Find grade in the UPDATED grades array (locally calculated since onUpdateClass is async-like in propagation)
-            const nextGrade = updatedGrades.find(g => g.studentId === nextStudent.id && g.assignmentId === assignmentId) || null;
-            setGradeEntryData({ student: nextStudent, assignment, grade: nextGrade });
+            const nextStudentObj = classData.students[currentStudentIndex + 1];
+            const nextGrade = classData.grades.find(g => g.studentId === nextStudentObj.id && g.assignmentId === assignmentId) || null;
+            setGradeEntryData({ student: nextStudentObj, assignment, grade: nextGrade });
         } else {
             setIsGradeEntryModalOpen(false);
         }
@@ -339,32 +419,51 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     }
   };
 
-  const handleBulkSaveGrades = (gradesToSave: Map<string, number>) => {
+  const handleBulkSaveGrades = async (gradesToSave: Map<string, number>) => {
     if (!assignmentForImport) return;
 
     const assignmentId = assignmentForImport.id;
     const linkedCriteriaIds = assignmentForImport.linkedCriteria.map(lc => lc.criterionId);
     const hasLinkedCriteria = linkedCriteriaIds.length > 0;
 
-    const updatedGrades = [...classData.grades];
+    if (isDesktop) {
+        const updatedGrades = [...classData.grades];
+        gradesToSave.forEach((score, studentId) => {
+            const criterionScores = hasLinkedCriteria
+                ? Object.fromEntries(linkedCriteriaIds.map(id => [id, score]))
+                : { 'manual_grade': score };
 
-    gradesToSave.forEach((score, studentId) => {
+            const existingGradeIndex = updatedGrades.findIndex(g => g.studentId === studentId && g.assignmentId === assignmentId);
+
+            if (existingGradeIndex > -1) {
+                updatedGrades[existingGradeIndex] = { ...updatedGrades[existingGradeIndex], criterionScores };
+            } else {
+                updatedGrades.push({ studentId, assignmentId, criterionScores });
+            }
+        });
+        onUpdateClass({ ...classData, grades: updatedGrades });
+        return;
+    }
+
+    for (const [studentId, score] of gradesToSave) {
+        const student = classData.students.find(s => s.id === studentId);
+        if (!student?.enrollmentId) continue;
         const criterionScores = hasLinkedCriteria
             ? Object.fromEntries(linkedCriteriaIds.map(id => [id, score]))
             : { 'manual_grade': score };
-        
-        const existingGradeIndex = updatedGrades.findIndex(g => g.studentId === studentId && g.assignmentId === assignmentId);
-
-        if (existingGradeIndex > -1) {
-            updatedGrades[existingGradeIndex] = { ...updatedGrades[existingGradeIndex], criterionScores };
-        } else {
-            updatedGrades.push({ studentId, assignmentId, criterionScores });
-        }
-    });
-
-    onUpdateClass({ ...classData, grades: updatedGrades });
+        await putGradeMutation.mutateAsync({
+            assignmentId,
+            enrollmentId: student.enrollmentId,
+            classId: classData.id,
+            data: encodeGradeInput({ criterionScores }),
+        });
+    }
   };
   
+  // Sin columna de orden manual en categories/assignments del backend nuevo
+  // (mismo límite ya aceptado para el alumnado en el bloque 5) — reordenar
+  // solo tiene sentido en escritorio; los botones se ocultan en web más
+  // abajo, en vez de fingir que funcionan sin persistir nada.
   const handleReorderCategory = (catId: string, dir: -1 | 1) => {
     const cats = [...classData.categories];
     const periodCats = cats.filter(c => c.evaluationPeriodId === activePeriodId);
@@ -446,42 +545,51 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       });
   }, [allClasses, selectedSourceClassId, evaluationPeriods, classData.id, activePeriodId]);
   
-  const handleCopyCategories = (sourceClassId: string, sourcePeriodId: string) => {
+  const handleCopyCategories = async (sourceClassId: string, sourcePeriodId: string) => {
       setIsCopyCatOpen(false);
-      
+
       const sourceClass = allClasses.find(c => c.id === sourceClassId);
       const sourcePeriod = evaluationPeriods.find(p => p.id === sourcePeriodId);
       const activePeriod = evaluationPeriods.find(p => p.id === activePeriodId);
-      
+
       if (!sourceClass || !sourcePeriod || !activePeriod) return;
-  
+
       const message = sourceClass.id === classData.id
         ? `¿Seguro que quieres copiar todas las categorías de "${sourcePeriod.name}" a "${activePeriod.name}"?`
         : `¿Seguro que quieres copiar las categorías de "${getClassName(sourceClass, allCourses)} - ${sourcePeriod.name}" a tu clase actual?`;
 
       if (!window.confirm(message)) return;
-  
+
       const sourceCategories = sourceClass.categories.filter(c => c.evaluationPeriodId === sourcePeriodId);
       const currentCategoryNames = new Set(categoriesForPeriod.map(c => c.name.toLowerCase()));
       const categoriesToCopy = sourceCategories.filter(sc => !currentCategoryNames.has(sc.name.toLowerCase()));
-      
+
       if (categoriesToCopy.length !== sourceCategories.length) {
           alert("Algunas categorías no se copiaron porque ya existen nombres idénticos en este periodo.");
       }
-      
+
       if (categoriesToCopy.length === 0) {
-          if (sourceCategories.length > 0) return; 
+          if (sourceCategories.length > 0) return;
           alert("No hay categorías para copiar en la evaluación seleccionada.");
           return;
       }
-  
-      const newCategories = categoriesToCopy.map(cat => ({
-          ...cat,
-          id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          evaluationPeriodId: activePeriodId,
-      }));
-  
-      onUpdateClass({ ...classData, categories: [...classData.categories, ...newCategories] });
+
+      if (isDesktop) {
+          const newCategories = categoriesToCopy.map(cat => ({
+              ...cat,
+              id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              evaluationPeriodId: activePeriodId,
+          }));
+          onUpdateClass({ ...classData, categories: [...classData.categories, ...newCategories] });
+          return;
+      }
+
+      for (const cat of categoriesToCopy) {
+          await createCategoryMutation.mutateAsync({
+              classId: classData.id,
+              data: { name: cat.name, weight: cat.weight, evaluationPeriodId: activePeriodId, type: cat.type },
+          });
+      }
   };
 
   // Wrapper to inject the source assignment
@@ -543,20 +651,22 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
               <th scope="col" className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] ${activePeriodId !== 'final' ? 'border-b-0 align-bottom' : 'align-middle'}`}>
                   <div className="flex items-center justify-between gap-1">
                       <span>Alumn@</span>
-                      <button
-                          type="button"
-                          title="Ordenar por apellido"
-                          onClick={() => {
-                              const sorted = [...classData.students].sort((a, b) =>
-                                  getNombreOrden(a).localeCompare(getNombreOrden(b), 'es', { sensitivity: 'base' })
-                              );
-                              onUpdateClass({ ...classData, students: sorted });
-                          }}
-                          className="text-slate-400 hover:text-slate-700 p-0.5 rounded"
-                      >
-                          <ArrowUpIcon className="w-3 h-3 -rotate-90" />
-                          <ArrowDownIcon className="w-3 h-3 -rotate-90" />
-                      </button>
+                      {isDesktop && (
+                          <button
+                              type="button"
+                              title="Ordenar por apellido"
+                              onClick={() => {
+                                  const sorted = [...classData.students].sort((a, b) =>
+                                      getNombreOrden(a).localeCompare(getNombreOrden(b), 'es', { sensitivity: 'base' })
+                                  );
+                                  onUpdateClass({ ...classData, students: sorted });
+                              }}
+                              className="text-slate-400 hover:text-slate-700 p-0.5 rounded"
+                          >
+                              <ArrowUpIcon className="w-3 h-3 -rotate-90" />
+                              <ArrowDownIcon className="w-3 h-3 -rotate-90" />
+                          </button>
+                      )}
                   </div>
               </th>
               {activePeriodId === 'final' ? (
@@ -578,8 +688,10 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             <button onClick={() => { setActiveCategory(cat); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }} className="p-1 text-blue-600 hover:bg-blue-100 rounded-md text-xs">Añadir {cat.name.toLowerCase()}</button>
                             <IconButton label="Editar categoría" size="sm" onClick={() => {setCategoryToEdit(cat); setIsCategoryModalOpen(true);}}><PencilIcon className="w-3 h-3"/></IconButton>
                             <IconButton label="Eliminar categoría" tone="danger" size="sm" onClick={() => handleDeleteCategory(cat.id)}><TrashIcon className="w-3 h-3"/></IconButton>
-                            <IconButton label="Mover izquierda" size="sm" onClick={() => handleReorderCategory(cat.id, -1)}><ArrowUpIcon className="w-3 h-3 -rotate-90"/></IconButton>
-                            <IconButton label="Mover derecha" size="sm" onClick={() => handleReorderCategory(cat.id, 1)}><ArrowDownIcon className="w-3 h-3 -rotate-90"/></IconButton>
+                            {isDesktop && <>
+                                <IconButton label="Mover izquierda" size="sm" onClick={() => handleReorderCategory(cat.id, -1)}><ArrowUpIcon className="w-3 h-3 -rotate-90"/></IconButton>
+                                <IconButton label="Mover derecha" size="sm" onClick={() => handleReorderCategory(cat.id, 1)}><ArrowDownIcon className="w-3 h-3 -rotate-90"/></IconButton>
+                            </>}
                         </div>
                       </th>
                     )
@@ -619,8 +731,10 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                                 <IconButton label="Eliminar tarea" tone="danger" size="sm" onClick={() => handleDeleteAssignment(a.id)}><TrashIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Copiar tarea a otra clase" tone="primary" size="sm" onClick={() => setAssignmentToCopy(a)}><DocumentDuplicateIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Importar notas en lote" tone="primary" size="sm" onClick={() => {setAssignmentForImport(a); setIsBulkImportModalOpen(true);}}><ArrowUpTrayIcon className="w-3 h-3"/></IconButton>
-                                <IconButton label="Mover izquierda" size="sm" onClick={() => handleReorderAssignment(a.id, -1)}><ArrowUpIcon className="w-3 h-3 -rotate-90"/></IconButton>
-                                <IconButton label="Mover derecha" size="sm" onClick={() => handleReorderAssignment(a.id, 1)}><ArrowDownIcon className="w-3 h-3 -rotate-90"/></IconButton>
+                                {isDesktop && <>
+                                    <IconButton label="Mover izquierda" size="sm" onClick={() => handleReorderAssignment(a.id, -1)}><ArrowUpIcon className="w-3 h-3 -rotate-90"/></IconButton>
+                                    <IconButton label="Mover derecha" size="sm" onClick={() => handleReorderAssignment(a.id, 1)}><ArrowDownIcon className="w-3 h-3 -rotate-90"/></IconButton>
+                                </>}
                               </div>
                             </th>
                         )),

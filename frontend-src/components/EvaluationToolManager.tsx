@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import type { EvaluationTool, Checklist, RatingScale, Rubric, EvaluationLevel, BaseEvaluationItem, EvaluationCriterion, Course, ClassData } from '../types';
 import { PencilIcon, TrashIcon, PlusIcon, LinkIcon, ArrowUpTrayIcon } from './Icons';
 import Modal from './Modal';
@@ -40,23 +41,36 @@ interface EvaluationToolManagerProps {
 }
 
 const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluationTools, onCreate, onUpdate, onDelete, criteria, courses, classes, setClasses }) => {
+    const isDesktop = isTauri();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [toolToEdit, setToolToEdit] = useState<EvaluationTool | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
 
     const handleSave = (tool: EvaluationTool) => {
         if (toolToEdit) {
-            const affected = countGradesAffectedByTool(classes, tool.id);
-            if (affected > 0) {
-                const confirmed = window.confirm(
-                    `Ya hay ${affected} calificación(es) guardadas con este instrumento. Al editarlo se recalcularán automáticamente con los pesos/criterios nuevos. ¿Continuar?`
-                );
-                if (!confirmed) return;
-            }
-            const { id, ...data } = tool;
-            onUpdate(id, data);
-            if (affected > 0) {
-                setClasses(prev => recalculateGradesForTool(prev, tool));
+            // classes/setClasses siguen siendo el blob (fallback de
+            // escritorio, ver ClassManager.tsx bloque 5) — en web,
+            // criterionScores de una nota basada en instrumento se deriva
+            // siempre en caliente a partir de toolResults + la definición
+            // VIGENTE del instrumento (ver services/apiAdapters.ts,
+            // decodeGrade), así que no hay nada que recalcular ni
+            // reguardar aquí: el siguiente GET ya usa la definición nueva.
+            if (isDesktop) {
+                const affected = countGradesAffectedByTool(classes, tool.id);
+                if (affected > 0) {
+                    const confirmed = window.confirm(
+                        `Ya hay ${affected} calificación(es) guardadas con este instrumento. Al editarlo se recalcularán automáticamente con los pesos/criterios nuevos. ¿Continuar?`
+                    );
+                    if (!confirmed) return;
+                }
+                const { id, ...data } = tool;
+                onUpdate(id, data);
+                if (affected > 0) {
+                    setClasses(prev => recalculateGradesForTool(prev, tool));
+                }
+            } else {
+                const { id, ...data } = tool;
+                onUpdate(id, data);
             }
         } else {
             const { id: _unused, ...data } = tool;

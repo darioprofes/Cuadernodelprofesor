@@ -42,6 +42,13 @@ class EvaluationPeriodInput(ApiModel):
     weight: float = 1
 
 
+class EvaluationPeriodPatch(ApiModel):
+    name: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    weight: Optional[float] = None
+
+
 class EvaluationPeriod(EvaluationPeriodInput):
     id: uuid.UUID
     academic_year_id: uuid.UUID
@@ -180,6 +187,34 @@ def create_evaluation_period(year_id: str, data: EvaluationPeriodInput) -> Evalu
             )
 
             return EvaluationPeriod.model_validate(cur.fetchone())
+
+
+def update_evaluation_period(period_id: str, data: EvaluationPeriodPatch) -> Optional[EvaluationPeriod]:
+
+    fields = data.model_dump(exclude_unset=True)
+
+    with get_conn() as conn:
+
+        with conn.cursor() as cur:
+
+            if fields:
+
+                set_clause = ", ".join(f"{key} = %s" for key in fields)
+
+                cur.execute(
+                    f"UPDATE evaluation_periods SET {set_clause} WHERE id = %s RETURNING {_PERIOD_COLUMNS}",
+                    [*fields.values(), period_id]
+                )
+
+                row = cur.fetchone()
+
+            else:
+
+                cur.execute(f"SELECT {_PERIOD_COLUMNS} FROM evaluation_periods WHERE id = %s", [period_id])
+
+                row = cur.fetchone()
+
+            return EvaluationPeriod.model_validate(row) if row else None
 
 
 def delete_evaluation_period(period_id: str) -> bool:

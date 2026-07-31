@@ -12,6 +12,16 @@ import {
     useCreateDescriptor, useUpdateDescriptor, useDeleteDescriptor,
 } from './hooks/useKeyCompetences';
 import { useCourses, useUpdateCourse } from './hooks/useCourses';
+import { useCurrentAcademicYear, useEvaluationPeriods } from './hooks/useAcademicYears';
+import { useApiClasses } from './hooks/useApiClasses';
+import { useApiStudents } from './hooks/useApiStudents';
+import { useEnrollmentsForClasses } from './hooks/useEnrollments';
+import { useCategoriesForClasses } from './hooks/useCategories';
+import { useAssignmentsForClasses, useCreateAssignment } from './hooks/useAssignments';
+import { useGradesForClasses } from './hooks/useGrades';
+import { useEvaluationCriteria } from './hooks/useEvaluationCriteria';
+import { useSpecificCompetences } from './hooks/useSpecificCompetences';
+import { hydrateClassData } from './services/apiAdapters';
 import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, getInitialShortcuts } from './constants';
 import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, OperationalDescriptor, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
 import { runMigrations, CURRENT_SCHEMA_VERSION } from './services/migrations';
@@ -313,6 +323,37 @@ const App = () => {
     const remoteCourses = useCourses({ enabled: !isDesktop });
     const updateCourseMutation = useUpdateCourse();
 
+    // Hidratación completa de TODAS las clases del curso actual, para web
+    // (ver plan, bloque 6): GradebookTable/CalendarView/los 4 informes de
+    // clase siguen esperando una ClassData completa (misma forma que el
+    // blob, con alumnado+categorías+tareas+notas embebidos) — se reconstruye
+    // aquí una vez, centralizada, en vez de que cada consumidor la pida por
+    // separado (ver services/apiAdapters.ts para el porqué de cada pieza,
+    // sobre todo grades/criterionScores). `appState?.classes` con fallback a
+    // [] porque estos hooks se declaran antes del `if (!appState)` de más
+    // abajo (Rules of Hooks) — el valor real no importa hasta que appState
+    // exista, momento en el que ya está resuelto de verdad.
+    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+    const yearId = currentYear.data?.id ?? '';
+    const remoteClasses = useApiClasses(yearId, { enabled: !isDesktop && !!yearId });
+    const remoteStudents = useApiStudents({ enabled: !isDesktop });
+    const remoteClassIds = useMemo(() => (remoteClasses.data ?? []).map(c => c.id), [remoteClasses.data]);
+    const enrollmentQueries = useEnrollmentsForClasses(remoteClassIds, { enabled: !isDesktop });
+    const categoryQueries = useCategoriesForClasses(remoteClassIds, { enabled: !isDesktop });
+    const assignmentQueries = useAssignmentsForClasses(remoteClassIds, { enabled: !isDesktop });
+    const gradeQueries = useGradesForClasses(remoteClassIds, { enabled: !isDesktop });
+    const remoteEvaluationPeriods = useEvaluationPeriods(yearId, { enabled: !isDesktop && !!yearId });
+    const createAssignmentMutation = useCreateAssignment();
+    const hydratedClasses: ClassData[] = isDesktop ? (appState?.classes ?? []) : (remoteClasses.data ?? []).map((cls, i) => hydrateClassData(
+        cls,
+        enrollmentQueries[i]?.data ?? [],
+        remoteStudents.data ?? [],
+        categoryQueries[i]?.data ?? [],
+        assignmentQueries[i]?.data ?? [],
+        gradeQueries[i]?.data ?? [],
+        remoteEvaluationTools.data ?? [],
+    ));
+
     // --- UI State ---
     const [activeClassId, setActiveClassId] = useState<string>('');
     const [activeView, setActiveViewRaw] = useState<View>('hoy');
@@ -370,9 +411,21 @@ const App = () => {
     }, [appState, initialized]);
 
     const activeClass = useMemo(() => {
-        if (!appState) return null;
-        return appState.classes.find(c => c.id === activeClassId);
-    }, [appState, activeClassId]);
+        if (isDesktop) {
+            if (!appState) return null;
+            return appState.classes.find(c => c.id === activeClassId);
+        }
+        return hydratedClasses.find(c => c.id === activeClassId);
+    }, [isDesktop, appState, activeClassId, hydratedClasses]);
+
+    // criteria/competences (bloque 3b) dejaron de escribirse en el blob en
+    // web desde CurriculumManager — para que GradebookTable/los informes de
+    // la clase activa vean los criterios/competencias reales de su materia
+    // (no los del blob, congelados), se piden aquí, ya acotados al curso de
+    // `activeClass`.
+    const activeCourseId = activeClass?.courseId ?? '';
+    const remoteActiveCriteria = useEvaluationCriteria(activeCourseId, { enabled: !isDesktop && !!activeCourseId });
+    const remoteActiveCompetences = useSpecificCompetences(activeCourseId, { enabled: !isDesktop && !!activeCourseId });
 
     const handleUpdateClass = useCallback((updatedClass: ClassData) => {
         updateState(prev => ({
@@ -383,17 +436,21 @@ const App = () => {
 
     // Guarda la tarea evaluable creada desde Favoritos (mismo mecanismo que
     // usa CalendarView para el "+" de un día en la Agenda).
-    const handleSaveFavoritoAssignment = (newAssignment: Omit<Assignment, 'id'>, classId: string) => {
-        const classToUpdate = classes.find(c => c.id === classId);
-        if (!classToUpdate) return;
-        const fullAssignment: Assignment = {
-            ...newAssignment,
-            id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        };
-        handleUpdateClass({
-            ...classToUpdate,
-            assignments: [...classToUpdate.assignments, fullAssignment],
-        });
+    const handleSaveFavoritoAssignment = async (newAssignment: Omit<Assignment, 'id'>, classId: string) => {
+        if (isDesktop) {
+            const classToUpdate = classes.find(c => c.id === classId);
+            if (!classToUpdate) return;
+            const fullAssignment: Assignment = {
+                ...newAssignment,
+                id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            };
+            handleUpdateClass({
+                ...classToUpdate,
+                assignments: [...classToUpdate.assignments, fullAssignment],
+            });
+        } else {
+            await createAssignmentMutation.mutateAsync({ classId, data: newAssignment });
+        }
         setIsFavoritoAssignmentOpen(false);
     };
 
@@ -408,31 +465,39 @@ const App = () => {
         setIsFavoritoMeetingOpen(false);
     };
 
-    const handleCopyAssignment = useCallback((sourceAssignment: Assignment, targetClassId: string, targetPeriodId: string, targetCategoryId: string) => {
-        updateState(prev => {
-            const targetClassIndex = prev.classes.findIndex(c => c.id === targetClassId);
-            if (targetClassIndex === -1) return prev;
+    const handleCopyAssignment = useCallback(async (sourceAssignment: Assignment, targetClassId: string, targetPeriodId: string, targetCategoryId: string) => {
+        if (isDesktop) {
+            updateState(prev => {
+                const targetClassIndex = prev.classes.findIndex(c => c.id === targetClassId);
+                if (targetClassIndex === -1) return prev;
 
-            const newAssignment: Assignment = {
-                ...sourceAssignment,
-                id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-                categoryId: targetCategoryId,
-                evaluationPeriodId: targetPeriodId,
-                // Keep name, criteria, method, etc.
-                // Ensure 'recoversAssignmentIds' is cleared as it's specific to the old class context
-                recoversAssignmentIds: [] 
-            };
+                const newAssignment: Assignment = {
+                    ...sourceAssignment,
+                    id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                    categoryId: targetCategoryId,
+                    evaluationPeriodId: targetPeriodId,
+                    // Keep name, criteria, method, etc.
+                    // Ensure 'recoversAssignmentIds' is cleared as it's specific to the old class context
+                    recoversAssignmentIds: []
+                };
 
-            const updatedClasses = [...prev.classes];
-            updatedClasses[targetClassIndex] = {
-                ...updatedClasses[targetClassIndex],
-                assignments: [...updatedClasses[targetClassIndex].assignments, newAssignment]
-            };
+                const updatedClasses = [...prev.classes];
+                updatedClasses[targetClassIndex] = {
+                    ...updatedClasses[targetClassIndex],
+                    assignments: [...updatedClasses[targetClassIndex].assignments, newAssignment]
+                };
 
-            return { ...prev, classes: updatedClasses };
-        });
+                return { ...prev, classes: updatedClasses };
+            });
+        } else {
+            const { id: _unusedId, ...rest } = sourceAssignment;
+            await createAssignmentMutation.mutateAsync({
+                classId: targetClassId,
+                data: { ...rest, categoryId: targetCategoryId, evaluationPeriodId: targetPeriodId, recoversAssignmentIds: [] },
+            });
+        }
         alert("Tarea copiada con éxito.");
-    }, [updateState]);
+    }, [isDesktop, updateState, createAssignmentMutation]);
 
     const handleUpdateJournalEntry = useCallback((entry: JournalEntry) => {
         updateState(prev => {
@@ -611,16 +676,32 @@ const App = () => {
     // separada de `courses` (el curso del blob viejo), solo para
     // CurriculumManager/ProgrammingManager.
     const curriculumCourses = isDesktop ? courses : (remoteCourses.data ?? []);
-    const academicClasses = classes.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other');
+    const academicClasses = isDesktop
+        ? classes.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other')
+        : hydratedClasses.filter(c => curriculumCourses.find(course => course.id === c.courseId)?.type !== 'other');
+    // Igual que curriculumCourses: en escritorio son literalmente el mismo
+    // array (blob); en web, los reales del curso de `activeClass` (bloque
+    // 3b los dejó de escribir en el blob), pedidos más arriba.
+    const effectiveCriteria = isDesktop ? criteria : (remoteActiveCriteria.data ?? []);
+    const effectiveCompetences = isDesktop ? competences : (remoteActiveCompetences.data ?? []);
+    // evaluationPeriods/evaluationPeriodWeights reales (ver bloque 6,
+    // AcademicConfigManager.tsx) — todo lo demás de academicConfiguration
+    // (fechas del curso, festivos, franjas horarias, escala de notas) sigue
+    // siendo del blob en ambas plataformas, fuera de alcance.
+    const effectiveAcademicConfiguration: AcademicConfiguration = isDesktop ? academicConfiguration : {
+        ...academicConfiguration,
+        evaluationPeriods: (remoteEvaluationPeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate })),
+        evaluationPeriodWeights: Object.fromEntries((remoteEvaluationPeriods.data ?? []).map(p => [p.id, p.weight])),
+    };
 
     const renderContent = () => {
         // Vistas que no requieren una clase activa
         if (activeView === 'journal') {
             return <ClassJournal
-                classes={classes}
+                classes={hydratedClasses}
                 entries={journalEntries}
                 onSave={handleUpdateJournalEntry}
-                academicConfiguration={academicConfiguration}
+                academicConfiguration={effectiveAcademicConfiguration}
                 units={programmingUnits}
                 courses={courses}
                 onDirtyChange={setIsJournalDirty}
@@ -629,9 +710,9 @@ const App = () => {
 
         if (activeView === 'hoy') {
             return <HoyView
-                classes={classes}
+                classes={hydratedClasses}
                 courses={courses}
-                academicConfiguration={academicConfiguration}
+                academicConfiguration={effectiveAcademicConfiguration}
                 tasks={tasks}
                 setTasks={setTasksCallback}
                 meetings={meetings}
@@ -642,9 +723,9 @@ const App = () => {
 
         if (activeView === 'horario') {
             return <HorarioView
-                classes={classes}
+                classes={hydratedClasses}
                 courses={courses}
-                academicConfiguration={academicConfiguration}
+                academicConfiguration={effectiveAcademicConfiguration}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
             />;
@@ -675,7 +756,7 @@ const App = () => {
 
         if (activeView === 'exams') {
             return <ExamenesView
-                classes={classes}
+                classes={hydratedClasses}
                 courses={courses}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
@@ -689,13 +770,13 @@ const App = () => {
                     {/* Render class selector tabs even in empty state if we are in Gradebook view and have classes */}
                     {activeView === 'gradebook' && academicClasses.length > 0 && (
                         <div className="flex overflow-x-auto no-scrollbar max-w-full px-2 pt-2 border-b bg-slate-50/50">
-                            {academicClasses.sort((a, b) => getClassName(a, courses).localeCompare(getClassName(b, courses))).map(cls => (
+                            {academicClasses.sort((a, b) => getClassName(a, curriculumCourses).localeCompare(getClassName(b, curriculumCourses))).map(cls => (
                                 <button
                                     key={cls.id}
                                     onClick={() => setActiveClassId(cls.id)}
                                     className={`px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300`}
                                 >
-                                    <ClassLabel classData={cls} courses={courses} />
+                                    <ClassLabel classData={cls} courses={curriculumCourses} />
                                 </button>
                             ))}
                         </div>
@@ -716,8 +797,8 @@ const App = () => {
         }
 
         if (REPORT_VIEWS.includes(activeView)) {
-            const activeClassCriteria = criteria.filter(c => c.courseId === activeClass?.courseId).sort((a, b) => compararCodigo(a.code, b.code));
-            const activeClassCompetences = competences.filter(sc => sc.courseId === activeClass?.courseId).sort((a, b) => compararCodigo(a.code, b.code));
+            const activeClassCriteria = effectiveCriteria.filter(c => c.courseId === activeClass?.courseId).sort((a, b) => compararCodigo(a.code, b.code));
+            const activeClassCompetences = effectiveCompetences.filter(sc => sc.courseId === activeClass?.courseId).sort((a, b) => compararCodigo(a.code, b.code));
             return (
                 <>
                     <PageHeader title="Informes" subtitle="Grado de consecución de criterios, competencias y descriptores." accent="teal" icon={<ChartBarIcon className="w-6 h-6" />} />
@@ -734,16 +815,16 @@ const App = () => {
                                 onChange={(e) => setActiveClassId(e.target.value)}
                                 className="sm:w-auto"
                             >
-                                {academicClasses.map(c => <option key={c.id} value={c.id}>{formatClassLabel(c, courses)}</option>)}
+                                {academicClasses.map(c => <option key={c.id} value={c.id}>{formatClassLabel(c, curriculumCourses)}</option>)}
                             </Select>
                         )}
                     </div>
 
                     <React.Suspense fallback={<ViewLoadingFallback />}>
-                        {activeView === 'criteria' && activeClass && <CriteriaAchievement classData={activeClass} criteria={activeClassCriteria} competences={activeClassCompetences} academicConfiguration={academicConfiguration} />}
-                        {activeView === 'competences' && activeClass && <SpecificCompetenceAchievement classData={activeClass} courses={courses} competences={activeClassCompetences} keyCompetences={keyCompetences} criteria={activeClassCriteria} academicConfiguration={academicConfiguration} />}
-                        {activeView === 'key-competences' && activeClass && <KeyCompetenceAchievement classData={activeClass} courses={courses} competences={activeClassCompetences} keyCompetences={keyCompetences} criteria={activeClassCriteria} academicConfiguration={academicConfiguration} />}
-                        {activeView === 'descriptors' && activeClass && <DescriptorAchievement classData={activeClass} keyCompetences={keyCompetences} courses={courses} />}
+                        {activeView === 'criteria' && activeClass && <CriteriaAchievement classData={activeClass} criteria={activeClassCriteria} competences={activeClassCompetences} academicConfiguration={effectiveAcademicConfiguration} />}
+                        {activeView === 'competences' && activeClass && <SpecificCompetenceAchievement classData={activeClass} courses={curriculumCourses} competences={activeClassCompetences} keyCompetences={keyCompetences} criteria={activeClassCriteria} academicConfiguration={effectiveAcademicConfiguration} />}
+                        {activeView === 'key-competences' && activeClass && <KeyCompetenceAchievement classData={activeClass} courses={curriculumCourses} competences={activeClassCompetences} keyCompetences={keyCompetences} criteria={activeClassCriteria} academicConfiguration={effectiveAcademicConfiguration} />}
+                        {activeView === 'descriptors' && activeClass && <DescriptorAchievement classData={activeClass} keyCompetences={keyCompetences} courses={curriculumCourses} />}
                     </React.Suspense>
                 </>
             );
@@ -751,32 +832,32 @@ const App = () => {
 
         switch (activeView) {
             case 'gradebook':
-                return activeClass && <GradebookTable 
-                    classData={activeClass} 
-                    allClasses={classes} 
-                    allCourses={courses}
-                    criteria={criteria.filter(c => c.courseId === activeClass.courseId).sort((a, b) => compararCodigo(a.code, b.code))}
-                    specificCompetences={competences.filter(sc => sc.courseId === activeClass.courseId).sort((a, b) => compararCodigo(a.code, b.code))}
-                    keyCompetences={keyCompetences} 
-                    programmingUnits={programmingUnits} 
-                    academicConfiguration={academicConfiguration} 
-                    setAcademicConfiguration={setAcademicConfigurationCallback} 
-                    onUpdateClass={handleUpdateClass} 
+                return activeClass && <GradebookTable
+                    classData={activeClass}
+                    allClasses={hydratedClasses}
+                    allCourses={curriculumCourses}
+                    criteria={effectiveCriteria.filter(c => c.courseId === activeClass.courseId).sort((a, b) => compararCodigo(a.code, b.code))}
+                    specificCompetences={effectiveCompetences.filter(sc => sc.courseId === activeClass.courseId).sort((a, b) => compararCodigo(a.code, b.code))}
+                    keyCompetences={keyCompetences}
+                    programmingUnits={programmingUnits}
+                    academicConfiguration={effectiveAcademicConfiguration}
+                    setAcademicConfiguration={setAcademicConfigurationCallback}
+                    onUpdateClass={handleUpdateClass}
                     evaluationTools={evaluationTools}
                     setActiveClassId={setActiveClassId} // Pass setter for internal tab navigation
                     onCopyAssignment={handleCopyAssignment}
                 />;
             case 'calendar':
-                return <CalendarView 
-                    units={programmingUnits} 
-                    setUnits={setProgrammingUnitsCallback} 
-                    courses={courses} 
-                    academicConfiguration={academicConfiguration} 
-                    classes={classes} 
-                    journalEntries={journalEntries} 
-                    onUpdateClass={handleUpdateClass} 
-                    criteria={criteria}
-                    specificCompetences={competences}
+                return <CalendarView
+                    units={programmingUnits}
+                    setUnits={setProgrammingUnitsCallback}
+                    courses={curriculumCourses}
+                    academicConfiguration={effectiveAcademicConfiguration}
+                    classes={hydratedClasses}
+                    journalEntries={journalEntries}
+                    onUpdateClass={handleUpdateClass}
+                    criteria={effectiveCriteria}
+                    specificCompetences={effectiveCompetences}
                     keyCompetences={keyCompetences}
                     onSaveJournalEntry={handleUpdateJournalEntry}
                     agendaNotes={agendaNotes}
@@ -807,7 +888,7 @@ const App = () => {
                                 onChange={(e) => setActiveClassId(e.target.value)}
                                 className="font-semibold"
                             >
-                                {academicClasses.map(c => <option key={c.id} value={c.id}>{formatClassLabel(c, courses)}</option>)}
+                                {academicClasses.map(c => <option key={c.id} value={c.id}>{formatClassLabel(c, curriculumCourses)}</option>)}
                             </Select>
                         )}
                         <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-slate-100">
@@ -904,12 +985,12 @@ const App = () => {
                     onClose={() => setIsFavoritoAssignmentOpen(false)}
                     onSave={handleSaveFavoritoAssignment}
                     selectedDate={new Date()}
-                    classes={classes}
-                    courses={courses}
-                    criteria={criteria}
-                    specificCompetences={competences}
+                    classes={hydratedClasses}
+                    courses={curriculumCourses}
+                    criteria={effectiveCriteria}
+                    specificCompetences={effectiveCompetences}
                     keyCompetences={keyCompetences}
-                    academicConfiguration={academicConfiguration}
+                    academicConfiguration={effectiveAcademicConfiguration}
                 />
             )}
 
@@ -926,9 +1007,9 @@ const App = () => {
                 <QuickJournalModal
                     isOpen={true}
                     onClose={() => setIsFavoritoJournalOpen(false)}
-                    classes={classes}
-                    courses={courses}
-                    academicConfiguration={academicConfiguration}
+                    classes={hydratedClasses}
+                    courses={curriculumCourses}
+                    academicConfiguration={effectiveAcademicConfiguration}
                     entries={journalEntries}
                     onSave={handleUpdateJournalEntry}
                 />
