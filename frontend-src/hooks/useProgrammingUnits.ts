@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type { ProgrammingUnit, ProgrammingUnitInput } from '../types/api';
 
@@ -9,6 +9,18 @@ export function useProgrammingUnits(courseId: string, options?: { enabled?: bool
         queryKey: queryKey(courseId),
         queryFn: () => api.get<ProgrammingUnit[]>(`/courses/${courseId}/programming-units`),
         enabled: (options?.enabled ?? true) && !!courseId,
+    });
+}
+
+// Para consumidores que necesitan las unidades de TODAS las materias a la
+// vez (App.tsx, bloque 7) — ver useEvaluationCriteriaForCourses.
+export function useProgrammingUnitsForCourses(courseIds: string[], options?: { enabled?: boolean }) {
+    return useQueries({
+        queries: courseIds.map(courseId => ({
+            queryKey: queryKey(courseId),
+            queryFn: () => api.get<ProgrammingUnit[]>(`/courses/${courseId}/programming-units`),
+            enabled: (options?.enabled ?? true) && !!courseId,
+        })),
     });
 }
 

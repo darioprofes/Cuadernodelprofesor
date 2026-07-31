@@ -20,8 +20,10 @@ import { useEnrollmentsForClasses } from './hooks/useEnrollments';
 import { useCategoriesForClasses } from './hooks/useCategories';
 import { useAssignmentsForClasses, useCreateAssignment } from './hooks/useAssignments';
 import { useGradesForClasses } from './hooks/useGrades';
-import { useEvaluationCriteria } from './hooks/useEvaluationCriteria';
-import { useSpecificCompetences } from './hooks/useSpecificCompetences';
+import { useEvaluationCriteria, useEvaluationCriteriaForCourses } from './hooks/useEvaluationCriteria';
+import { useSpecificCompetences, useSpecificCompetencesForCourses } from './hooks/useSpecificCompetences';
+import { useBasicKnowledgeForCourses } from './hooks/useBasicKnowledge';
+import { useProgrammingUnitsForCourses } from './hooks/useProgrammingUnits';
 import { hydrateClassData } from './services/apiAdapters';
 import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, getInitialShortcuts } from './constants';
 import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, OperationalDescriptor, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
@@ -361,6 +363,17 @@ const App = () => {
     // conviven a propósito durante la transición, ver plan.
     const remoteCourses = useCourses({ enabled: !isDesktop });
     const updateCourseMutation = useUpdateCourse();
+    // Currículo/planificación de TODAS las materias a la vez (bloque 7):
+    // varios consumidores (ExportModal, BackupManager, EvaluationToolManager,
+    // ClasesView→StudentSummaryModal, GradebookTable/CalendarView/ClassJournal
+    // para programmingUnits) necesitan el conjunto completo, no acotado a
+    // activeCourseId como effectiveCriteria/effectiveCompetences — antes
+    // recibían la lista congelada del blob por error (bug real, ver bloque 7).
+    const remoteCourseIds = useMemo(() => (remoteCourses.data ?? []).map(c => c.id), [remoteCourses.data]);
+    const allCriteriaQueries = useEvaluationCriteriaForCourses(remoteCourseIds, { enabled: !isDesktop });
+    const allCompetencesQueries = useSpecificCompetencesForCourses(remoteCourseIds, { enabled: !isDesktop });
+    const allBasicKnowledgeQueries = useBasicKnowledgeForCourses(remoteCourseIds, { enabled: !isDesktop });
+    const allProgrammingUnitsQueries = useProgrammingUnitsForCourses(remoteCourseIds, { enabled: !isDesktop });
 
     // Hidratación completa de TODAS las clases del curso actual, para web
     // (ver plan, bloque 6): GradebookTable/CalendarView/los 4 informes de
@@ -763,6 +776,15 @@ const App = () => {
     // separada de `courses` (el curso del blob viejo), solo para
     // CurriculumManager/ProgrammingManager.
     const curriculumCourses = isDesktop ? courses : (remoteCourses.data ?? []);
+    // Currículo/planificación de TODAS las materias (bloque 7) — a
+    // diferencia de effectiveCriteria/effectiveCompetences (acotadas a
+    // activeCourseId), estas alimentan vistas que no tienen "una" materia
+    // activa concreta (exportar CSV, comprobar integridad, vincular
+    // criterios a un instrumento, ficha de alumno de cualquier clase...).
+    const allCriteria: EvaluationCriterion[] = isDesktop ? criteria : allCriteriaQueries.flatMap(q => q.data ?? []);
+    const allCompetences: SpecificCompetence[] = isDesktop ? competences : allCompetencesQueries.flatMap(q => q.data ?? []);
+    const allBasicKnowledge: BasicKnowledge[] = isDesktop ? basicKnowledge : allBasicKnowledgeQueries.flatMap(q => q.data ?? []);
+    const allProgrammingUnits: ProgrammingUnit[] = isDesktop ? programmingUnits : (allProgrammingUnitsQueries.flatMap(q => q.data ?? []) as unknown as ProgrammingUnit[]);
     const academicClasses = isDesktop
         ? classes.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other')
         : hydratedClasses.filter(c => curriculumCourses.find(course => course.id === c.courseId)?.type !== 'other');
@@ -810,8 +832,8 @@ const App = () => {
                 entries={journalEntries}
                 onSave={handleUpdateJournalEntry}
                 academicConfiguration={effectiveAcademicConfiguration}
-                units={programmingUnits}
-                courses={courses}
+                units={allProgrammingUnits}
+                courses={curriculumCourses}
                 onDirtyChange={setIsJournalDirty}
             />;
         }
@@ -819,7 +841,7 @@ const App = () => {
         if (activeView === 'hoy') {
             return <HoyView
                 classes={hydratedClasses}
-                courses={courses}
+                courses={curriculumCourses}
                 academicConfiguration={effectiveAcademicConfiguration}
                 tasks={tasks}
                 setTasks={setTasksCallback}
@@ -832,7 +854,7 @@ const App = () => {
         if (activeView === 'horario') {
             return <HorarioView
                 classes={hydratedClasses}
-                courses={courses}
+                courses={curriculumCourses}
                 academicConfiguration={effectiveAcademicConfiguration}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
@@ -844,8 +866,8 @@ const App = () => {
                 classes={classes}
                 courses={curriculumCourses}
                 academicConfiguration={academicConfiguration}
-                criteria={criteria}
-                specificCompetences={competences}
+                criteria={allCriteria}
+                specificCompetences={allCompetences}
                 keyCompetences={keyCompetences}
                 onUpdateClass={handleUpdateClass}
                 setActiveView={setActiveView}
@@ -865,7 +887,7 @@ const App = () => {
         if (activeView === 'exams') {
             return <ExamenesView
                 classes={hydratedClasses}
-                courses={courses}
+                courses={curriculumCourses}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
                 onOpenAddTask={() => setIsFavoritoAssignmentOpen(true)}
@@ -1001,7 +1023,7 @@ const App = () => {
                     criteria={effectiveCriteria.filter(c => c.courseId === activeClass.courseId).sort((a, b) => compararCodigo(a.code, b.code))}
                     specificCompetences={effectiveCompetences.filter(sc => sc.courseId === activeClass.courseId).sort((a, b) => compararCodigo(a.code, b.code))}
                     keyCompetences={keyCompetences}
-                    programmingUnits={programmingUnits}
+                    programmingUnits={allProgrammingUnits}
                     academicConfiguration={effectiveAcademicConfiguration}
                     setAcademicConfiguration={setAcademicConfigurationCallback}
                     onUpdateClass={handleUpdateClass}
@@ -1011,7 +1033,7 @@ const App = () => {
                 />;
             case 'calendar':
                 return <CalendarView
-                    units={programmingUnits}
+                    units={allProgrammingUnits}
                     setUnits={setProgrammingUnitsCallback}
                     courses={curriculumCourses}
                     academicConfiguration={effectiveAcademicConfiguration}
@@ -1103,23 +1125,16 @@ const App = () => {
                         isOpen={isSettingsModalOpen}
                         onClose={() => setIsSettingsModalOpen(false)}
                         onOpenExportModal={() => { setIsSettingsModalOpen(false); setIsExportModalOpen(true); }}
-                        classes={classes} setClasses={setClassesCallback}
-                        courses={courses} setCourses={setCoursesCallback}
+                        classes={hydratedClasses} setClasses={setClassesCallback}
+                        courses={curriculumCourses} setCourses={setCoursesCallback}
                         curriculumCourses={curriculumCourses}
-                        onUpdateCourse={handleUpdateCourse}
                         keyCompetences={keyCompetences}
-                        onCreateKeyCompetence={handleCreateKeyCompetence}
-                        onUpdateKeyCompetence={handleUpdateKeyCompetence}
-                        onDeleteKeyCompetence={handleDeleteKeyCompetence}
-                        onCreateDescriptor={handleCreateDescriptor}
-                        onUpdateDescriptor={handleUpdateDescriptor}
-                        onDeleteDescriptor={handleDeleteDescriptor}
-                        specificCompetences={competences} setSpecificCompetences={setSpecificCompetencesCallback}
-                        evaluationCriteria={criteria} setEvaluationCriteria={setEvaluationCriteriaCallback}
+                        specificCompetences={allCompetences}
+                        evaluationCriteria={allCriteria}
                         journalEntries={journalEntries} setJournalEntries={setJournalEntriesCallback}
-                        basicKnowledge={basicKnowledge} setBasicKnowledge={setBasicKnowledgeCallback}
+                        basicKnowledge={allBasicKnowledge}
                         academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfigurationCallback}
-                        programmingUnits={programmingUnits} setProgrammingUnits={setProgrammingUnitsCallback}
+                        programmingUnits={allProgrammingUnits}
                         evaluationTools={evaluationTools}
                         onCreateEvaluationTool={handleCreateEvaluationTool}
                         onUpdateEvaluationTool={handleUpdateEvaluationTool}
@@ -1134,13 +1149,13 @@ const App = () => {
             <ExportModal
                 isOpen={isExportModalOpen}
                 onClose={() => setIsExportModalOpen(false)}
-                classes={classes}
-                courses={courses}
+                classes={hydratedClasses}
+                courses={curriculumCourses}
                 keyCompetences={keyCompetences}
-                specificCompetences={competences}
-                evaluationCriteria={criteria}
-                programmingUnits={programmingUnits}
-                basicKnowledge={basicKnowledge}
+                specificCompetences={allCompetences}
+                evaluationCriteria={allCriteria}
+                programmingUnits={allProgrammingUnits}
+                basicKnowledge={allBasicKnowledge}
                 academicConfiguration={academicConfiguration}
             />
 

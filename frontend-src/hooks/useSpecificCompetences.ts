@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type { SpecificCompetence, SpecificCompetenceInput } from '../types/api';
 
@@ -9,6 +9,18 @@ export function useSpecificCompetences(courseId: string, options?: { enabled?: b
         queryKey: queryKey(courseId),
         queryFn: () => api.get<SpecificCompetence[]>(`/courses/${courseId}/competences`),
         enabled: (options?.enabled ?? true) && !!courseId,
+    });
+}
+
+// Para consumidores que necesitan las competencias de TODAS las materias a
+// la vez (App.tsx, bloque 7) — ver useEvaluationCriteriaForCourses.
+export function useSpecificCompetencesForCourses(courseIds: string[], options?: { enabled?: boolean }) {
+    return useQueries({
+        queries: courseIds.map(courseId => ({
+            queryKey: queryKey(courseId),
+            queryFn: () => api.get<SpecificCompetence[]>(`/courses/${courseId}/competences`),
+            enabled: (options?.enabled ?? true) && !!courseId,
+        })),
     });
 }
 

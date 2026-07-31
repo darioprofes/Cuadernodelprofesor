@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type { BasicKnowledge, BasicKnowledgeInput } from '../types/api';
 
@@ -9,6 +9,18 @@ export function useBasicKnowledge(courseId: string, options?: { enabled?: boolea
         queryKey: queryKey(courseId),
         queryFn: () => api.get<BasicKnowledge[]>(`/courses/${courseId}/basic-knowledge`),
         enabled: (options?.enabled ?? true) && !!courseId,
+    });
+}
+
+// Para consumidores que necesitan los saberes de TODAS las materias a la
+// vez (App.tsx, bloque 7) — ver useEvaluationCriteriaForCourses.
+export function useBasicKnowledgeForCourses(courseIds: string[], options?: { enabled?: boolean }) {
+    return useQueries({
+        queries: courseIds.map(courseId => ({
+            queryKey: queryKey(courseId),
+            queryFn: () => api.get<BasicKnowledge[]>(`/courses/${courseId}/basic-knowledge`),
+            enabled: (options?.enabled ?? true) && !!courseId,
+        })),
     });
 }
 

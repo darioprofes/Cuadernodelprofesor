@@ -279,7 +279,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
 
     const importarTexto = async (text: string) => {
         try {
-            const parsedData = parseCurriculumCsv(text, selectedCourseId, specificCompetences);
+            const parsedData = parseCurriculumCsv(text, selectedCourseId, filteredCompetences);
             await updateCurriculumState(parsedData, selectedCourseId);
         } catch (error) {
             console.error('Error parsing CSV:', error);

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import Modal from './Modal';
 import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon } from './Icons';
-import type { ClassData, Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
+import type { ClassData, Course, KeyCompetence, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
 import EvaluationToolManager from './EvaluationToolManager';
 import ClassManager from './settings/ClassManager';
 import ScheduleManager from './settings/ScheduleManager';
@@ -21,31 +21,25 @@ export interface SettingsModalProps {
     // Materias del backend nuevo (bloque 3) — solo para CurriculumManager/
     // ProgrammingManager, distintas de `courses` (blob viejo, todo lo demás).
     curriculumCourses: Course[];
-    onUpdateCourse: (id: string, data: Partial<{ level: string; subject: string; type: 'academic' | 'other'; pesoCriteriosManual: boolean }>) => Promise<void>;
     classes: ClassData[];
     setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
     keyCompetences: KeyCompetence[];
-    onCreateKeyCompetence: (data: { code: string; description: string }) => Promise<KeyCompetence>;
-    onUpdateKeyCompetence: (id: string, data: Partial<{ code: string; description: string }>) => Promise<void>;
-    onDeleteKeyCompetence: (id: string) => Promise<void>;
-    onCreateDescriptor: (keyCompetenceId: string, data: { code: string; description: string; stage?: 'eso' | 'bachillerato' }) => Promise<OperationalDescriptor>;
-    onUpdateDescriptor: (id: string, data: Partial<{ code: string; description: string; stage: 'eso' | 'bachillerato' }>) => Promise<void>;
-    onDeleteDescriptor: (id: string) => Promise<void>;
+    // Sin setter: CurriculumManager/ProgrammingManager (los únicos que
+    // editaban esto desde Ajustes) se sacaron a la vista de Materia propia
+    // en la Fase 8 (bloque 4) — lo que queda aquí solo se LEE, para el
+    // selector de "Vincular Criterios" de Instrumentos de Evaluación y para
+    // "Comprobar integridad de los datos" en Copia de Seguridad.
     specificCompetences: SpecificCompetence[];
-    setSpecificCompetences: (updater: React.SetStateAction<SpecificCompetence[]>) => void;
     evaluationCriteria: EvaluationCriterion[];
-    setEvaluationCriteria: (updater: React.SetStateAction<EvaluationCriterion[]>) => void;
     journalEntries: JournalEntry[];
     setJournalEntries: (updater: React.SetStateAction<JournalEntry[]>) => void;
     importDatabase: (buffer: ArrayBuffer) => Promise<void>;
     exportDatabase: () => Promise<Uint8Array | null>;
     resetDatabase: () => Promise<void>;
     basicKnowledge: BasicKnowledge[];
-    setBasicKnowledge: (updater: React.SetStateAction<BasicKnowledge[]>) => void;
     academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
     programmingUnits: ProgrammingUnit[];
-    setProgrammingUnits: (updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => void;
     evaluationTools: EvaluationTool[];
     onCreateEvaluationTool: (data: Omit<EvaluationTool, 'id'>) => void;
     onUpdateEvaluationTool: (id: string, data: Omit<EvaluationTool, 'id'>) => void;

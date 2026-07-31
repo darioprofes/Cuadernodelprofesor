@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type { EvaluationCriterion, EvaluationCriterionInput } from '../types/api';
 
@@ -9,6 +9,19 @@ export function useEvaluationCriteria(courseId: string, options?: { enabled?: bo
         queryKey: queryKey(courseId),
         queryFn: () => api.get<EvaluationCriterion[]>(`/courses/${courseId}/criteria`),
         enabled: (options?.enabled ?? true) && !!courseId,
+    });
+}
+
+// Para consumidores que necesitan los criterios de TODAS las materias a la
+// vez (App.tsx, bloque 7) — no hay endpoint "todos los criterios", igual
+// que useCategoriesForClasses/useEnrollmentsForClasses.
+export function useEvaluationCriteriaForCourses(courseIds: string[], options?: { enabled?: boolean }) {
+    return useQueries({
+        queries: courseIds.map(courseId => ({
+            queryKey: queryKey(courseId),
+            queryFn: () => api.get<EvaluationCriterion[]>(`/courses/${courseId}/criteria`),
+            enabled: (options?.enabled ?? true) && !!courseId,
+        })),
     });
 }
 
