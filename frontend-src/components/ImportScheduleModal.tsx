@@ -8,6 +8,7 @@ import type { ClassData, Course, AcademicConfiguration } from '../types';
 import { HUE_PRESETS, buildDefaultCategories } from '../utils';
 import { useCreateCourse, useDeleteCourse } from '../hooks/useCourses';
 import { useCreateClass, useUpdateClass, useDeleteClass } from '../hooks/useApiClasses';
+import { useAcademicYearCourses, useAddAcademicYearCourse, useRemoveAcademicYearCourse } from '../hooks/useAcademicYears';
 
 interface FilaHorario {
     dia: number; // 0=Lunes ... 4=Viernes (formato del backend)
@@ -214,6 +215,16 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
     const createClassMutation = useCreateClass();
     const updateClassMutation = useUpdateClass();
     const deleteClassMutation = useDeleteClass();
+    // academic_year_courses (Fase 8): este flujo crea/borra courses+classes
+    // directamente, desde antes de que existiera esa tabla — sin este hook
+    // las materias académicas importadas quedaban sin declarar como
+    // "impartidas este curso académico" (invisibles en la píldora de
+    // Materia/en "Materias" de Ajustes), aunque sus clases sí se crearan
+    // bien. "Otras ocupaciones" (type 'other') no pasan por aquí a
+    // propósito, igual que en CourseManager.tsx.
+    const yearCoursesQuery = useAcademicYearCourses(yearId);
+    const addYearCourseMutation = useAddAcademicYearCourse();
+    const removeYearCourseMutation = useRemoveAcademicYearCourse();
 
     const handleClose = () => {
         setFilas(null);
@@ -264,11 +275,19 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
             //    newCourses de entrada) + académicas sin usar solo si el
             //    usuario marcó el checkbox. Hay que borrar sus clases antes que
             //    el curso (course_id es RESTRICT).
+            const linkedCourseIds = new Set((yearCoursesQuery.data ?? []).map(yc => yc.courseId));
             const coursesToDelete = courses.filter(c => !plan.courses.some(pc => pc.id === c.id));
             for (const course of coursesToDelete) {
                 const classesToDelete = classes.filter(cl => cl.courseId === course.id);
                 for (const cls of classesToDelete) {
                     await deleteClassMutation.mutateAsync({ id: cls.id, yearId });
+                }
+                // course_id es RESTRICT en academic_year_courses (Fase 8) —
+                // hay que desenlazar antes de borrar la materia, si no da 409
+                // (mismo caso ya arreglado en CourseManager.tsx). "Otras
+                // ocupaciones" nunca se enlazan, no hace falta comprobarlas.
+                if (course.type !== 'other' && linkedCourseIds.has(course.id)) {
+                    await removeYearCourseMutation.mutateAsync({ yearId, courseId: course.id });
                 }
                 await deleteCourseMutation.mutateAsync(course.id);
             }
@@ -281,6 +300,22 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                 if (!courses.some(c => c.id === course.id)) {
                     const created = await createCourseMutation.mutateAsync({ level: course.level, subject: course.subject, type: course.type ?? 'academic' });
                     idMap.set(course.id, created.id);
+                }
+            }
+
+            // 2b. Declarar como "impartidas este curso académico" todas las
+            //     materias académicas del plan (nuevas o reutilizadas de otro
+            //     año) que todavía no lo estén — sin esto, sus clases se
+            //     crean bien pero la materia no aparece en la píldora de
+            //     Materia ni en "Materias" de Ajustes (bug real encontrado
+            //     tras el bloque 5: la importación creaba clases pero nunca
+            //     enlazaba la materia, porque este flujo es anterior a
+            //     academic_year_courses).
+            for (const course of plan.courses) {
+                if (course.type === 'other') continue;
+                const realCourseId = idMap.get(course.id) ?? course.id;
+                if (!linkedCourseIds.has(realCourseId)) {
+                    await addYearCourseMutation.mutateAsync({ yearId, data: { courseId: realCourseId } });
                 }
             }
 
