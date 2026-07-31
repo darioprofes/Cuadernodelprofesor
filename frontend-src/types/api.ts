@@ -167,6 +167,20 @@ export interface AcademicYearPatch {
     periods?: unknown[];
 }
 
+// Declara "imparto esta materia (course) este curso académico" — ver Fase 8
+// del plan. Sin contenido propio más allá de la relación: nombre/currículo
+// de la materia siguen en Course, fechas/holidays en AcademicYear.
+export interface AcademicYearCourse {
+    id: string;
+    academicYearId: string;
+    courseId: string;
+    createdAt: string;
+}
+
+export interface AcademicYearCourseInput {
+    courseId: string;
+}
+
 export interface ClassData {
     id: string;
     academicYearId: string;

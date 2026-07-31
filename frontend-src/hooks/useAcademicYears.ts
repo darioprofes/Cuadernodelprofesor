@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
-import type { AcademicYear, AcademicYearInput, AcademicYearPatch, EvaluationPeriod, EvaluationPeriodInput, EvaluationPeriodPatch } from '../types/api';
+import type { AcademicYear, AcademicYearInput, AcademicYearPatch, EvaluationPeriod, EvaluationPeriodInput, EvaluationPeriodPatch, AcademicYearCourse, AcademicYearCourseInput } from '../types/api';
 
 const QUERY_KEY = ['academicYears'];
 const periodsQueryKey = (yearId: string) => ['evaluationPeriods', yearId];
+const yearCoursesQueryKey = (yearId: string) => ['academicYearCourses', yearId];
 
 export function useAcademicYears(options?: { enabled?: boolean }) {
     return useQuery({
@@ -88,5 +89,33 @@ export function useDeleteEvaluationPeriod() {
         // esta UI no existía todavía).
         mutationFn: ({ id }: { id: string; yearId: string }) => api.delete(`/academic-years/evaluation-periods/${id}`),
         onSuccess: (_, { yearId }) => queryClient.invalidateQueries({ queryKey: periodsQueryKey(yearId) }),
+    });
+}
+
+// "Materias que imparto este curso académico" (Fase 8 del plan) —
+// declarativo, independiente de si ya hay grupos (classes) creados.
+export function useAcademicYearCourses(yearId: string, options?: { enabled?: boolean }) {
+    return useQuery({
+        queryKey: yearCoursesQueryKey(yearId),
+        queryFn: () => api.get<AcademicYearCourse[]>(`/academic-years/${yearId}/courses`),
+        enabled: (options?.enabled ?? true) && !!yearId,
+    });
+}
+
+export function useAddAcademicYearCourse() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ yearId, data }: { yearId: string; data: AcademicYearCourseInput }) =>
+            api.post<AcademicYearCourse>(`/academic-years/${yearId}/courses`, data),
+        onSuccess: (_, { yearId }) => queryClient.invalidateQueries({ queryKey: yearCoursesQueryKey(yearId) }),
+    });
+}
+
+export function useRemoveAcademicYearCourse() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ yearId, courseId }: { yearId: string; courseId: string }) =>
+            api.delete(`/academic-years/${yearId}/courses/${courseId}`),
+        onSuccess: (_, { yearId }) => queryClient.invalidateQueries({ queryKey: yearCoursesQueryKey(yearId) }),
     });
 }

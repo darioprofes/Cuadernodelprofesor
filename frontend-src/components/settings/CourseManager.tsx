@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import type { ClassData, Course } from '../../types';
-import { PencilIcon, TrashIcon } from '../Icons';
+import { PencilIcon, TrashIcon, XMarkIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
 import IconButton from '../IconButton';
 import { HUE_PRESETS, ACCENT_WHITE, ACCENT_BLACK } from '../../utils';
 import { useCreateCourse, useUpdateCourse, useDeleteCourse } from '../../hooks/useCourses';
-import { useCurrentAcademicYear } from '../../hooks/useAcademicYears';
+import { useCurrentAcademicYear, useAcademicYearCourses, useAddAcademicYearCourse, useRemoveAcademicYearCourse } from '../../hooks/useAcademicYears';
 import { useApiClasses, useCreateClass, useUpdateClass, useDeleteClass } from '../../hooks/useApiClasses';
 
 // Solo se usan los campos "cáscara" de una clase (id/courseId/colorAcento/
@@ -33,6 +33,13 @@ const CourseManager: React.FC<{
     const createClassMutation = useCreateClass();
     const updateClassMutation = useUpdateClass();
     const deleteClassMutation = useDeleteClass();
+    // Materias "de este curso académico" (Fase 8): en escritorio no existe
+    // el concepto (blob sin academic_years), se sigue mostrando la lista
+    // global de materias tal cual, sin filtrar.
+    const yearCoursesQuery = useAcademicYearCourses(yearId, { enabled: !isDesktop && !!yearId });
+    const addYearCourseMutation = useAddAcademicYearCourse();
+    const removeYearCourseMutation = useRemoveAcademicYearCourse();
+    const linkedCourseIds = new Set((yearCoursesQuery.data ?? []).map(yc => yc.courseId));
 
     const effectiveClasses: ClassShell[] = isDesktop ? classes : (remoteClasses.data ?? []);
 
@@ -44,7 +51,11 @@ const CourseManager: React.FC<{
     const [editSubject, setEditSubject] = useState('');
     const [editColorAcento, setEditColorAcento] = useState<number | undefined>(undefined);
 
-    const academicCourses = courses.filter(c => c.type !== 'other');
+    const [existingToLink, setExistingToLink] = useState('');
+
+    const allAcademicCourses = courses.filter(c => c.type !== 'other');
+    const academicCourses = isDesktop ? allAcademicCourses : allAcademicCourses.filter(c => linkedCourseIds.has(c.id));
+    const unlinkedCourses = isDesktop ? [] : allAcademicCourses.filter(c => !linkedCourseIds.has(c.id));
     const otherOccupations = courses.filter(c => c.type === 'other');
 
     const handleStartEdit = (course: Course) => {
@@ -106,9 +117,32 @@ const CourseManager: React.FC<{
             };
             setCourses(prev => [...prev, newCourse]);
         } else {
-            await createCourseMutation.mutateAsync({ level: newLevel, subject: newSubject.trim(), type: 'academic' });
+            const newCourse = await createCourseMutation.mutateAsync({ level: newLevel, subject: newSubject.trim(), type: 'academic' });
+            // Crear una materia nueva desde aquí significa "la voy a impartir
+            // este curso académico" — se enlaza en el mismo paso, si no
+            // quedaría creada pero invisible en la lista (filtrada por año).
+            await addYearCourseMutation.mutateAsync({ yearId, data: { courseId: newCourse.id } });
         }
         setNewSubject('');
+    };
+
+    // Enlazar una materia que ya existe globalmente (de otro curso académico,
+    // o creada de antemano) sin volver a definir su currículo.
+    const handleLinkExisting = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!existingToLink) return;
+        await addYearCourseMutation.mutateAsync({ yearId, data: { courseId: existingToLink } });
+        setExistingToLink('');
+    };
+
+    // Distinto de "Eliminar materia" (handleDeleteCourse, más abajo): esto
+    // NO borra la materia ni su currículo, solo deja de declararla como
+    // impartida este curso académico — puede seguir usándose otros años.
+    const handleUnlinkCourse = async (courseId: string, subject: string) => {
+        if (!window.confirm(`¿Quitar '${subject}' de este curso académico? La materia y su currículo no se borran — solo dejará de aparecer como impartida este año.`)) return;
+        await removeYearCourseMutation.mutateAsync({ yearId, courseId }, {
+            onError: () => alert('No se puede quitar: hay grupos (clases) de esta materia en este curso académico. Bórralos o reasígnalos primero.'),
+        });
     };
 
     const handleAddOtherOccupation = async (e: React.FormEvent) => {
@@ -168,16 +202,25 @@ const CourseManager: React.FC<{
             for (const cls of associatedClasses) {
                 await deleteClassMutation.mutateAsync({ id: cls.id, yearId });
             }
+            // course_id es RESTRICT en academic_year_courses (Fase 8) — si la
+            // materia sigue declarada como impartida este año, borrarla
+            // directamente daría 409. Solo cubre el año actual, igual que
+            // associatedClasses de arriba: limitación ya existente (una
+            // materia con clases/enlaces en OTROS años seguiría bloqueando
+            // el borrado, sin cambios respecto al comportamiento previo).
+            if (isAcademic && linkedCourseIds.has(courseId)) {
+                await removeYearCourseMutation.mutateAsync({ yearId, courseId });
+            }
             await deleteCourseMutation.mutateAsync(courseId);
         }
     };
 
     return (
         <div>
-            <h3 className="text-xl font-bold text-slate-800 mb-4">Gestión de Cursos y Materias</h3>
+            <h3 className="text-xl font-bold text-slate-800 mb-4">Materias</h3>
             <div className="space-y-6">
                 <div>
-                    <h4 className="text-lg font-semibold text-slate-700 mb-2">Cursos Académicos</h4>
+                    <h4 className="text-lg font-semibold text-slate-700 mb-2">{isDesktop ? 'Materias' : 'Materias de este curso académico'}</h4>
                     <div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50/50">
                         {academicCourses.length > 0 ? academicCourses.map(course => (
                             editingCourseId === course.id ? (
@@ -201,13 +244,28 @@ const CourseManager: React.FC<{
                                 <div key={course.id} className="flex items-center justify-between bg-white p-2 rounded-md border">
                                     <p><span className="font-semibold text-slate-700">{course.level}</span> - {course.subject}</p>
                                     <div className="flex items-center gap-1">
-                                        <IconButton label="Editar curso" onClick={() => handleStartEdit(course)}><PencilIcon className="w-4 h-4"/></IconButton>
-                                        <IconButton label="Eliminar curso" tone="danger" onClick={() => handleDeleteCourse(course.id)}><TrashIcon className="w-4 h-4"/></IconButton>
+                                        {!isDesktop && <IconButton label="Quitar de este curso académico" onClick={() => handleUnlinkCourse(course.id, course.subject)}><XMarkIcon className="w-4 h-4"/></IconButton>}
+                                        <IconButton label="Editar materia" onClick={() => handleStartEdit(course)}><PencilIcon className="w-4 h-4"/></IconButton>
+                                        <IconButton label="Eliminar materia" tone="danger" onClick={() => handleDeleteCourse(course.id)}><TrashIcon className="w-4 h-4"/></IconButton>
                                     </div>
                                 </div>
                             )
-                        )) : <p className="text-slate-500 text-center py-4">No hay cursos académicos definidos.</p>}
+                        )) : <p className="text-slate-500 text-center py-4">{isDesktop ? 'No hay materias definidas.' : 'No impartes ninguna materia este curso académico todavía.'}</p>}
                     </div>
+
+                    {!isDesktop && unlinkedCourses.length > 0 && (
+                        <form onSubmit={handleLinkExisting} className="flex flex-col sm:flex-row items-end gap-2 p-3 border rounded-lg mb-2 bg-slate-50/50">
+                            <div className="w-full sm:w-auto flex-grow">
+                                <label className="text-xs font-medium text-slate-600">Añadir materia ya existente (de otro curso académico)</label>
+                                <Select value={existingToLink} onChange={e => setExistingToLink(e.target.value)} className="w-full mt-1">
+                                    <option value="">Selecciona una materia…</option>
+                                    {unlinkedCourses.map(c => <option key={c.id} value={c.id}>{c.level} - {c.subject}</option>)}
+                                </Select>
+                            </div>
+                            <button type="submit" disabled={!existingToLink} className="w-full sm:w-auto bg-slate-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-slate-700 disabled:opacity-50">Añadir a este curso</button>
+                        </form>
+                    )}
+
                     <form onSubmit={handleAddCourse} className="flex flex-col sm:flex-row items-end gap-2 p-3 border rounded-lg">
                         <div className="w-full sm:w-auto flex-grow">
                             <label className="text-xs font-medium text-slate-600">Nivel Educativo</label>
@@ -218,10 +276,10 @@ const CourseManager: React.FC<{
                             </Select>
                         </div>
                         <div className="w-full sm:w-auto flex-grow">
-                            <label className="text-xs font-medium text-slate-600">Nombre de la Materia</label>
+                            <label className="text-xs font-medium text-slate-600">Nombre de la Materia (nueva)</label>
                             <Input type="text" value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="Ej: Física y Química" className="w-full mt-1"/>
                         </div>
-                        <button type="submit" className="w-full sm:w-auto bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Añadir Curso</button>
+                        <button type="submit" className="w-full sm:w-auto bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Añadir Materia</button>
                     </form>
                 </div>
                 <div>
