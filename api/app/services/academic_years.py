@@ -1,6 +1,6 @@
 import uuid
-from datetime import date, timedelta
-from typing import Optional
+from datetime import date, datetime, timedelta
+from typing import Literal, Optional
 
 from psycopg.types.json import Json
 
@@ -9,6 +9,7 @@ from services.schemas import ApiModel
 
 _YEAR_COLUMNS = "id, label, start_date, end_date, is_current, holidays, periods"
 _PERIOD_COLUMNS = "id, academic_year_id, name, start_date, end_date, weight"
+_YEAR_COURSE_COLUMNS = "id, academic_year_id, course_id, created_at"
 
 
 class AcademicYearInput(ApiModel):
@@ -52,6 +53,22 @@ class EvaluationPeriodPatch(ApiModel):
 class EvaluationPeriod(EvaluationPeriodInput):
     id: uuid.UUID
     academic_year_id: uuid.UUID
+
+
+# Declaración pura "imparto esta materia este curso académico" — ver Fase 8
+# del plan (memoized-frolicking-shannon.md) para el porqué: courses no tiene
+# academic_year_id (currículo reutilizable entre años, decisión de Fase -1),
+# así que sin esta tabla no habría forma de listar "las materias de este
+# año" antes de que existiera ya algún grupo (classes) para ellas.
+class AcademicYearCourseInput(ApiModel):
+    course_id: uuid.UUID
+
+
+class AcademicYearCourse(ApiModel):
+    id: uuid.UUID
+    academic_year_id: uuid.UUID
+    course_id: uuid.UUID
+    created_at: datetime
 
 
 def list_academic_years() -> list[AcademicYear]:
@@ -270,3 +287,59 @@ def delete_evaluation_period(period_id: str) -> bool:
             cur.execute("DELETE FROM evaluation_periods WHERE id = %s", [period_id])
 
             return cur.rowcount > 0
+
+
+def list_academic_year_courses(year_id: str) -> list[AcademicYearCourse]:
+
+    with get_conn() as conn:
+
+        with conn.cursor() as cur:
+
+            cur.execute(f"SELECT {_YEAR_COURSE_COLUMNS} FROM academic_year_courses WHERE academic_year_id = %s", [year_id])
+
+            return [AcademicYearCourse.model_validate(row) for row in cur.fetchall()]
+
+
+def create_academic_year_course(year_id: str, data: AcademicYearCourseInput) -> AcademicYearCourse:
+
+    with get_conn() as conn:
+
+        with conn.cursor() as cur:
+
+            cur.execute(
+                f"""
+                INSERT INTO academic_year_courses (academic_year_id, course_id)
+                VALUES (%s, %s) RETURNING {_YEAR_COURSE_COLUMNS}
+                """,
+                [year_id, str(data.course_id)]
+            )
+
+            return AcademicYearCourse.model_validate(cur.fetchone())
+
+
+# No hay FK compuesta que impida borrar el enlace mientras existan classes
+# de esa (year, course) — es una relación declarativa, no la que de verdad
+# sujeta a classes (que referencia academic_years/courses directamente). El
+# bloqueo se hace aquí, a nivel de aplicación, con el mismo criterio
+# protector que el resto del esquema: no dejar "grupos huérfanos" de la
+# declaración "imparto esta materia este año".
+def delete_academic_year_course(year_id: str, course_id: str) -> Literal["ok", "not_found", "blocked"]:
+
+    with get_conn() as conn:
+
+        with conn.cursor() as cur:
+
+            cur.execute(
+                "SELECT 1 FROM classes WHERE academic_year_id = %s AND course_id = %s LIMIT 1",
+                [year_id, course_id]
+            )
+
+            if cur.fetchone() is not None:
+                return "blocked"
+
+            cur.execute(
+                "DELETE FROM academic_year_courses WHERE academic_year_id = %s AND course_id = %s",
+                [year_id, course_id]
+            )
+
+            return "ok" if cur.rowcount > 0 else "not_found"

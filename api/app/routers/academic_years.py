@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from psycopg.errors import ForeignKeyViolation, RestrictViolation
+from psycopg.errors import ForeignKeyViolation, RestrictViolation, UniqueViolation
 
 from services.auth import require_auth
 from services.academic_years import (
@@ -9,6 +9,8 @@ from services.academic_years import (
     EvaluationPeriod,
     EvaluationPeriodInput,
     EvaluationPeriodPatch,
+    AcademicYearCourse,
+    AcademicYearCourseInput,
     list_academic_years,
     get_academic_year,
     create_academic_year,
@@ -19,6 +21,9 @@ from services.academic_years import (
     create_evaluation_period,
     update_evaluation_period,
     delete_evaluation_period,
+    list_academic_year_courses,
+    create_academic_year_course,
+    delete_academic_year_course,
 )
 
 router = APIRouter(prefix="/academic-years", tags=["Cursos académicos"], dependencies=[Depends(require_auth)])
@@ -109,3 +114,32 @@ def delete_one_evaluation_period(period_id: str):
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Período de evaluación no encontrado.")
+
+
+@router.get("/{year_id}/courses", response_model=list[AcademicYearCourse])
+def get_academic_year_courses(year_id: str):
+
+    return list_academic_year_courses(year_id)
+
+
+@router.post("/{year_id}/courses", response_model=AcademicYearCourse, status_code=201)
+def post_academic_year_course(year_id: str, data: AcademicYearCourseInput):
+
+    try:
+        return create_academic_year_course(year_id, data)
+    except UniqueViolation:
+        raise HTTPException(status_code=409, detail="Esta materia ya está añadida a este curso académico.")
+    except ForeignKeyViolation:
+        raise HTTPException(status_code=404, detail="Curso académico o materia no encontrados.")
+
+
+@router.delete("/{year_id}/courses/{course_id}", status_code=204)
+def delete_one_academic_year_course(year_id: str, course_id: str):
+
+    status = delete_academic_year_course(year_id, course_id)
+
+    if status == "not_found":
+        raise HTTPException(status_code=404, detail="Esta materia no está añadida a este curso académico.")
+
+    if status == "blocked":
+        raise HTTPException(status_code=409, detail="No se puede quitar: hay grupos (clases) de esta materia en este curso académico. Bórralos o reasígnalos primero.")
