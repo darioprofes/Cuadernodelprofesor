@@ -13,7 +13,7 @@ import {
     useCreateDescriptor, useUpdateDescriptor, useDeleteDescriptor,
 } from './hooks/useKeyCompetences';
 import { useCourses, useUpdateCourse } from './hooks/useCourses';
-import { useCurrentAcademicYear, useEvaluationPeriods } from './hooks/useAcademicYears';
+import { useAcademicYears, useCurrentAcademicYear, useActivateAcademicYear, useEvaluationPeriods, useAcademicYearCourses } from './hooks/useAcademicYears';
 import { useApiClasses } from './hooks/useApiClasses';
 import { useApiStudents } from './hooks/useApiStudents';
 import { useEnrollmentsForClasses } from './hooks/useEnrollments';
@@ -366,6 +366,12 @@ const App = () => {
     // exista, momento en el que ya está resuelto de verdad.
     const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
     const yearId = currentYear.data?.id ?? '';
+    // Cabecera de 3 contextos (Fase 8): lista completa de años para el
+    // desplegable (currentYear solo trae el activo) + "materias de este año"
+    // para el desplegable de Materia.
+    const allYears = useAcademicYears({ enabled: !isDesktop });
+    const activateYearMutation = useActivateAcademicYear();
+    const yearCoursesQuery = useAcademicYearCourses(yearId, { enabled: !isDesktop && !!yearId });
     const remoteClasses = useApiClasses(yearId, { enabled: !isDesktop && !!yearId });
     const remoteStudents = useApiStudents({ enabled: !isDesktop });
     const remoteClassIds = useMemo(() => (remoteClasses.data ?? []).map(c => c.id), [remoteClasses.data]);
@@ -387,6 +393,12 @@ const App = () => {
 
     // --- UI State ---
     const [activeClassId, setActiveClassId] = useState<string>('');
+    // Materia seleccionada en la cabecera (Fase 8) — antes se derivaba solo
+    // de activeClass.courseId; ahora es contexto propio para poder elegirla
+    // sin haber elegido clase todavía. El efecto de más abajo mantiene la
+    // sincronización clase→materia para todo el código que ya cambia
+    // activeClassId directamente (selectores de GradebookTable, informes...).
+    const [activeCourseId, setActiveCourseId] = useState<string>('');
     const [activeView, setActiveViewRaw] = useState<View>('hoy');
     // El Diario de Clase avisa aquí cuando tiene anotaciones sin guardar
     // (es fácil escribir y olvidarse de pulsar "Guardar"): mientras esté a
@@ -449,12 +461,48 @@ const App = () => {
         return hydratedClasses.find(c => c.id === activeClassId);
     }, [isDesktop, appState, activeClassId, hydratedClasses]);
 
+    // Clase→Materia: cualquier cambio de activeClassId (los sitios que ya
+    // llaman a setActiveClassId directamente, sin pasar por los handlers
+    // nuevos de más abajo) resincroniza activeCourseId automáticamente.
+    useEffect(() => {
+        if (activeClass && activeClass.courseId !== activeCourseId) {
+            setActiveCourseId(activeClass.courseId);
+        }
+        // activeCourseId excluido a propósito: este efecto solo reacciona a
+        // cambios de activeClass, no debe re-ejecutarse cuando el propio
+        // activeCourseId cambia por otra vía (p.ej. handleSelectCourse).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeClass]);
+
+    // Cambiar de año (Fase 8): si la materia/clase activas no pertenecen al
+    // año recién activado, se limpian — evita arrastrar contexto de un año
+    // que ya no es el actual. Se apoya en los datos crudos ya pedidos más
+    // arriba (yearCoursesQuery/remoteClasses), no en las listas derivadas de
+    // más abajo, porque esas viven después del `if (!appState) return` y
+    // este efecto tiene que declararse aquí sin condicionales (Rules of
+    // Hooks).
+    useEffect(() => {
+        if (isDesktop || !yearId) return;
+        const yearCourseIds = new Set((yearCoursesQuery.data ?? []).map(yc => yc.courseId));
+        if (activeCourseId && !yearCourseIds.has(activeCourseId)) {
+            setActiveCourseId('');
+            setActiveClassId('');
+            return;
+        }
+        if (activeClassId && !(remoteClasses.data ?? []).some(c => c.id === activeClassId)) {
+            setActiveClassId('');
+        }
+        // activeCourseId/activeClassId excluidos: este efecto reacciona a
+        // cambios de AÑO (y a que lleguen los datos de ese año), no debe
+        // dispararse de nuevo cuando limpia esos dos estados él mismo.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [yearId, isDesktop, yearCoursesQuery.data, remoteClasses.data]);
+
     // criteria/competences (bloque 3b) dejaron de escribirse en el blob en
     // web desde CurriculumManager — para que GradebookTable/los informes de
     // la clase activa vean los criterios/competencias reales de su materia
     // (no los del blob, congelados), se piden aquí, ya acotados al curso de
     // `activeClass`.
-    const activeCourseId = activeClass?.courseId ?? '';
     const remoteActiveCriteria = useEvaluationCriteria(activeCourseId, { enabled: !isDesktop && !!activeCourseId });
     const remoteActiveCompetences = useSpecificCompetences(activeCourseId, { enabled: !isDesktop && !!activeCourseId });
 
@@ -710,6 +758,27 @@ const App = () => {
     const academicClasses = isDesktop
         ? classes.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other')
         : hydratedClasses.filter(c => curriculumCourses.find(course => course.id === c.courseId)?.type !== 'other');
+    // Cabecera de 3 contextos (Fase 8, solo web): "materias que imparto este
+    // curso académico" — derivado de academic_year_courses (bloque 1), no
+    // hay columna que lo relacione directamente porque courses es
+    // año-independiente a propósito (currículo reutilizable entre años).
+    const yearCourseIds = new Set((yearCoursesQuery.data ?? []).map(yc => yc.courseId));
+    const yearCourses = curriculumCourses.filter(c => c.type !== 'other' && yearCourseIds.has(c.id));
+    const classesForActiveCourse = academicClasses.filter(c => c.courseId === activeCourseId);
+
+    const handleSelectYear = (id: string) => {
+        if (!id || activateYearMutation.isPending) return;
+        activateYearMutation.mutate(id);
+    };
+
+    // Elegir Materia fija también la Clase si solo hay un grupo posible —
+    // si hay varios, se deja en blanco para que el profesor elija (mismo
+    // criterio que el resto de la app en web: sin auto-selección "adivinada").
+    const handleSelectCourse = (courseId: string) => {
+        setActiveCourseId(courseId);
+        const matches = academicClasses.filter(c => c.courseId === courseId);
+        setActiveClassId(matches.length === 1 ? matches[0].id : '');
+    };
     // Igual que curriculumCourses: en escritorio son literalmente el mismo
     // array (blob); en web, los reales del curso de `activeClass` (bloque
     // 3b los dejó de escribir en el blob), pedidos más arriba.
@@ -912,8 +981,30 @@ const App = () => {
                 <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200 px-4 py-2 flex items-center justify-between sticky top-0 z-30">
                     <ShortcutsBar shortcuts={shortcuts} onCreate={handleCreateShortcut} onUpdate={handleUpdateShortcut} onDelete={handleDeleteShortcut} />
                     <div className="flex items-center gap-2">
-                        {/* Informes y Cuaderno usan la clase seleccionada aquí */}
-                        {(REPORT_VIEWS.includes(activeView) || activeView === 'gradebook') && academicClasses.length > 0 && (
+                        {/* Informes y Cuaderno usan el contexto seleccionado aquí. En
+                            escritorio no hay concepto de curso académico/materia
+                            (blob sin academic_years) — se mantiene el selector de
+                            clase único de siempre. */}
+                        {!isDesktop && (REPORT_VIEWS.includes(activeView) || activeView === 'gradebook') && (allYears.data?.length ?? 0) > 0 && (
+                            <>
+                                <Select value={yearId} onChange={(e) => handleSelectYear(e.target.value)} className="font-semibold">
+                                    {(allYears.data ?? []).map(y => <option key={y.id} value={y.id}>{y.label}</option>)}
+                                </Select>
+                                {yearCourses.length > 0 && (
+                                    <Select value={activeCourseId} onChange={(e) => handleSelectCourse(e.target.value)} className="font-semibold">
+                                        <option value="">Materia…</option>
+                                        {yearCourses.map(c => <option key={c.id} value={c.id}>{c.level} - {c.subject}</option>)}
+                                    </Select>
+                                )}
+                                {activeCourseId && classesForActiveCourse.length > 0 && (
+                                    <Select value={activeClassId} onChange={(e) => setActiveClassId(e.target.value)} className="font-semibold">
+                                        <option value="">Clase…</option>
+                                        {classesForActiveCourse.map(c => <option key={c.id} value={c.id}>{formatClassLabel(c, curriculumCourses)}</option>)}
+                                    </Select>
+                                )}
+                            </>
+                        )}
+                        {isDesktop && (REPORT_VIEWS.includes(activeView) || activeView === 'gradebook') && academicClasses.length > 0 && (
                             <Select
                                 value={activeClassId}
                                 onChange={(e) => setActiveClassId(e.target.value)}
