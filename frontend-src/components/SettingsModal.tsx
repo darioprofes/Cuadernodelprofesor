@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import Modal from './Modal';
-import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon, DocumentDuplicateIcon } from './Icons';
+import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon } from './Icons';
 import type { ClassData, Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
 import EvaluationToolManager from './EvaluationToolManager';
 import ClassManager from './settings/ClassManager';
@@ -52,7 +52,7 @@ export interface SettingsModalProps {
     onDeleteEvaluationTool: (id: string) => void;
 }
 
-type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'academicYears' | 'evaluationTools' | 'backup';
+type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'evaluationTools' | 'backup';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const { isOpen, onClose, classes, setClasses, courses, setCourses, curriculumCourses, onOpenExportModal, academicConfiguration, setAcademicConfiguration, evaluationTools, onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria } = props;
@@ -67,9 +67,18 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
             case 'courses':
                 return <CourseManager courses={curriculumCourses} setCourses={setCourses} classes={classes} setClasses={setClasses} />;
              case 'academicConfig':
-                return <AcademicConfigManager academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
-            case 'academicYears':
-                return <AcademicYearManager />;
+                // Fusionado en Fase 8 (bloque 5): antes "Cursos Académicos"
+                // (gestión de años) y "Configuración del Curso" (fechas/
+                // festivos/franjas/periodos) eran dos pestañas distintas con
+                // nombres casi idénticos — mismo solape que ya se arregló
+                // con "Cursos y Materias" en el bloque 2.
+                return (
+                    <div className="space-y-8">
+                        <AcademicYearManager />
+                        <hr />
+                        <AcademicConfigManager academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />
+                    </div>
+                );
             case 'evaluationTools':
                 return <EvaluationToolManager
                     evaluationTools={evaluationTools}
@@ -93,13 +102,20 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
             <div className="flex flex-col md:flex-row gap-8 min-h-[60vh]">
                 <nav className="flex-shrink-0 md:w-56 flex flex-col">
                     <ul className="space-y-2">
-                        <SettingsNavItem icon={<CalendarDaysIcon />} label="Configuración del Curso" view="academicConfig" activeView={activeView} setActiveView={setActiveView} />
-                        <SettingsNavItem icon={<DocumentDuplicateIcon />} label="Cursos Académicos" view="academicYears" activeView={activeView} setActiveView={setActiveView} />
-                        <SettingsNavItem icon={<BookOpenIcon />} label="Cursos y Materias" view="courses" activeView={activeView} setActiveView={setActiveView} />
-                        <SettingsNavItem icon={<UserGroupIcon />} label="Clases y Alumnado" view="classes" activeView={activeView} setActiveView={setActiveView} />
-                        <SettingsNavItem icon={<ClockIcon />} label="Horario Semanal" view="schedule" activeView={activeView} setActiveView={setActiveView} />
-                        <SettingsNavItem icon={<BeakerIcon />} label="Instrumentos Evaluación" view="evaluationTools" activeView={activeView} setActiveView={setActiveView} />
+                        <SettingsNavItem icon={<CalendarDaysIcon />} label="Curso Académico" view="academicConfig" activeView={activeView} setActiveView={setActiveView} />
+                        <SettingsNavItem icon={<BookOpenIcon />} label="Materias" view="courses" activeView={activeView} setActiveView={setActiveView} />
                     </ul>
+                    <div className="mt-4 pt-4 border-t">
+                        <ul className="space-y-2">
+                            <SettingsNavItem icon={<UserGroupIcon />} label="Clases y Alumnado" view="classes" activeView={activeView} setActiveView={setActiveView} />
+                            <SettingsNavItem icon={<ClockIcon />} label="Horario Semanal" view="schedule" activeView={activeView} setActiveView={setActiveView} />
+                        </ul>
+                    </div>
+                    <div className="mt-4 pt-4 border-t">
+                        <ul className="space-y-2">
+                            <SettingsNavItem icon={<BeakerIcon />} label="Instrumentos Evaluación" view="evaluationTools" activeView={activeView} setActiveView={setActiveView} />
+                        </ul>
+                    </div>
                     <div className="mt-4 pt-4 border-t">
                          <SettingsNavItem icon={<ArrowDownTrayIcon />} label="Copia de Seguridad" view="backup" activeView={activeView} setActiveView={setActiveView} />
                     </div>

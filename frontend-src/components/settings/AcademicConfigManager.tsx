@@ -5,7 +5,7 @@ import { TrashIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
 import { linkClassName } from '../../theme/components/Link';
-import { useCurrentAcademicYear, useEvaluationPeriods, useCreateEvaluationPeriod, useUpdateEvaluationPeriod, useDeleteEvaluationPeriod } from '../../hooks/useAcademicYears';
+import { useCurrentAcademicYear, useUpdateAcademicYear, useEvaluationPeriods, useCreateEvaluationPeriod, useUpdateEvaluationPeriod, useDeleteEvaluationPeriod } from '../../hooks/useAcademicYears';
 
 const AcademicConfigManager: React.FC<{
     academicConfiguration: AcademicConfiguration;
@@ -14,10 +14,28 @@ const AcademicConfigManager: React.FC<{
     const isDesktop = isTauri();
     const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
     const yearId = currentYear.data?.id ?? '';
+    const updateYearMutation = useUpdateAcademicYear();
     const remotePeriods = useEvaluationPeriods(yearId, { enabled: !isDesktop && !!yearId });
     const createPeriodMutation = useCreateEvaluationPeriod();
     const updatePeriodMutation = useUpdateEvaluationPeriod();
     const deletePeriodMutation = useDeleteEvaluationPeriod();
+
+    // Fechas del curso (Fase 8): antes escribían solo en el blob
+    // (academicConfiguration.academicYearStart/End), un campo huérfano y
+    // desincronizado de academic_years.startDate/endDate (lo real, fijado
+    // al crear el año en la píldora de la cabecera, sin UI de edición
+    // hasta ahora). En web pasan a leer/escribir directamente sobre el año
+    // activo; en escritorio siguen en el blob (sin concepto de año).
+    const effectiveYearStart = isDesktop ? academicConfiguration.academicYearStart : (currentYear.data?.startDate ?? '');
+    const effectiveYearEnd = isDesktop ? academicConfiguration.academicYearEnd : (currentYear.data?.endDate ?? '');
+    const handleYearDateChange = async (field: 'startDate' | 'endDate', value: string) => {
+        if (isDesktop) {
+            handleConfigChange(field === 'startDate' ? 'academicYearStart' : 'academicYearEnd', value);
+            return;
+        }
+        if (!yearId) return;
+        await updateYearMutation.mutateAsync({ id: yearId, data: { [field]: value } });
+    };
 
     // Periodos de evaluación reales (Postgres, ver bloque 6): a diferencia
     // del resto de academicConfiguration (fechas del curso, festivos,
@@ -200,11 +218,11 @@ const AcademicConfigManager: React.FC<{
                     <div className="grid grid-cols-2 gap-2">
                         <div>
                             <label className="text-xs text-slate-500">Inicio</label>
-                            <Input type="date" value={academicConfiguration.academicYearStart} onChange={e => handleConfigChange('academicYearStart', e.target.value)} className="w-full"/>
+                            <Input type="date" value={effectiveYearStart} onChange={e => handleYearDateChange('startDate', e.target.value)} className="w-full"/>
                         </div>
                         <div>
                             <label className="text-xs text-slate-500">Fin</label>
-                            <Input type="date" value={academicConfiguration.academicYearEnd} onChange={e => handleConfigChange('academicYearEnd', e.target.value)} className="w-full"/>
+                            <Input type="date" value={effectiveYearEnd} onChange={e => handleYearDateChange('endDate', e.target.value)} className="w-full"/>
                         </div>
                     </div>
                 </div>
