@@ -6,7 +6,6 @@ import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTra
 import Modal from './Modal';
 import Input from './Input';
 import { TYPOGRAPHY } from '../theme/typography';
-import Select from './Select';
 import { checkboxClassName } from '../theme/components/Input';
 import { formatFechaEs } from '../utils';
 import { useProgrammingUnits, useCreateProgrammingUnit, useUpdateProgrammingUnit, useDeleteProgrammingUnit } from '../hooks/useProgrammingUnits';
@@ -14,6 +13,9 @@ import { useEvaluationCriteria } from '../hooks/useEvaluationCriteria';
 import { useBasicKnowledge } from '../hooks/useBasicKnowledge';
 
 interface ProgrammingManagerProps {
+    // Fase 8: la materia activa se elige en la cabecera (App.tsx), ya no
+    // dentro de este componente — ver CurriculumManager.tsx, mismo cambio.
+    courseId: string;
     courses: Course[];
     // units/setUnits: fallback de escritorio (blob) — en web el componente
     // usa internamente useProgrammingUnits, igual que CurriculumManager hace
@@ -43,9 +45,9 @@ const addDays = (date: Date, days: number): Date => {
 };
 
 
-const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courses, units, setUnits, criteria, basicKnowledge, classes, academicConfiguration }) => {
+const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, units, setUnits, criteria, basicKnowledge, classes, academicConfiguration }) => {
     const isDesktop = isTauri();
-    const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id || '');
+    const selectedCourseId = courseId;
     const [unitEditorState, setUnitEditorState] = useState<{ mode: 'create' } | { mode: 'edit', unit: ProgrammingUnit } | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
 
@@ -344,17 +346,8 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courses, units,
                 <div>
                     <h3 className="text-xl font-bold text-slate-800 mb-2">Planificador de Unidades Didácticas</h3>
                     <p className="text-sm text-slate-600 mb-4">
-                        Define la secuencia de unidades didácticas para un curso. Esta planificación se usará para generar el calendario de todas las clases de este curso.
+                        Define la secuencia de unidades didácticas de esta materia. Esta planificación se usará para generar el calendario de todas sus clases.
                     </p>
-                    <div className="mb-4">
-                      <label htmlFor="course-plan-select" className="block text-sm font-medium text-slate-700 mb-1">Curso a planificar:</label>
-                      <Select id="course-plan-select" value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)}>
-                          <option value="" disabled>Selecciona un curso...</option>
-                          {courses.map((course: Course) => (
-                              <option key={course.id} value={course.id}>{course.level} - {course.subject}</option>
-                          ))}
-                      </Select>
-                    </div>
                 </div>
 
                 {selectedCourse ? (

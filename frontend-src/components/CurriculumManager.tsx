@@ -73,6 +73,11 @@ const roundToExactSum = (values: number[], targetSum: number): number[] => {
 };
 
 interface CurriculumManagerProps {
+    // Fase 8: la materia activa se elige en la cabecera (App.tsx), ya no
+    // dentro de este componente — ver el antiguo selector "Curso a
+    // gestionar:" (retirado), sustituido por un simple encabezado con el
+    // nombre de la materia.
+    courseId: string;
     courses: Course[];
     onUpdateCourse: (id: string, data: Partial<{ level: string; subject: string; type: 'academic' | 'other'; pesoCriteriosManual: boolean }>) => Promise<void>;
     keyCompetences: KeyCompetence[];
@@ -101,12 +106,12 @@ interface CurriculumManagerProps {
 // basicKnowledge (pendientes de migrar, siguen en el blob).
 const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     const {
-        courses, onUpdateCourse, keyCompetences,
+        courseId, courses, onUpdateCourse, keyCompetences,
         onCreateKeyCompetence, onUpdateKeyCompetence, onDeleteKeyCompetence,
         onCreateDescriptor, onUpdateDescriptor, onDeleteDescriptor,
         specificCompetences, setSpecificCompetences, evaluationCriteria, setEvaluationCriteria, basicKnowledge, setBasicKnowledge,
     } = props;
-    const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id || '');
+    const selectedCourseId = courseId;
     // Elemento recién creado (criterio, competencia específica/clave o
     // descriptor): se abre directamente en modo edición para que se rellenen
     // código/descripción sin un paso extra de "editar". Solo uno pendiente a
@@ -793,19 +798,10 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     return (
         <div className="space-y-6">
             <div>
-                <h3 className="text-xl font-bold text-slate-800 mb-2">Gestor del Currículo</h3>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">Currículo de {courseName}</h3>
                 <p className="text-sm text-slate-600 mb-4">
-                    Visualiza y edita los elementos curriculares. Las competencias específicas, criterios y saberes se muestran según el curso seleccionado.
+                    Visualiza y edita las competencias específicas, criterios de evaluación y saberes básicos de esta materia.
                 </p>
-                <div className="mb-4">
-                  <label htmlFor="course-curr-select" className="block text-sm font-medium text-slate-700 mb-1">Curso a gestionar:</label>
-                  <Select id="course-curr-select" value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)}>
-                      <option value="" disabled>Selecciona un curso...</option>
-                      {courses.map((course: Course) => (
-                          <option key={course.id} value={course.id}>{course.level} - {course.subject}</option>
-                      ))}
-                  </Select>
-                </div>
             </div>
 
             <div className="space-y-3">

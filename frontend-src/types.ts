@@ -348,7 +348,9 @@ export type View =
   | 'criteria'
   | 'competences'
   | 'key-competences'
-  | 'descriptors';
+  | 'descriptors'
+  | 'curriculum'
+  | 'planner';
 
 // Estado completo de la app, serializado dentro del blob SQLite (ver
 // App.tsx::useDatabase). `schemaVersion` gobierna qué migraciones de

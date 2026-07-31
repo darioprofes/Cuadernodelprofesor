@@ -1,10 +1,8 @@
 
 import React, { useState } from 'react';
 import Modal from './Modal';
-import { UserGroupIcon, AcademicCapIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, ListBulletIcon, BeakerIcon, DocumentDuplicateIcon } from './Icons';
+import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon, DocumentDuplicateIcon } from './Icons';
 import type { ClassData, Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
-import CurriculumManager from './CurriculumManager';
-import ProgrammingManager from './ProgrammingManager';
 import EvaluationToolManager from './EvaluationToolManager';
 import ClassManager from './settings/ClassManager';
 import ScheduleManager from './settings/ScheduleManager';
@@ -54,10 +52,10 @@ export interface SettingsModalProps {
     onDeleteEvaluationTool: (id: string) => void;
 }
 
-type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'academicYears' | 'curriculum' | 'planner' | 'evaluationTools' | 'backup';
+type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'academicYears' | 'evaluationTools' | 'backup';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
-    const { isOpen, onClose, classes, setClasses, courses, setCourses, curriculumCourses, onUpdateCourse, onOpenExportModal, academicConfiguration, setAcademicConfiguration, programmingUnits, setProgrammingUnits, evaluationTools, onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria } = props;
+    const { isOpen, onClose, classes, setClasses, courses, setCourses, curriculumCourses, onOpenExportModal, academicConfiguration, setAcademicConfiguration, evaluationTools, onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria } = props;
     const [activeView, setActiveView] = useState<SettingsView>('academicConfig');
 
     const renderView = () => {
@@ -72,18 +70,6 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                 return <AcademicConfigManager academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
             case 'academicYears':
                 return <AcademicYearManager />;
-            case 'curriculum':
-                return <CurriculumManager {...props} courses={curriculumCourses} onUpdateCourse={onUpdateCourse} />;
-            case 'planner':
-                return <ProgrammingManager
-                    courses={curriculumCourses}
-                    units={programmingUnits}
-                    setUnits={setProgrammingUnits}
-                    criteria={props.evaluationCriteria}
-                    basicKnowledge={props.basicKnowledge}
-                    classes={classes}
-                    academicConfiguration={academicConfiguration}
-                />;
             case 'evaluationTools':
                 return <EvaluationToolManager
                     evaluationTools={evaluationTools}
@@ -112,8 +98,6 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                         <SettingsNavItem icon={<BookOpenIcon />} label="Cursos y Materias" view="courses" activeView={activeView} setActiveView={setActiveView} />
                         <SettingsNavItem icon={<UserGroupIcon />} label="Clases y Alumnado" view="classes" activeView={activeView} setActiveView={setActiveView} />
                         <SettingsNavItem icon={<ClockIcon />} label="Horario Semanal" view="schedule" activeView={activeView} setActiveView={setActiveView} />
-                        <SettingsNavItem icon={<AcademicCapIcon />} label="Gestionar Currículo" view="curriculum" activeView={activeView} setActiveView={setActiveView} />
-                        <SettingsNavItem icon={<ListBulletIcon />} label="Planificación UD" view="planner" activeView={activeView} setActiveView={setActiveView} />
                         <SettingsNavItem icon={<BeakerIcon />} label="Instrumentos Evaluación" view="evaluationTools" activeView={activeView} setActiveView={setActiveView} />
                     </ul>
                     <div className="mt-4 pt-4 border-t">

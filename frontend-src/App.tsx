@@ -28,6 +28,7 @@ import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence,
 import { runMigrations, CURRENT_SCHEMA_VERSION } from './services/migrations';
 import ShortcutsBar from './components/ShortcutsBar';
 import Select from './components/Select';
+import IconButton from './components/IconButton';
 import GradebookTable from './components/GradebookTable';
 // Los 4 informes y Ajustes se cargan bajo demanda (React.lazy): se visitan
 // mucho menos que las vistas del día a día (Hoy, Horario, Clases, Cuaderno),
@@ -38,6 +39,9 @@ const CriteriaAchievement = React.lazy(() => import('./components/CriteriaAchiev
 const SpecificCompetenceAchievement = React.lazy(() => import('./components/SpecificCompetenceAchievement'));
 const KeyCompetenceAchievement = React.lazy(() => import('./components/KeyCompetenceAchievement'));
 const DescriptorAchievement = React.lazy(() => import('./components/DescriptorAchievement'));
+// Vista de Materia (Fase 8) — antes solo se cargaban dentro de Ajustes.
+const CurriculumManager = React.lazy(() => import('./components/CurriculumManager'));
+const ProgrammingManager = React.lazy(() => import('./components/ProgrammingManager'));
 import ClassJournal from './components/ClassJournal';
 import { Cog8ToothIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon } from './components/Icons';
 import PageHeader from './components/PageHeader';
@@ -311,6 +315,10 @@ function useDatabase() {
 // Tareas, Reuniones, Exámenes) no dependen de ella, así que no tiene sentido
 // mostrarlo ahí.
 const REPORT_VIEWS: View[] = ['criteria', 'competences', 'key-competences', 'descriptors'];
+// Vista de Materia (Fase 8): currículo y planificación UD, alcanzable desde
+// la píldora de Materia de la cabecera en vez de enterrados en Ajustes —
+// usan activeCourseId, no la clase seleccionada.
+const MATERIA_VIEWS: View[] = ['curriculum', 'planner'];
 
 // Placeholder mientras se descarga el chunk de una vista cargada bajo
 // demanda (React.lazy) — los informes y Ajustes, ver los imports de arriba.
@@ -896,6 +904,60 @@ const App = () => {
             );
         }
 
+        if (MATERIA_VIEWS.includes(activeView)) {
+            if (!activeCourseId) {
+                return (
+                    <div className="p-12 text-center flex flex-col items-center justify-center flex-grow">
+                        <p className="text-lg font-medium text-slate-700 mb-2">Ninguna materia seleccionada</p>
+                        <p className="text-sm text-slate-500 max-w-sm">Selecciona una materia de la barra superior para gestionar su currículo y planificación.</p>
+                    </div>
+                );
+            }
+            return (
+                <>
+                    <PageHeader title="Materia" subtitle="Currículo y planificación didáctica de la materia seleccionada." accent="navy" icon={<BookOpenIcon className="w-6 h-6" />} />
+                    <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit my-6">
+                        <button onClick={() => setActiveView('curriculum')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'curriculum' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Currículo</button>
+                        <button onClick={() => setActiveView('planner')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'planner' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Planificación UD</button>
+                    </div>
+                    <React.Suspense fallback={<ViewLoadingFallback />}>
+                        {activeView === 'curriculum' && (
+                            <CurriculumManager
+                                courseId={activeCourseId}
+                                courses={curriculumCourses}
+                                onUpdateCourse={handleUpdateCourse}
+                                keyCompetences={keyCompetences}
+                                onCreateKeyCompetence={handleCreateKeyCompetence}
+                                onUpdateKeyCompetence={handleUpdateKeyCompetence}
+                                onDeleteKeyCompetence={handleDeleteKeyCompetence}
+                                onCreateDescriptor={handleCreateDescriptor}
+                                onUpdateDescriptor={handleUpdateDescriptor}
+                                onDeleteDescriptor={handleDeleteDescriptor}
+                                specificCompetences={competences}
+                                setSpecificCompetences={setSpecificCompetencesCallback}
+                                evaluationCriteria={criteria}
+                                setEvaluationCriteria={setEvaluationCriteriaCallback}
+                                basicKnowledge={basicKnowledge}
+                                setBasicKnowledge={setBasicKnowledgeCallback}
+                            />
+                        )}
+                        {activeView === 'planner' && (
+                            <ProgrammingManager
+                                courseId={activeCourseId}
+                                courses={curriculumCourses}
+                                units={programmingUnits}
+                                setUnits={setProgrammingUnitsCallback}
+                                criteria={criteria}
+                                basicKnowledge={basicKnowledge}
+                                classes={classes}
+                                academicConfiguration={academicConfiguration}
+                            />
+                        )}
+                    </React.Suspense>
+                </>
+            );
+        }
+
         if (REPORT_VIEWS.includes(activeView)) {
             const activeClassCriteria = effectiveCriteria.filter(c => c.courseId === activeClass?.courseId).sort((a, b) => compararCodigo(a.code, b.code));
             const activeClassCompetences = effectiveCompetences.filter(sc => sc.courseId === activeClass?.courseId).sort((a, b) => compararCodigo(a.code, b.code));
@@ -981,11 +1043,11 @@ const App = () => {
                 <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200 px-4 py-2 flex items-center justify-between sticky top-0 z-30">
                     <ShortcutsBar shortcuts={shortcuts} onCreate={handleCreateShortcut} onUpdate={handleUpdateShortcut} onDelete={handleDeleteShortcut} />
                     <div className="flex items-center gap-2">
-                        {/* Informes y Cuaderno usan el contexto seleccionado aquí. En
-                            escritorio no hay concepto de curso académico/materia
-                            (blob sin academic_years) — se mantiene el selector de
-                            clase único de siempre. */}
-                        {!isDesktop && (REPORT_VIEWS.includes(activeView) || activeView === 'gradebook') && (allYears.data?.length ?? 0) > 0 && (
+                        {/* Informes, Cuaderno y la vista de Materia usan el contexto
+                            seleccionado aquí. En escritorio no hay concepto de curso
+                            académico/materia (blob sin academic_years) — se mantiene
+                            el selector de clase único de siempre. */}
+                        {!isDesktop && (REPORT_VIEWS.includes(activeView) || activeView === 'gradebook' || MATERIA_VIEWS.includes(activeView)) && (allYears.data?.length ?? 0) > 0 && (
                             <>
                                 <Select value={yearId} onChange={(e) => handleSelectYear(e.target.value)} className="font-semibold">
                                     {(allYears.data ?? []).map(y => <option key={y.id} value={y.id}>{y.label}</option>)}
@@ -996,7 +1058,18 @@ const App = () => {
                                         {yearCourses.map(c => <option key={c.id} value={c.id}>{c.level} - {c.subject}</option>)}
                                     </Select>
                                 )}
-                                {activeCourseId && classesForActiveCourse.length > 0 && (
+                                {/* Entra a la vista de Materia (currículo/planificación) —
+                                    distinto de elegir en el desplegable de arriba, que solo
+                                    cambia cuál es la materia activa. */}
+                                {activeCourseId && (
+                                    <IconButton
+                                        label="Gestionar esta materia (currículo y planificación)"
+                                        onClick={() => setActiveView('curriculum')}
+                                    >
+                                        <BookOpenIcon className="w-5 h-5" />
+                                    </IconButton>
+                                )}
+                                {!MATERIA_VIEWS.includes(activeView) && activeCourseId && classesForActiveCourse.length > 0 && (
                                     <Select value={activeClassId} onChange={(e) => setActiveClassId(e.target.value)} className="font-semibold">
                                         <option value="">Clase…</option>
                                         {classesForActiveCourse.map(c => <option key={c.id} value={c.id}>{formatClassLabel(c, curriculumCourses)}</option>)}
