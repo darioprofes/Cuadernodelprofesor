@@ -1,15 +1,18 @@
 
 import React, { useState } from 'react';
 import Modal from './Modal';
-import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon } from './Icons';
-import type { ClassData, Course, KeyCompetence, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
+import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon, AcademicCapIcon, ListBulletIcon } from './Icons';
+import type { ClassData, Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
 import EvaluationToolManager from './EvaluationToolManager';
+import CurriculumManager from './CurriculumManager';
+import ProgrammingManager from './ProgrammingManager';
 import ClassManager from './settings/ClassManager';
 import ScheduleManager from './settings/ScheduleManager';
 import CourseManager from './settings/CourseManager';
 import AcademicConfigManager from './settings/AcademicConfigManager';
 import AcademicYearManager from './settings/AcademicYearManager';
 import BackupManager from './settings/BackupManager';
+import Select from './Select';
 import { SEMANTIC } from '../theme/palette';
 
 export interface SettingsModalProps {
@@ -21,36 +24,71 @@ export interface SettingsModalProps {
     // Materias del backend nuevo (bloque 3) — solo para CurriculumManager/
     // ProgrammingManager, distintas de `courses` (blob viejo, todo lo demás).
     curriculumCourses: Course[];
+    onUpdateCourse: (id: string, data: Partial<{ level: string; subject: string; type: 'academic' | 'other'; pesoCriteriosManual: boolean }>) => Promise<void>;
     classes: ClassData[];
     setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
     keyCompetences: KeyCompetence[];
-    // Sin setter: CurriculumManager/ProgrammingManager (los únicos que
-    // editaban esto desde Ajustes) se sacaron a la vista de Materia propia
-    // en la Fase 8 (bloque 4) — lo que queda aquí solo se LEE, para el
-    // selector de "Vincular Criterios" de Instrumentos de Evaluación y para
-    // "Comprobar integridad de los datos" en Copia de Seguridad.
+    onCreateKeyCompetence: (data: { code: string; description: string }) => Promise<KeyCompetence>;
+    onUpdateKeyCompetence: (id: string, data: Partial<{ code: string; description: string }>) => Promise<void>;
+    onDeleteKeyCompetence: (id: string) => Promise<void>;
+    onCreateDescriptor: (keyCompetenceId: string, data: { code: string; description: string; stage?: 'eso' | 'bachillerato' }) => Promise<OperationalDescriptor>;
+    onUpdateDescriptor: (id: string, data: Partial<{ code: string; description: string; stage: 'eso' | 'bachillerato' }>) => Promise<void>;
+    onDeleteDescriptor: (id: string) => Promise<void>;
     specificCompetences: SpecificCompetence[];
+    setSpecificCompetences: (updater: React.SetStateAction<SpecificCompetence[]>) => void;
     evaluationCriteria: EvaluationCriterion[];
+    setEvaluationCriteria: (updater: React.SetStateAction<EvaluationCriterion[]>) => void;
     journalEntries: JournalEntry[];
     setJournalEntries: (updater: React.SetStateAction<JournalEntry[]>) => void;
     importDatabase: (buffer: ArrayBuffer) => Promise<void>;
     exportDatabase: () => Promise<Uint8Array | null>;
     resetDatabase: () => Promise<void>;
     basicKnowledge: BasicKnowledge[];
+    setBasicKnowledge: (updater: React.SetStateAction<BasicKnowledge[]>) => void;
     academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
     programmingUnits: ProgrammingUnit[];
+    setProgrammingUnits: (updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => void;
     evaluationTools: EvaluationTool[];
     onCreateEvaluationTool: (data: Omit<EvaluationTool, 'id'>) => void;
     onUpdateEvaluationTool: (id: string, data: Omit<EvaluationTool, 'id'>) => void;
     onDeleteEvaluationTool: (id: string) => void;
 }
 
-type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'evaluationTools' | 'backup';
+type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'backup';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
-    const { isOpen, onClose, classes, setClasses, courses, setCourses, curriculumCourses, onOpenExportModal, academicConfiguration, setAcademicConfiguration, evaluationTools, onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria } = props;
+    const {
+        isOpen, onClose, classes, setClasses, courses, setCourses, curriculumCourses, onUpdateCourse,
+        onOpenExportModal, academicConfiguration, setAcademicConfiguration, evaluationTools,
+        onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria,
+        keyCompetences, onCreateKeyCompetence, onUpdateKeyCompetence, onDeleteKeyCompetence,
+        onCreateDescriptor, onUpdateDescriptor, onDeleteDescriptor,
+        specificCompetences, setSpecificCompetences, setEvaluationCriteria,
+        basicKnowledge, setBasicKnowledge, programmingUnits, setProgrammingUnits,
+    } = props;
     const [activeView, setActiveView] = useState<SettingsView>('academicConfig');
+    // Currículo/Planificación UD se gestionan por materia, pero a diferencia
+    // de la vista de Materia de la cabecera (que exige elegir Año→Materia
+    // primero), aquí se accede directamente desde Ajustes — de ahí un
+    // selector propio, independiente del contexto activo de la cabecera.
+    const materiasDisponibles = curriculumCourses.filter(c => c.type !== 'other');
+    const [selectedCourseId, setSelectedCourseId] = useState('');
+    const effectiveCourseId = selectedCourseId && materiasDisponibles.some(c => c.id === selectedCourseId)
+        ? selectedCourseId
+        : (materiasDisponibles[0]?.id ?? '');
+
+    const materiaSelector = (
+        <div className="mb-4">
+            <label className="text-xs text-slate-500">Materia</label>
+            <Select value={effectiveCourseId} onChange={e => setSelectedCourseId(e.target.value)} className="w-full max-w-sm">
+                {materiasDisponibles.length === 0 && <option value="">Sin materias todavía</option>}
+                {materiasDisponibles.map(c => (
+                    <option key={c.id} value={c.id}>{c.level} - {c.subject}</option>
+                ))}
+            </Select>
+        </div>
+    );
 
     const renderView = () => {
         switch (activeView) {
@@ -71,6 +109,54 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                         <AcademicYearManager />
                         <hr />
                         <AcademicConfigManager academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />
+                    </div>
+                );
+            case 'curriculum':
+                return (
+                    <div>
+                        {materiaSelector}
+                        {effectiveCourseId ? (
+                            <CurriculumManager
+                                courseId={effectiveCourseId}
+                                courses={curriculumCourses}
+                                onUpdateCourse={onUpdateCourse}
+                                keyCompetences={keyCompetences}
+                                onCreateKeyCompetence={onCreateKeyCompetence}
+                                onUpdateKeyCompetence={onUpdateKeyCompetence}
+                                onDeleteKeyCompetence={onDeleteKeyCompetence}
+                                onCreateDescriptor={onCreateDescriptor}
+                                onUpdateDescriptor={onUpdateDescriptor}
+                                onDeleteDescriptor={onDeleteDescriptor}
+                                specificCompetences={specificCompetences}
+                                setSpecificCompetences={setSpecificCompetences}
+                                evaluationCriteria={evaluationCriteria}
+                                setEvaluationCriteria={setEvaluationCriteria}
+                                basicKnowledge={basicKnowledge}
+                                setBasicKnowledge={setBasicKnowledge}
+                            />
+                        ) : (
+                            <p className="text-sm text-slate-500">Da de alta una materia en "Materias" antes de gestionar su currículo.</p>
+                        )}
+                    </div>
+                );
+            case 'planner':
+                return (
+                    <div>
+                        {materiaSelector}
+                        {effectiveCourseId ? (
+                            <ProgrammingManager
+                                courseId={effectiveCourseId}
+                                courses={curriculumCourses}
+                                units={programmingUnits}
+                                setUnits={setProgrammingUnits}
+                                criteria={evaluationCriteria}
+                                basicKnowledge={basicKnowledge}
+                                classes={classes}
+                                academicConfiguration={academicConfiguration}
+                            />
+                        ) : (
+                            <p className="text-sm text-slate-500">Da de alta una materia en "Materias" antes de planificar sus unidades didácticas.</p>
+                        )}
                     </div>
                 );
             case 'evaluationTools':
@@ -98,6 +184,8 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                     <ul className="space-y-2">
                         <SettingsNavItem icon={<CalendarDaysIcon />} label="Curso Académico" view="academicConfig" activeView={activeView} setActiveView={setActiveView} />
                         <SettingsNavItem icon={<BookOpenIcon />} label="Materias" view="courses" activeView={activeView} setActiveView={setActiveView} />
+                        <SettingsNavItem icon={<AcademicCapIcon />} label="Gestionar Currículo" view="curriculum" activeView={activeView} setActiveView={setActiveView} />
+                        <SettingsNavItem icon={<ListBulletIcon />} label="Planificación UD" view="planner" activeView={activeView} setActiveView={setActiveView} />
                     </ul>
                     <div className="mt-4 pt-4 border-t">
                         <ul className="space-y-2">

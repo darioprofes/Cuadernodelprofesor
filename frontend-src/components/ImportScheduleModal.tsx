@@ -8,7 +8,8 @@ import type { ClassData, Course, AcademicConfiguration } from '../types';
 import { HUE_PRESETS, buildDefaultCategories } from '../utils';
 import { useCreateCourse, useDeleteCourse } from '../hooks/useCourses';
 import { useCreateClass, useUpdateClass, useDeleteClass } from '../hooks/useApiClasses';
-import { useAcademicYearCourses, useAddAcademicYearCourse, useRemoveAcademicYearCourse } from '../hooks/useAcademicYears';
+import { useAcademicYearCourses, useAddAcademicYearCourse, useRemoveAcademicYearCourse, useEvaluationPeriods } from '../hooks/useAcademicYears';
+import { useCreateCategory } from '../hooks/useCategories';
 
 interface FilaHorario {
     dia: number; // 0=Lunes ... 4=Viernes (formato del backend)
@@ -225,6 +226,16 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
     const yearCoursesQuery = useAcademicYearCourses(yearId);
     const addYearCourseMutation = useAddAcademicYearCourse();
     const removeYearCourseMutation = useRemoveAcademicYearCourse();
+    // Bug real (2026-08-04): las clases nuevas se quedaban sin categorías de
+    // calificación por defecto. `academicConfiguration.evaluationPeriods`
+    // (prop heredada de SettingsModal, sin resolver por plataforma) es el del
+    // blob viejo, vacío en web — así que buildDefaultCategories() no tenía
+    // con qué construir nada. Y aunque lo tuviera, createClassMutation solo
+    // manda los campos "cáscara" (courseId/grupo/schedule/colorAcento): las
+    // categorías nunca se enviaban al servidor, había que crearlas aparte.
+    const remotePeriods = useEvaluationPeriods(yearId, { enabled: !!yearId });
+    const realEvaluationPeriods = (remotePeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate }));
+    const createCategoryMutation = useCreateCategory();
 
     const handleClose = () => {
         setFilas(null);
@@ -323,10 +334,21 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
             for (const cls of plan.classes) {
                 const realCourseId = idMap.get(cls.courseId) ?? cls.courseId;
                 if (plan.idsClasesNuevas.has(cls.id)) {
-                    await createClassMutation.mutateAsync({
+                    const created = await createClassMutation.mutateAsync({
                         yearId,
                         data: { courseId: realCourseId, grupo: cls.grupo, schedule: cls.schedule ?? [], colorAcento: cls.colorAcento },
                     });
+                    // Solo clases académicas reales (con grupo) llevan
+                    // categorías de calificación por defecto — igual que
+                    // ClassManager.tsx al crear una a mano.
+                    if (cls.grupo !== undefined) {
+                        for (const cat of buildDefaultCategories(realEvaluationPeriods)) {
+                            await createCategoryMutation.mutateAsync({
+                                classId: created.id,
+                                data: { evaluationPeriodId: cat.evaluationPeriodId, name: cat.name, weight: cat.weight },
+                            });
+                        }
+                    }
                 } else if (plan.idsClasesActualizadas.has(cls.id)) {
                     await updateClassMutation.mutateAsync({ id: cls.id, yearId, data: { schedule: cls.schedule ?? [] } });
                 }

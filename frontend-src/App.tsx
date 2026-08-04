@@ -61,7 +61,7 @@ import ClasesView from './components/ClasesView';
 import ReunionesView from './components/ReunionesView';
 import ExamenesView from './components/ExamenesView';
 import ClassLabel from './components/ClassLabel';
-import { formatClassLabel, getClassName, compararCodigo } from './utils';
+import { formatClassLabel, getClassName, compararCodigo, getSiglas, getMateria } from './utils';
 import { backgroundPatternStyle } from './theme/backgroundPattern';
 
 // Custom hook for SQLite database management
@@ -402,15 +402,84 @@ const App = () => {
     const gradeQueries = useGradesForClasses(remoteClassIds, { enabled: !isDesktop });
     const remoteEvaluationPeriods = useEvaluationPeriods(yearId, { enabled: !isDesktop && !!yearId });
     const createAssignmentMutation = useCreateAssignment();
-    const hydratedClasses: ClassData[] = isDesktop ? (appState?.classes ?? []) : (remoteClasses.data ?? []).map((cls, i) => hydrateClassData(
-        cls,
-        enrollmentQueries[i]?.data ?? [],
-        remoteStudents.data ?? [],
-        categoryQueries[i]?.data ?? [],
-        assignmentQueries[i]?.data ?? [],
-        gradeQueries[i]?.data ?? [],
-        remoteEvaluationTools.data ?? [],
-    ));
+    // Memoizado a propósito (bug real encontrado 2026-08-04): sin esto,
+    // hydratedClasses era un array nuevo en CADA render de App.tsx, sin
+    // relación con si los datos habían cambiado de verdad. Como se pasa como
+    // prop `classes` a componentes que reinicializan estado local por
+    // useEffect cuando esa prop cambia de identidad (p.ej. ClassJournal
+    // reseteaba notesMap/isDirtyMap al recibir un `classes` "nuevo"), un
+    // re-render de App.tsx por CUALQUIER motivo ajeno (como marcar
+    // isJournalDirty al escribir la primera letra en el Diario) desataba una
+    // cascada que borraba lo que el usuario acababa de teclear. Las claves
+    // *_UpdatedKey usan dataUpdatedAt (no las propias queries, cuyo array
+    // envolvente de useQueries es en sí mismo nuevo en cada render) para que
+    // la memoización solo se invalide cuando el dato subyacente cambia de verdad.
+    const enrollmentsUpdatedKey = enrollmentQueries.map(q => q.dataUpdatedAt).join(',');
+    const categoriesUpdatedKey = categoryQueries.map(q => q.dataUpdatedAt).join(',');
+    const assignmentsUpdatedKey = assignmentQueries.map(q => q.dataUpdatedAt).join(',');
+    const gradesUpdatedKey = gradeQueries.map(q => q.dataUpdatedAt).join(',');
+    const hydratedClasses: ClassData[] = useMemo(() => (
+        isDesktop ? (appState?.classes ?? []) : (remoteClasses.data ?? []).map((cls, i) => hydrateClassData(
+            cls,
+            enrollmentQueries[i]?.data ?? [],
+            remoteStudents.data ?? [],
+            categoryQueries[i]?.data ?? [],
+            assignmentQueries[i]?.data ?? [],
+            gradeQueries[i]?.data ?? [],
+            remoteEvaluationTools.data ?? [],
+        ))
+    ), [
+        isDesktop, appState?.classes, remoteClasses.data, remoteStudents.data, remoteEvaluationTools.data,
+        enrollmentsUpdatedKey, categoriesUpdatedKey, assignmentsUpdatedKey, gradesUpdatedKey,
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ]);
+
+    // Mismo motivo que hydratedClasses arriba, y misma necesidad de vivir
+    // antes de los "return" condicionales de más abajo (si no, violan las
+    // Rules of Hooks en cuanto appState pasa de null a un valor real): sin
+    // esto, cada uno era un array nuevo en cada render de App.tsx, y al
+    // pasarse como prop a vistas que los usan en dependencias de
+    // useMemo/useCallback (p.ej. ClassJournal: units→getPlannedContent→
+    // scheduledClasses) desataba la misma cascada de reseteo de estado local
+    // ante cualquier re-render ajeno — causa raíz del bug real "no puedo
+    // añadir nada en el Diario" (2026-08-04).
+    const allCriteriaUpdatedKey = allCriteriaQueries.map(q => q.dataUpdatedAt).join(',');
+    const allCompetencesUpdatedKey = allCompetencesQueries.map(q => q.dataUpdatedAt).join(',');
+    const allBasicKnowledgeUpdatedKey = allBasicKnowledgeQueries.map(q => q.dataUpdatedAt).join(',');
+    const allProgrammingUnitsUpdatedKey = allProgrammingUnitsQueries.map(q => q.dataUpdatedAt).join(',');
+    const allCriteria: EvaluationCriterion[] = useMemo(() => (
+        isDesktop ? (appState?.criteria ?? []) : allCriteriaQueries.flatMap(q => q.data ?? [])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [isDesktop, appState?.criteria, allCriteriaUpdatedKey]);
+    const allCompetences: SpecificCompetence[] = useMemo(() => (
+        isDesktop ? (appState?.competences ?? []) : allCompetencesQueries.flatMap(q => q.data ?? [])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [isDesktop, appState?.competences, allCompetencesUpdatedKey]);
+    const allBasicKnowledge: BasicKnowledge[] = useMemo(() => (
+        isDesktop ? (appState?.basicKnowledge ?? []) : allBasicKnowledgeQueries.flatMap(q => q.data ?? [])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [isDesktop, appState?.basicKnowledge, allBasicKnowledgeUpdatedKey]);
+    const allProgrammingUnits: ProgrammingUnit[] = useMemo(() => (
+        isDesktop ? (appState?.programmingUnits ?? []) : (allProgrammingUnitsQueries.flatMap(q => q.data ?? []) as unknown as ProgrammingUnit[])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [isDesktop, appState?.programmingUnits, allProgrammingUnitsUpdatedKey]);
+    // Mismo motivo — encontrado por auditoría tras el bug del Diario
+    // (2026-08-04): AssignmentModal.tsx reinicializa el desplegable de
+    // "Evaluación" en un useEffect con esta prop en las dependencias; sin
+    // memoizar, cualquier re-render ajeno mientras el modal está abierto
+    // pisaba silenciosamente la evaluación elegida a mano por el usuario.
+    // evaluationPeriods/evaluationPeriodWeights reales (ver bloque 6,
+    // AcademicConfigManager.tsx) — todo lo demás de academicConfiguration
+    // (fechas del curso, festivos, franjas horarias, escala de notas) sigue
+    // siendo del blob en ambas plataformas, fuera de alcance.
+    const effectiveAcademicConfiguration: AcademicConfiguration = useMemo(() => (
+        isDesktop ? (appState?.academicConfiguration as AcademicConfiguration) : {
+            ...(appState?.academicConfiguration as AcademicConfiguration),
+            evaluationPeriods: (remoteEvaluationPeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate })),
+            evaluationPeriodWeights: Object.fromEntries((remoteEvaluationPeriods.data ?? []).map(p => [p.id, p.weight])),
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [isDesktop, appState?.academicConfiguration, remoteEvaluationPeriods.data]);
 
     // --- UI State ---
     const [activeClassId, setActiveClassId] = useState<string>('');
@@ -491,7 +560,7 @@ const App = () => {
         }
         // activeCourseId excluido a propósito: este efecto solo reacciona a
         // cambios de activeClass, no debe re-ejecutarse cuando el propio
-        // activeCourseId cambia por otra vía (p.ej. handleSelectCourse).
+        // activeCourseId cambia por otra vía.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeClass]);
 
@@ -781,48 +850,19 @@ const App = () => {
     // activeCourseId), estas alimentan vistas que no tienen "una" materia
     // activa concreta (exportar CSV, comprobar integridad, vincular
     // criterios a un instrumento, ficha de alumno de cualquier clase...).
-    const allCriteria: EvaluationCriterion[] = isDesktop ? criteria : allCriteriaQueries.flatMap(q => q.data ?? []);
-    const allCompetences: SpecificCompetence[] = isDesktop ? competences : allCompetencesQueries.flatMap(q => q.data ?? []);
-    const allBasicKnowledge: BasicKnowledge[] = isDesktop ? basicKnowledge : allBasicKnowledgeQueries.flatMap(q => q.data ?? []);
-    const allProgrammingUnits: ProgrammingUnit[] = isDesktop ? programmingUnits : (allProgrammingUnitsQueries.flatMap(q => q.data ?? []) as unknown as ProgrammingUnit[]);
     const academicClasses = isDesktop
         ? classes.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other')
         : hydratedClasses.filter(c => curriculumCourses.find(course => course.id === c.courseId)?.type !== 'other');
-    // Cabecera de 3 contextos (Fase 8, solo web): "materias que imparto este
-    // curso académico" — derivado de academic_year_courses (bloque 1), no
-    // hay columna que lo relacione directamente porque courses es
-    // año-independiente a propósito (currículo reutilizable entre años).
-    const yearCourseIds = new Set((yearCoursesQuery.data ?? []).map(yc => yc.courseId));
-    const yearCourses = curriculumCourses.filter(c => c.type !== 'other' && yearCourseIds.has(c.id));
-    const classesForActiveCourse = academicClasses.filter(c => c.courseId === activeCourseId);
-
     const handleSelectYear = (id: string) => {
         if (!id || activateYearMutation.isPending) return;
         activateYearMutation.mutate(id);
     };
 
-    // Elegir Materia fija también la Clase si solo hay un grupo posible —
-    // si hay varios, se deja en blanco para que el profesor elija (mismo
-    // criterio que el resto de la app en web: sin auto-selección "adivinada").
-    const handleSelectCourse = (courseId: string) => {
-        setActiveCourseId(courseId);
-        const matches = academicClasses.filter(c => c.courseId === courseId);
-        setActiveClassId(matches.length === 1 ? matches[0].id : '');
-    };
     // Igual que curriculumCourses: en escritorio son literalmente el mismo
     // array (blob); en web, los reales del curso de `activeClass` (bloque
     // 3b los dejó de escribir en el blob), pedidos más arriba.
     const effectiveCriteria = isDesktop ? criteria : (remoteActiveCriteria.data ?? []);
     const effectiveCompetences = isDesktop ? competences : (remoteActiveCompetences.data ?? []);
-    // evaluationPeriods/evaluationPeriodWeights reales (ver bloque 6,
-    // AcademicConfigManager.tsx) — todo lo demás de academicConfiguration
-    // (fechas del curso, festivos, franjas horarias, escala de notas) sigue
-    // siendo del blob en ambas plataformas, fuera de alcance.
-    const effectiveAcademicConfiguration: AcademicConfiguration = isDesktop ? academicConfiguration : {
-        ...academicConfiguration,
-        evaluationPeriods: (remoteEvaluationPeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate })),
-        evaluationPeriodWeights: Object.fromEntries((remoteEvaluationPeriods.data ?? []).map(p => [p.id, p.weight])),
-    };
 
     const renderContent = () => {
         // Vistas que no requieren una clase activa
@@ -1071,18 +1111,32 @@ const App = () => {
                             el selector de clase único de siempre. */}
                         {!isDesktop && (REPORT_VIEWS.includes(activeView) || activeView === 'gradebook' || MATERIA_VIEWS.includes(activeView)) && (allYears.data?.length ?? 0) > 0 && (
                             <>
-                                <Select value={yearId} onChange={(e) => handleSelectYear(e.target.value)} className="font-semibold">
+                                {/* !w-auto: sin esto, width:100% (del Select compartido,
+                                    pensado para formularios) les da una base de flex enorme,
+                                    y bajo presión de espacio en la cabecera (accesos directos
+                                    a la izquierda) el algoritmo de flexbox las encogía por
+                                    debajo de su propio contenido. */}
+                                <Select value={yearId} onChange={(e) => handleSelectYear(e.target.value)} className="font-semibold !w-auto">
                                     {(allYears.data ?? []).map(y => <option key={y.id} value={y.id}>{y.label}</option>)}
                                 </Select>
-                                {yearCourses.length > 0 && (
-                                    <Select value={activeCourseId} onChange={(e) => handleSelectCourse(e.target.value)} className="font-semibold">
-                                        <option value="">Materia…</option>
-                                        {yearCourses.map(c => <option key={c.id} value={c.id}>{c.level} - {c.subject}</option>)}
+                                {/* Un único selector Clase-Materia (no dos): elegir una clase
+                                    ya fija su materia (efecto de sincronización más arriba),
+                                    así que un desplegable de Materia aparte era redundante.
+                                    Las materias sin clases todavía (recién declaradas en
+                                    "Materias" de Ajustes) no aparecen aquí — para esas, entrar
+                                    a Ajustes → Materias. */}
+                                {academicClasses.length > 0 && (
+                                    <Select value={activeClassId} onChange={(e) => setActiveClassId(e.target.value)} className="font-semibold !w-auto">
+                                        <option value="">Clase…</option>
+                                        {academicClasses.map(c => {
+                                            const materia = getMateria(c, curriculumCourses);
+                                            return <option key={c.id} value={c.id} title={materia}>{c.grupo || 'Sin nombre'} - {getSiglas(materia)}</option>;
+                                        })}
                                     </Select>
                                 )}
-                                {/* Entra a la vista de Materia (currículo/planificación) —
-                                    distinto de elegir en el desplegable de arriba, que solo
-                                    cambia cuál es la materia activa. */}
+                                {/* Currículo/Planificación de la materia de la clase activa
+                                    (activeCourseId se deriva de activeClassId, no es
+                                    seleccionable por separado). */}
                                 {activeCourseId && (
                                     <IconButton
                                         label="Gestionar esta materia (currículo y planificación)"
@@ -1090,12 +1144,6 @@ const App = () => {
                                     >
                                         <BookOpenIcon className="w-5 h-5" />
                                     </IconButton>
-                                )}
-                                {!MATERIA_VIEWS.includes(activeView) && activeCourseId && classesForActiveCourse.length > 0 && (
-                                    <Select value={activeClassId} onChange={(e) => setActiveClassId(e.target.value)} className="font-semibold">
-                                        <option value="">Clase…</option>
-                                        {classesForActiveCourse.map(c => <option key={c.id} value={c.id}>{formatClassLabel(c, curriculumCourses)}</option>)}
-                                    </Select>
                                 )}
                             </>
                         )}
@@ -1128,13 +1176,24 @@ const App = () => {
                         classes={hydratedClasses} setClasses={setClassesCallback}
                         courses={curriculumCourses} setCourses={setCoursesCallback}
                         curriculumCourses={curriculumCourses}
+                        onUpdateCourse={handleUpdateCourse}
                         keyCompetences={keyCompetences}
+                        onCreateKeyCompetence={handleCreateKeyCompetence}
+                        onUpdateKeyCompetence={handleUpdateKeyCompetence}
+                        onDeleteKeyCompetence={handleDeleteKeyCompetence}
+                        onCreateDescriptor={handleCreateDescriptor}
+                        onUpdateDescriptor={handleUpdateDescriptor}
+                        onDeleteDescriptor={handleDeleteDescriptor}
                         specificCompetences={allCompetences}
+                        setSpecificCompetences={setSpecificCompetencesCallback}
                         evaluationCriteria={allCriteria}
+                        setEvaluationCriteria={setEvaluationCriteriaCallback}
                         journalEntries={journalEntries} setJournalEntries={setJournalEntriesCallback}
                         basicKnowledge={allBasicKnowledge}
+                        setBasicKnowledge={setBasicKnowledgeCallback}
                         academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfigurationCallback}
                         programmingUnits={allProgrammingUnits}
+                        setProgrammingUnits={setProgrammingUnitsCallback}
                         evaluationTools={evaluationTools}
                         onCreateEvaluationTool={handleCreateEvaluationTool}
                         onUpdateEvaluationTool={handleUpdateEvaluationTool}

@@ -11,10 +11,11 @@ import Button from '../Button';
 import Input from '../Input';
 import Select from '../Select';
 import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../../theme/components/Table';
-import { useCurrentAcademicYear } from '../../hooks/useAcademicYears';
+import { useCurrentAcademicYear, useEvaluationPeriods } from '../../hooks/useAcademicYears';
 import { useApiClasses, useCreateClass, useUpdateClass, useDeleteClass } from '../../hooks/useApiClasses';
 import { useApiStudents, useUpdateStudent } from '../../hooks/useApiStudents';
 import { useEnrollments, useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from '../../hooks/useEnrollments';
+import { useCreateCategory } from '../../hooks/useCategories';
 import { apiClassToLocal, joinStudentEnrollment, splitStudentPatch } from '../../services/apiAdapters';
 
 
@@ -142,6 +143,14 @@ const ClassManager: React.FC<{
     const updateEnrollmentMutation = useUpdateEnrollment();
     const deleteEnrollmentMutation = useDeleteEnrollment();
     const updateStudentMutation = useUpdateStudent();
+    // Bug real (2026-08-04): igual que en ImportScheduleModal.tsx — en web,
+    // academicConfiguration.evaluationPeriods es el del blob (vacío, sin
+    // relación con el backend nuevo) y createClassMutation solo manda los
+    // campos "cáscara", así que una clase creada a mano se quedaba sin
+    // categorías de calificación por defecto.
+    const remotePeriods = useEvaluationPeriods(yearId, { enabled: !isDesktop && !!yearId });
+    const realEvaluationPeriods = (remotePeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate }));
+    const createCategoryMutation = useCreateCategory();
 
     const effectiveClasses: ClassData[] = useMemo(() => {
         if (isDesktop) return classes;
@@ -272,6 +281,12 @@ const ClassManager: React.FC<{
                 yearId,
                 data: { courseId: classData.courseId, grupo: classData.grupo, icono: classData.icono, colorAcento: classData.colorAcento, schedule: [] },
             });
+            for (const cat of buildDefaultCategories(realEvaluationPeriods)) {
+                await createCategoryMutation.mutateAsync({
+                    classId: created.id,
+                    data: { evaluationPeriodId: cat.evaluationPeriodId, name: cat.name, weight: cat.weight },
+                });
+            }
             setActiveClassId(created.id);
         }
     };
