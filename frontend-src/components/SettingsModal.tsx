@@ -26,7 +26,6 @@ export interface SettingsModalProps {
     curriculumCourses: Course[];
     onUpdateCourse: (id: string, data: Partial<{ level: string; subject: string; type: 'academic' | 'other'; pesoCriteriosManual: boolean }>) => Promise<void>;
     classes: ClassData[];
-    setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
     keyCompetences: KeyCompetence[];
     onCreateKeyCompetence: (data: { code: string; description: string }) => Promise<KeyCompetence>;
     onUpdateKeyCompetence: (id: string, data: Partial<{ code: string; description: string }>) => Promise<void>;
@@ -53,7 +52,7 @@ type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'cur
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const {
-        isOpen, onClose, classes, setClasses, courses, curriculumCourses, onUpdateCourse,
+        isOpen, onClose, classes, courses, curriculumCourses, onUpdateCourse,
         onOpenExportModal, academicConfiguration, setAcademicConfiguration, evaluationTools,
         onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria,
         keyCompetences, onCreateKeyCompetence, onUpdateKeyCompetence, onDeleteKeyCompetence,
@@ -150,8 +149,6 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                     onDelete={onDeleteEvaluationTool}
                     criteria={evaluationCriteria}
                     courses={courses}
-                    classes={classes}
-                    setClasses={setClasses}
                 />;
             case 'backup':
                 return <BackupManager {...props} onOpenExportModal={onOpenExportModal} />;

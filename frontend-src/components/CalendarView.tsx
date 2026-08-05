@@ -1,6 +1,5 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
 import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, JournalEntry, EvaluationPeriod, Assignment, EvaluationCriterion, SpecificCompetence, KeyCompetence, SessionDetail, AgendaNote, Meeting, View } from '../types';
 import { useCreateAssignment } from '../hooks/useAssignments';
 import { useUpdateClass } from '../hooks/useApiClasses';
@@ -23,7 +22,6 @@ interface CalendarViewProps {
     academicConfiguration: AcademicConfiguration;
     classes: ClassData[];
     journalEntries: JournalEntry[];
-    onUpdateClass: (updatedClass: ClassData) => void;
     criteria: EvaluationCriterion[];
     setUnits: (updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => void;
     specificCompetences: SpecificCompetence[];
@@ -38,11 +36,10 @@ interface CalendarViewProps {
     onOpenMeeting: (meetingId: string) => void;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, academicConfiguration, classes, journalEntries, onUpdateClass, criteria, specificCompetences, keyCompetences, onSaveJournalEntry, agendaNotes, setAgendaNotes, meetings, setMeetings, setActiveView, setActiveClassId, onOpenMeeting }) => {
-    const isDesktop = isTauri();
+const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, academicConfiguration, classes, journalEntries, criteria, specificCompetences, keyCompetences, onSaveJournalEntry, agendaNotes, setAgendaNotes, meetings, setMeetings, setActiveView, setActiveClassId, onOpenMeeting }) => {
     const createAssignmentMutation = useCreateAssignment();
     const updateClassMutation = useUpdateClass();
-    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+    const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
     const [currentDate, setCurrentDate] = useState(new Date());
     const [view, setView] = useState<'month' | 'week' | 'day'>('month');
@@ -167,16 +164,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, a
     const handleSaveTask = async (newAssignment: Omit<Assignment, 'id'>, classId: string) => {
         const classToUpdate = classes.find(c => c.id === classId);
         if (!classToUpdate) return;
-
-        if (isDesktop) {
-            const fullAssignment: Assignment = {
-                ...newAssignment,
-                id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
-            };
-            onUpdateClass({ ...classToUpdate, assignments: [...classToUpdate.assignments, fullAssignment] });
-        } else {
-            await createAssignmentMutation.mutateAsync({ classId, data: newAssignment });
-        }
+        await createAssignmentMutation.mutateAsync({ classId, data: newAssignment });
         setIsTaskModalOpen(false);
     };
 
@@ -185,11 +173,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, a
         if (!classToUpdate) return;
         const dateString = toYYYYMMDD_UTC(date);
         const updatedSkippedDays = Array.from(new Set([...(classToUpdate.skippedDays || []), dateString]));
-        if (isDesktop) {
-            onUpdateClass({ ...classToUpdate, skippedDays: updatedSkippedDays });
-        } else {
-            await updateClassMutation.mutateAsync({ id: classId, yearId, data: { skippedDays: updatedSkippedDays } });
-        }
+        await updateClassMutation.mutateAsync({ id: classId, yearId, data: { skippedDays: updatedSkippedDays } });
     };
 
     const handleUpdateSessionDescription = (unitId: string, sessionNumber: number, newDescription: string) => {

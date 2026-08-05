@@ -213,39 +213,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     const assignment = { ...assignmentData, categoryId: assignmentData.categoryId ?? activeCategory.id };
     const existingIndex = classData.assignments.findIndex(a => a.id === assignment.id);
 
-    if (isDesktop) {
-      let updatedAssignments;
-      let updatedGrades = classData.grades;
-
-      if (existingIndex > -1) {
-        const previousAssignment = classData.assignments[existingIndex];
-        updatedAssignments = classData.assignments.map(a => a.id === assignment.id ? { ...a, ...assignment } : a);
-
-        // Si antes se calificaba con nota única (sin criterios) y ahora se le
-        // han vinculado criterios, copia esa nota a cada criterio nuevo en vez
-        // de perder lo ya calificado — se puede retocar a mano después.
-        const teniaNotaUnica = previousAssignment.evaluationMethod === 'direct_grade' && (previousAssignment.linkedCriteria?.length || 0) === 0;
-        const ahoraTieneCriterios = assignment.evaluationMethod === 'direct_grade' && (assignment.linkedCriteria?.length || 0) > 0;
-        if (teniaNotaUnica && ahoraTieneCriterios) {
-          updatedGrades = classData.grades.map(g => {
-            if (g.assignmentId !== assignment.id) return g;
-            const notaUnica = g.criterionScores?.['direct_score'];
-            if (notaUnica == null) return g;
-            const newCriterionScores = { ...g.criterionScores };
-            assignment.linkedCriteria!.forEach(lc => {
-              newCriterionScores[lc.criterionId] = notaUnica;
-            });
-            return { ...g, criterionScores: newCriterionScores };
-          });
-        }
-      } else {
-        updatedAssignments = [...classData.assignments, { ...assignment, id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` }];
-      }
-      onUpdateClass({ ...classData, assignments: updatedAssignments, grades: updatedGrades });
-      return;
-    }
-
-    // Web
     const { id: _assignmentId, ...assignmentFields } = assignment;
     if (existingIndex > -1) {
       const previousAssignment = classData.assignments[existingIndex];
@@ -281,16 +248,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
   const handleSaveCategory = async (category: Category) => {
       const existingIndex = classData.categories.findIndex(c => c.id === category.id);
-      if (isDesktop) {
-          let updatedCategories;
-          if (existingIndex > -1) {
-              updatedCategories = classData.categories.map(c => c.id === category.id ? category : c);
-          } else {
-              updatedCategories = [...classData.categories, category];
-          }
-          onUpdateClass({ ...classData, categories: updatedCategories });
-          return;
-      }
       const data = { name: category.name, weight: category.weight, evaluationPeriodId: category.evaluationPeriodId, type: category.type };
       if (existingIndex > -1) {
           await updateCategoryMutation.mutateAsync({ id: category.id, classId: classData.id, data });
@@ -310,27 +267,12 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
    const handleDeleteAssignment = async (assignmentId: string) => {
     if (!window.confirm("¿Seguro que quieres eliminar esta tarea y todas sus calificaciones?")) return;
-    if (isDesktop) {
-        const updatedAssignments = classData.assignments.filter(a => a.id !== assignmentId);
-        const updatedGrades = classData.grades.filter(g => g.assignmentId !== assignmentId);
-        onUpdateClass({ ...classData, assignments: updatedAssignments, grades: updatedGrades });
-        return;
-    }
     // assignment_id es ON DELETE CASCADE en grades — un único borrado basta.
     await deleteAssignmentMutation.mutateAsync({ id: assignmentId, classId: classData.id });
   };
 
   const handleDeleteCategory = async (categoryId: string) => {
     if (!window.confirm("¿Seguro que quieres eliminar esta categoría y TODAS sus tareas y calificaciones?")) return;
-    if (isDesktop) {
-        const updatedCategories = classData.categories.filter(c => c.id !== categoryId);
-        const assignmentsToDelete = classData.assignments.filter(a => a.categoryId === categoryId);
-        const assignmentsToDeleteIds = new Set(assignmentsToDelete.map(a => a.id));
-        const updatedAssignments = classData.assignments.filter(a => a.categoryId !== categoryId);
-        const updatedGrades = classData.grades.filter(g => !assignmentsToDeleteIds.has(g.assignmentId));
-        onUpdateClass({ ...classData, categories: updatedCategories, assignments: updatedAssignments, grades: updatedGrades });
-        return;
-    }
     // category_id es ON DELETE CASCADE en assignments (y transitivamente en
     // grades) — un único borrado basta.
     await deleteCategoryMutation.mutateAsync({ id: categoryId, classId: classData.id });
@@ -368,39 +310,17 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     // Fix: Allow saving if there are tool results, even if score is null (e.g. unlinked tool)
     const hasToolResults = finalToolResults && Object.keys(finalToolResults).length > 0;
 
-    if (isDesktop) {
-        let updatedGrades = [...classData.grades];
-        const newGradeData: Grade = {
-            studentId,
-            assignmentId,
-            criterionScores: finalCriterionScores,
-            toolResults: finalToolResults,
-        };
-
-        if (existingGradeIndex > -1) {
-            if (!hasScores && !hasToolResults) {
-                 // If no scores and no tool results, remove the grade entry entirely
-                 updatedGrades = updatedGrades.filter((_, index) => index !== existingGradeIndex);
-            } else {
-                updatedGrades[existingGradeIndex] = { ...updatedGrades[existingGradeIndex], ...newGradeData };
+    const student = classData.students.find(s => s.id === studentId);
+    if (student?.enrollmentId) {
+        if (!hasScores && !hasToolResults) {
+            if (existingGradeIndex > -1) {
+                await deleteGradeMutation.mutateAsync({ assignmentId, enrollmentId: student.enrollmentId, classId: classData.id });
             }
-        } else if (hasScores || hasToolResults) {
-            updatedGrades.push(newGradeData);
-        }
-        onUpdateClass({ ...classData, grades: updatedGrades });
-    } else {
-        const student = classData.students.find(s => s.id === studentId);
-        if (student?.enrollmentId) {
-            if (!hasScores && !hasToolResults) {
-                if (existingGradeIndex > -1) {
-                    await deleteGradeMutation.mutateAsync({ assignmentId, enrollmentId: student.enrollmentId, classId: classData.id });
-                }
-            } else {
-                const encoded = 'toolResults' in data
-                    ? encodeGradeInput({ toolResults: data.toolResults, criterionScores: finalCriterionScores })
-                    : encodeGradeInput({ criterionScores: finalCriterionScores });
-                await putGradeMutation.mutateAsync({ assignmentId, enrollmentId: student.enrollmentId, classId: classData.id, data: encoded });
-            }
+        } else {
+            const encoded = 'toolResults' in data
+                ? encodeGradeInput({ toolResults: data.toolResults, criterionScores: finalCriterionScores })
+                : encodeGradeInput({ criterionScores: finalCriterionScores });
+            await putGradeMutation.mutateAsync({ assignmentId, enrollmentId: student.enrollmentId, classId: classData.id, data: encoded });
         }
     }
 
@@ -425,25 +345,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     const assignmentId = assignmentForImport.id;
     const linkedCriteriaIds = assignmentForImport.linkedCriteria.map(lc => lc.criterionId);
     const hasLinkedCriteria = linkedCriteriaIds.length > 0;
-
-    if (isDesktop) {
-        const updatedGrades = [...classData.grades];
-        gradesToSave.forEach((score, studentId) => {
-            const criterionScores = hasLinkedCriteria
-                ? Object.fromEntries(linkedCriteriaIds.map(id => [id, score]))
-                : { 'manual_grade': score };
-
-            const existingGradeIndex = updatedGrades.findIndex(g => g.studentId === studentId && g.assignmentId === assignmentId);
-
-            if (existingGradeIndex > -1) {
-                updatedGrades[existingGradeIndex] = { ...updatedGrades[existingGradeIndex], criterionScores };
-            } else {
-                updatedGrades.push({ studentId, assignmentId, criterionScores });
-            }
-        });
-        onUpdateClass({ ...classData, grades: updatedGrades });
-        return;
-    }
 
     for (const [studentId, score] of gradesToSave) {
         const student = classData.students.find(s => s.id === studentId);
@@ -571,16 +472,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       if (categoriesToCopy.length === 0) {
           if (sourceCategories.length > 0) return;
           alert("No hay categorías para copiar en la evaluación seleccionada.");
-          return;
-      }
-
-      if (isDesktop) {
-          const newCategories = categoriesToCopy.map(cat => ({
-              ...cat,
-              id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-              evaluationPeriodId: activePeriodId,
-          }));
-          onUpdateClass({ ...classData, categories: [...classData.categories, ...newCategories] });
           return;
       }
 

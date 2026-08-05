@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
-import type { EvaluationTool, Checklist, RatingScale, Rubric, EvaluationLevel, BaseEvaluationItem, EvaluationCriterion, Course, ClassData } from '../types';
+import type { EvaluationTool, Checklist, RatingScale, Rubric, EvaluationLevel, BaseEvaluationItem, EvaluationCriterion, Course } from '../types';
 import { PencilIcon, TrashIcon, PlusIcon, LinkIcon, ArrowUpTrayIcon } from './Icons';
 import Modal from './Modal';
 import Button from './Button';
@@ -10,7 +9,6 @@ import Select from './Select';
 import Textarea from './Textarea';
 import { checkboxClassName } from '../theme/components/Input';
 import { linkClassName } from '../theme/components/Link';
-import { countGradesAffectedByTool, recalculateGradesForTool } from '../services/gradeCalculations';
 
 // Forma "de borrador" usada mientras se edita un instrumento: unifica
 // BaseEvaluationItem y RubricItem en un único tipo con `levelDescriptions`
@@ -36,42 +34,23 @@ interface EvaluationToolManagerProps {
     onDelete: (id: string) => void;
     criteria: EvaluationCriterion[];
     courses: Course[];
-    classes: ClassData[];
-    setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
 }
 
-const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluationTools, onCreate, onUpdate, onDelete, criteria, courses, classes, setClasses }) => {
-    const isDesktop = isTauri();
+const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluationTools, onCreate, onUpdate, onDelete, criteria, courses }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [toolToEdit, setToolToEdit] = useState<EvaluationTool | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
 
     const handleSave = (tool: EvaluationTool) => {
         if (toolToEdit) {
-            // classes/setClasses siguen siendo el blob (fallback de
-            // escritorio, ver ClassManager.tsx bloque 5) — en web,
             // criterionScores de una nota basada en instrumento se deriva
             // siempre en caliente a partir de toolResults + la definición
             // VIGENTE del instrumento (ver services/apiAdapters.ts,
             // decodeGrade), así que no hay nada que recalcular ni
-            // reguardar aquí: el siguiente GET ya usa la definición nueva.
-            if (isDesktop) {
-                const affected = countGradesAffectedByTool(classes, tool.id);
-                if (affected > 0) {
-                    const confirmed = window.confirm(
-                        `Ya hay ${affected} calificación(es) guardadas con este instrumento. Al editarlo se recalcularán automáticamente con los pesos/criterios nuevos. ¿Continuar?`
-                    );
-                    if (!confirmed) return;
-                }
-                const { id, ...data } = tool;
-                onUpdate(id, data);
-                if (affected > 0) {
-                    setClasses(prev => recalculateGradesForTool(prev, tool));
-                }
-            } else {
-                const { id, ...data } = tool;
-                onUpdate(id, data);
-            }
+            // reguardar aquí en ninguna plataforma: el siguiente GET ya usa
+            // la definición nueva.
+            const { id, ...data } = tool;
+            onUpdate(id, data);
         } else {
             const { id: _unused, ...data } = tool;
             onCreate(data);

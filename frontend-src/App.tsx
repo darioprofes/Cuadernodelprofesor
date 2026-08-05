@@ -461,13 +461,11 @@ const App = () => {
     const remoteStudents = useApiStudents();
     const remoteClassIds = useMemo(() => (remoteClasses.data ?? []).map(c => c.id), [remoteClasses.data]);
     const enrollmentQueries = useEnrollmentsForClasses(remoteClassIds);
-    // categories/assignments/grades: bloque 5, todavía sin comando Rust --
-    // en escritorio estas tres quedan vacías (hydrateClassData recibe []),
-    // así que el cuaderno de notas aparece vacío hasta ese bloque, pero
-    // clases/alumnado/currículo ya funcionan de verdad.
-    const categoryQueries = useCategoriesForClasses(remoteClassIds, { enabled: !isDesktop });
-    const assignmentQueries = useAssignmentsForClasses(remoteClassIds, { enabled: !isDesktop });
-    const gradeQueries = useGradesForClasses(remoteClassIds, { enabled: !isDesktop });
+    // categories/assignments/grades: bloque 5, ya con comando Rust real --
+    // el cuaderno de notas funciona de verdad en escritorio desde aquí.
+    const categoryQueries = useCategoriesForClasses(remoteClassIds);
+    const assignmentQueries = useAssignmentsForClasses(remoteClassIds);
+    const gradeQueries = useGradesForClasses(remoteClassIds);
     const remoteEvaluationPeriods = useEvaluationPeriods(yearId, { enabled: !!yearId });
     const updateAcademicYearMutation = useUpdateAcademicYear();
     // Fase 6: journalEntries/tasks/meetings/agendaNotes + el resto de
@@ -716,20 +714,7 @@ const App = () => {
     // Guarda la tarea evaluable creada desde Favoritos (mismo mecanismo que
     // usa CalendarView para el "+" de un día en la Agenda).
     const handleSaveFavoritoAssignment = async (newAssignment: Omit<Assignment, 'id'>, classId: string) => {
-        if (isDesktop) {
-            const classToUpdate = appState?.classes.find(c => c.id === classId);
-            if (!classToUpdate) return;
-            const fullAssignment: Assignment = {
-                ...newAssignment,
-                id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            };
-            handleUpdateClass({
-                ...classToUpdate,
-                assignments: [...classToUpdate.assignments, fullAssignment],
-            });
-        } else {
-            await createAssignmentMutation.mutateAsync({ classId, data: newAssignment });
-        }
+        await createAssignmentMutation.mutateAsync({ classId, data: newAssignment });
         setIsFavoritoAssignmentOpen(false);
     };
 
@@ -745,38 +730,13 @@ const App = () => {
     };
 
     const handleCopyAssignment = useCallback(async (sourceAssignment: Assignment, targetClassId: string, targetPeriodId: string, targetCategoryId: string) => {
-        if (isDesktop) {
-            updateState(prev => {
-                const targetClassIndex = prev.classes.findIndex(c => c.id === targetClassId);
-                if (targetClassIndex === -1) return prev;
-
-                const newAssignment: Assignment = {
-                    ...sourceAssignment,
-                    id: `a-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-                    categoryId: targetCategoryId,
-                    evaluationPeriodId: targetPeriodId,
-                    // Keep name, criteria, method, etc.
-                    // Ensure 'recoversAssignmentIds' is cleared as it's specific to the old class context
-                    recoversAssignmentIds: []
-                };
-
-                const updatedClasses = [...prev.classes];
-                updatedClasses[targetClassIndex] = {
-                    ...updatedClasses[targetClassIndex],
-                    assignments: [...updatedClasses[targetClassIndex].assignments, newAssignment]
-                };
-
-                return { ...prev, classes: updatedClasses };
-            });
-        } else {
-            const { id: _unusedId, ...rest } = sourceAssignment;
-            await createAssignmentMutation.mutateAsync({
-                classId: targetClassId,
-                data: { ...rest, categoryId: targetCategoryId, evaluationPeriodId: targetPeriodId, recoversAssignmentIds: [] },
-            });
-        }
+        const { id: _unusedId, ...rest } = sourceAssignment;
+        await createAssignmentMutation.mutateAsync({
+            classId: targetClassId,
+            data: { ...rest, categoryId: targetCategoryId, evaluationPeriodId: targetPeriodId, recoversAssignmentIds: [] },
+        });
         alert("Tarea copiada con éxito.");
-    }, [isDesktop, updateState, createAssignmentMutation]);
+    }, [createAssignmentMutation]);
 
     const handleUpdateJournalEntry = useCallback((entry: JournalEntry) => {
         if (isDesktop) {
@@ -795,7 +755,6 @@ const App = () => {
         saveJournalEntryMutation.mutate({ yearId, data: { classId: entry.classId, date: entry.date, periodIndex: entry.periodIndex, notes: entry.notes } });
     }, [isDesktop, updateState, yearId, saveJournalEntryMutation]);
 
-    const setClassesCallback = useCallback((updater: React.SetStateAction<ClassData[]>) => updateState(prev => ({ ...prev, classes: typeof updater === 'function' ? updater(prev.classes) : updater })), [updateState]);
     // Fase 6: en web, compara el resultado del updater contra el valor
     // efectivo actual y manda solo los campos que de verdad cambiaron —
     // academicYearStart/End quedan fuera (ver comentario junto a
@@ -1164,7 +1123,6 @@ const App = () => {
                     academicConfiguration={effectiveAcademicConfiguration}
                     classes={hydratedClasses}
                     journalEntries={effectiveJournalEntries}
-                    onUpdateClass={handleUpdateClass}
                     criteria={effectiveCriteria}
                     specificCompetences={effectiveCompetences}
                     keyCompetences={keyCompetences}
@@ -1191,10 +1149,9 @@ const App = () => {
                     <ShortcutsBar shortcuts={shortcuts} onCreate={handleCreateShortcut} onUpdate={handleUpdateShortcut} onDelete={handleDeleteShortcut} />
                     <div className="flex items-center gap-2">
                         {/* Informes, Cuaderno y la vista de Materia usan el contexto
-                            seleccionado aquí. En escritorio no hay concepto de curso
-                            académico/materia (blob sin academic_years) — se mantiene
-                            el selector de clase único de siempre. */}
-                        {!isDesktop && (REPORT_VIEWS.includes(activeView) || activeView === 'gradebook' || MATERIA_VIEWS.includes(activeView)) && (allYears.data?.length ?? 0) > 0 && (
+                            seleccionado aquí — igual en ambas plataformas desde que
+                            escritorio tiene academic_years real (Fase 7 bloque 4). */}
+                        {(REPORT_VIEWS.includes(activeView) || activeView === 'gradebook' || MATERIA_VIEWS.includes(activeView)) && (allYears.data?.length ?? 0) > 0 && (
                             <>
                                 {/* !w-auto: sin esto, width:100% (del Select compartido,
                                     pensado para formularios) les da una base de flex enorme,
@@ -1232,15 +1189,6 @@ const App = () => {
                                 )}
                             </>
                         )}
-                        {isDesktop && (REPORT_VIEWS.includes(activeView) || activeView === 'gradebook') && academicClasses.length > 0 && (
-                            <Select
-                                value={activeClassId}
-                                onChange={(e) => setActiveClassId(e.target.value)}
-                                className="font-semibold"
-                            >
-                                {academicClasses.map(c => <option key={c.id} value={c.id}>{formatClassLabel(c, curriculumCourses)}</option>)}
-                            </Select>
-                        )}
                         <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-slate-100">
                             <Cog8ToothIcon className="w-6 h-6 text-slate-600" />
                         </button>
@@ -1258,7 +1206,7 @@ const App = () => {
                         isOpen={isSettingsModalOpen}
                         onClose={() => setIsSettingsModalOpen(false)}
                         onOpenExportModal={() => { setIsSettingsModalOpen(false); setIsExportModalOpen(true); }}
-                        classes={hydratedClasses} setClasses={setClassesCallback}
+                        classes={hydratedClasses}
                         courses={curriculumCourses}
                         curriculumCourses={curriculumCourses}
                         onUpdateCourse={handleUpdateCourse}
