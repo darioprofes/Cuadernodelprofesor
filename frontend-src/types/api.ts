@@ -251,11 +251,13 @@ export interface Student {
     observacionesSanitarias?: string;
     autorizacionImagen?: boolean;
     autorizacionSalidas?: boolean;
+    // Solo indica si hay foto (los bytes viajan aparte, ver /photos/{id}).
+    fotoContentType?: string;
     createdAt: string;
     updatedAt: string;
 }
 
-export type StudentInput = Omit<Student, 'id' | 'createdAt' | 'updatedAt'>;
+export type StudentInput = Omit<Student, 'id' | 'createdAt' | 'updatedAt' | 'fotoContentType'>;
 
 export interface StudentPatch extends Partial<StudentInput> {
     expectedUpdatedAt?: string;

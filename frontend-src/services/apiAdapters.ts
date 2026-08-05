@@ -44,14 +44,16 @@ export const apiClassToLocal = (cls: Pick<ApiClassData, 'id' | 'courseId' | 'gru
 // en el `Student` embebido que siguen esperando StudentRow/PlanoClaseModal/
 // StudentSummaryModal/StudentPersonalDataModal. `enrollmentId` es el único
 // campo añadido (ver types.ts) — necesario para saber qué matrícula tocar
-// al borrar/editar/mover en el plano. `foto` queda ausente a propósito: el
-// backend nuevo todavía no la soporta (aplazado a la Fase 6, ver plan).
+// al borrar/editar/mover en el plano. `foto` se resuelve a una URL propia
+// (no un data URL embebido) si el alumno tiene una — StudentPhotoAvatar ya
+// funciona igual con cualquier string válido como src, no distingue.
 export const joinStudentEnrollment = (student: ApiStudent, enrollment: ApiEnrollment): Student => ({
     id: student.id,
     enrollmentId: enrollment.id,
     nombre: student.nombre,
     primerApellido: student.primerApellido,
     segundoApellido: student.segundoApellido,
+    foto: student.fotoContentType ? `/api/photos/${student.id}` : undefined,
     acneae: enrollment.acneae,
     fechaNacimiento: student.fechaNacimiento,
     dni: student.dni,
@@ -82,11 +84,27 @@ export const joinStudentEnrollment = (student: ApiStudent, enrollment: ApiEnroll
     planoColor: enrollment.planoColor as Student['planoColor'],
 });
 
+// La foto viaja aparte de studentPatch/enrollmentPatch (PUT/DELETE
+// /photos/{id}, bytes crudos, no JSON) — ver splitStudentPatch justo
+// debajo, que por eso la excluye del patch normal. Si `foto` ya es una URL
+// propia (empieza por "/api/photos/", puesta ahí por joinStudentEnrollment)
+// es que no ha cambiado desde que se cargó la ficha: no hace falta volver a
+// subir los mismos bytes en cada guardado de un campo cualquiera.
+export const syncStudentPhoto = async (studentId: string, foto: string | undefined): Promise<void> => {
+    if (foto === undefined) {
+        await fetch(`/api/photos/${studentId}`, { method: 'DELETE' });
+        return;
+    }
+    if (foto.startsWith('/api/photos/')) return;
+    const blob = await (await fetch(foto)).blob();
+    await fetch(`/api/photos/${studentId}`, { method: 'PUT', body: blob, headers: { 'Content-Type': blob.type || 'application/octet-stream' } });
+};
+
 // Reparto del `Partial<Student>` combinado que sigue emitiendo
 // StudentPersonalDataModal al guardar una ficha: separa lo que pertenece a
 // STUDENT (persona) de lo que pertenece a ENROLLMENT (matrícula de esta
-// clase), mismo criterio que el ERD del plan. `foto` se descarta (ver
-// joinStudentEnrollment).
+// clase), mismo criterio que el ERD del plan. `foto` se descarta (viaja
+// aparte, ver syncStudentPhoto justo arriba).
 export const splitStudentPatch = (data: Partial<Student>): { studentPatch: ApiStudentPatch; enrollmentPatch: ApiEnrollmentPatch } => {
     const studentPatch: ApiStudentPatch = {};
     const enrollmentPatch: ApiEnrollmentPatch = {};

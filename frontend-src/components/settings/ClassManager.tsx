@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { isTauri } from '@tauri-apps/api/core';
 import type { AcademicConfiguration, ClassData, Course, Student } from '../../types';
 import { formatClassLabel, getNombreCompleto, buildDefaultCategories } from '../../utils';
@@ -16,7 +17,7 @@ import { useApiClasses, useCreateClass, useUpdateClass, useDeleteClass } from '.
 import { useApiStudents, useUpdateStudent } from '../../hooks/useApiStudents';
 import { useEnrollments, useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from '../../hooks/useEnrollments';
 import { useCreateCategory } from '../../hooks/useCategories';
-import { apiClassToLocal, joinStudentEnrollment, splitStudentPatch } from '../../services/apiAdapters';
+import { apiClassToLocal, joinStudentEnrollment, splitStudentPatch, syncStudentPhoto } from '../../services/apiAdapters';
 
 
 interface StudentRowProps {
@@ -132,6 +133,7 @@ const ClassManager: React.FC<{
     academicConfiguration: AcademicConfiguration;
 }> = ({ classes, setClasses, courses, academicConfiguration }) => {
     const isDesktop = isTauri();
+    const queryClient = useQueryClient();
     const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
     const yearId = currentYear.data?.id ?? '';
     const remoteClasses = useApiClasses(yearId, { enabled: !isDesktop && !!yearId });
@@ -210,6 +212,10 @@ const ClassManager: React.FC<{
         }
         if (enrollment?.enrollmentId && Object.keys(enrollmentPatch).length > 0) {
             await updateEnrollmentMutation.mutateAsync({ id: enrollment.enrollmentId, classId: activeClassId, data: enrollmentPatch });
+        }
+        if ('foto' in updatedStudent) {
+            await syncStudentPhoto(studentId, updatedStudent.foto);
+            queryClient.invalidateQueries({ queryKey: ['students'] });
         }
     };
 

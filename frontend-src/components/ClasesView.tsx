@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { isTauri } from '@tauri-apps/api/core';
 import type { ClassData, Course, AcademicConfiguration, View, EvaluationCriterion, SpecificCompetence, KeyCompetence, Student } from '../types';
 import { UserGroupIcon, ClockIcon, BookOpenIcon, ChevronDownIcon, CalendarDaysIcon, AcademicCapIcon } from './Icons';
@@ -16,7 +17,7 @@ import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
 import { useApiStudents, useUpdateStudent } from '../hooks/useApiStudents';
 import { useEnrollmentsForClasses, useUpdateEnrollment } from '../hooks/useEnrollments';
-import { apiClassToLocal, joinStudentEnrollment, splitStudentPatch } from '../services/apiAdapters';
+import { apiClassToLocal, joinStudentEnrollment, splitStudentPatch, syncStudentPhoto } from '../services/apiAdapters';
 
 interface ClasesViewProps {
     classes: ClassData[];
@@ -66,6 +67,7 @@ const StudentAvatar: React.FC<{ student: Student; bgColor: string; className?: s
 // alumnado...) sigue en Ajustes → Clases y Alumnado.
 const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfiguration, criteria, specificCompetences, keyCompetences, onUpdateClass, setActiveView, setActiveClassId }) => {
     const isDesktop = isTauri();
+    const queryClient = useQueryClient();
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [fichaTarget, setFichaTarget] = useState<{ student: Student; classData: ClassData } | null>(null);
     const [fichaEditTarget, setFichaEditTarget] = useState<{ student: Student; classData: ClassData } | null>(null);
@@ -128,6 +130,10 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
         }
         if (enrollment?.enrollmentId && Object.keys(enrollmentPatch).length > 0) {
             await updateEnrollmentMutation.mutateAsync({ id: enrollment.enrollmentId, classId: fichaEditTarget.classData.id, data: enrollmentPatch });
+        }
+        if ('foto' in data) {
+            await syncStudentPhoto(studentId, data.foto);
+            queryClient.invalidateQueries({ queryKey: ['students'] });
         }
         const updatedClass: ClassData = {
             ...fichaEditTarget.classData,

@@ -214,13 +214,24 @@ function useDatabase() {
     }, []);
 
     const importDatabase = useCallback(async (buffer: ArrayBuffer) => {
-        // Fase 6: la copia de seguridad (export/import de un fichero SQLite
-        // completo) todavía no tiene equivalente sobre las tablas
-        // relacionales en web — pendiente como trabajo de seguimiento, no
-        // bloqueaba el resto de esta fase. Escritorio sigue funcionando
-        // igual que siempre.
+        // Fase 6: en web ya no hay un fichero SQLite que importar — el
+        // "archivo" es JSON (un volcado de todas las tablas, ver
+        // services/backup.py), pero BackupManager.tsx sigue subiendo un
+        // ArrayBuffer sin más (mismo <input type="file">), así que aquí
+        // solo hace falta decodificarlo como texto en vez de como SQLite.
         if (!isTauri()) {
-            alert("Restaurar desde copia de seguridad (.db) no está disponible todavía en la versión web.");
+            setLoading(true);
+            try {
+                const dump = JSON.parse(new TextDecoder().decode(buffer));
+                await api.post('/backup/import', dump);
+                alert("Copia de seguridad restaurada con éxito. La aplicación se recargará.");
+                window.location.reload();
+            } catch (e) {
+                console.error(e);
+                alert(`Error al importar la copia de seguridad: ${e instanceof Error ? e.message : String(e)}`);
+            } finally {
+                setLoading(false);
+            }
             return;
         }
         setLoading(true);
@@ -262,10 +273,13 @@ function useDatabase() {
     // autoguardado más arriba), para poder restaurar sin depender de que
     // sigan existiendo en Postgres más adelante.
     const exportDatabase = useCallback(async (): Promise<Uint8Array | null> => {
-        // Ver comentario en importDatabase: mismo hueco pendiente en web.
+        // Ver comentario en importDatabase: en web el "archivo" es el JSON
+        // de /backup/export codificado como bytes UTF-8, no un SQLite —
+        // BackupManager.tsx solo sabe convertir lo que le llega en un Blob
+        // y descargarlo, no le importa qué haya dentro.
         if (!isTauri()) {
-            alert("Descargar copia de seguridad (.db) no está disponible todavía en la versión web.");
-            return null;
+            const dump = await api.get('/backup/export');
+            return new TextEncoder().encode(JSON.stringify(dump, null, 2));
         }
         if (!dbRef.current) return null;
         const db = dbRef.current;

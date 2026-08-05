@@ -27,6 +27,7 @@ from routers.journal_entries import router as journal_entries_router, item_route
 from routers.tasks import router as tasks_router, item_router as tasks_item_router
 from routers.meetings import router as meetings_router, item_router as meetings_item_router
 from routers.agenda_notes import router as agenda_notes_router, item_router as agenda_notes_item_router
+from routers.backup import router as backup_router
 
 from services.db import apply_migrations
 
@@ -102,3 +103,4 @@ app.include_router(meetings_router)
 app.include_router(meetings_item_router)
 app.include_router(agenda_notes_router)
 app.include_router(agenda_notes_item_router)
+app.include_router(backup_router)

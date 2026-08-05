@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import { ChevronDownIcon } from '../Icons';
 import { runHealthCheck, type HealthCheckIssue } from '../../services/healthCheck';
 import Card from '../Card';
@@ -54,14 +55,21 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
+    // En escritorio la copia es un fichero SQLite (.db); en web (Fase 6) es
+    // un volcado JSON de todas las tablas (services/backup.py) — mismo
+    // botón, mismo flujo de descarga/subida, distinto contenido por dentro.
+    const isDesktop = isTauri();
+    const backupExtension = isDesktop ? 'db' : 'json';
+    const backupMimeType = isDesktop ? 'application/x-sqlite3' : 'application/json';
+
     const handleExportClick = async () => {
         const data = await exportDatabase();
         if (data) {
-            const blob = new Blob([data], { type: 'application/x-sqlite3' });
+            const blob = new Blob([data], { type: backupMimeType });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `cuaderno_backup_${new Date().toISOString().split('T')[0]}.db`;
+            a.download = `cuaderno_backup_${new Date().toISOString().split('T')[0]}.${backupExtension}`;
             a.click();
         }
     };
@@ -72,15 +80,15 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card>
                     <h4 className="font-bold text-slate-800 mb-2">Exportar Copia de Seguridad</h4>
-                    <p className="text-sm text-slate-600 mb-4">Descarga un archivo .db con TODOS tus datos (clases, notas, configuración...).</p>
-                    <Button variant="primary" onClick={handleExportClick} className="w-full">Descargar Copia (.db)</Button>
+                    <p className="text-sm text-slate-600 mb-4">Descarga un archivo .{backupExtension} con TODOS tus datos (clases, notas, configuración...).</p>
+                    <Button variant="primary" onClick={handleExportClick} className="w-full">Descargar Copia (.{backupExtension})</Button>
                 </Card>
 
                 <Card>
                     <h4 className="font-bold text-slate-800 mb-2">Restaurar Copia</h4>
-                    <p className="text-sm text-slate-600 mb-4">Sube un archivo .db previamente exportado para restaurar tus datos.</p>
-                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".db,.sqlite" className="hidden" />
-                    <Button variant="success" onClick={handleImportClick} className="w-full">Subir Archivo (.db)</Button>
+                    <p className="text-sm text-slate-600 mb-4">Sube un archivo .{backupExtension} previamente exportado para restaurar tus datos.</p>
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept={isDesktop ? '.db,.sqlite' : '.json'} className="hidden" />
+                    <Button variant="success" onClick={handleImportClick} className="w-full">Subir Archivo (.{backupExtension})</Button>
                 </Card>
 
                 <Card>
