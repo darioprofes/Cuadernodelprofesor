@@ -63,6 +63,23 @@ fn parse_date(value: Option<&str>, field: &str) -> Result<NaiveDate, ApiError> {
     NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| ApiError::bad_request(format!("{field} no es una fecha válida")))
 }
 
+// Reparto habitual en Secundaria: 3 sesiones de 55 min + recreo + 3 sesiones
+// más, empezando a las 8:15 -- pedido explícito del usuario (2026-08-05), en
+// vez de las franjas que traía INITIAL_ACADEMIC_CONFIGURATION.periods en el
+// sistema del blob ya retirado (constants.ts). Igual que
+// default_evaluation_periods arriba: sembrado por curso académico, no una
+// sola vez en toda la vida de la app -- el profesor puede seguir editándolo
+// a mano desde Ajustes tras crear el curso.
+const DEFAULT_PERIODS: &[&str] = &[
+    "1ª Hora (8:15-9:10)",
+    "2ª Hora (9:10-10:05)",
+    "3ª Hora (10:05-11:00)",
+    "Recreo (11:00-11:30)",
+    "4ª Hora (11:30-12:25)",
+    "5ª Hora (12:25-13:20)",
+    "6ª Hora (13:20-14:15)",
+];
+
 pub fn create(conn: &Connection, body: Value) -> Result<Value, ApiError> {
     let label = body.get("label").and_then(Value::as_str)
         .ok_or_else(|| ApiError::bad_request("label es obligatorio"))?;
@@ -74,9 +91,14 @@ pub fn create(conn: &Connection, body: Value) -> Result<Value, ApiError> {
 
     let id = db::new_uuid();
     let now = db::now_iso();
+    // Desactivar el curso actual ANTES de insertar el nuevo como actual --
+    // el índice único parcial academic_years_one_current no tolera dos filas
+    // con is_current a la vez, ni siquiera transitoriamente.
+    conn.execute("UPDATE academic_years SET is_current = 0, updated_at = ? WHERE is_current = 1", params![now.clone()])?;
+    let periods = serde_json::to_string(&json!(DEFAULT_PERIODS)).map_err(ApiError::internal)?;
     conn.execute(
-        "INSERT INTO academic_years (id, label, start_date, end_date, created_at, updated_at) VALUES (?,?,?,?,?,?)",
-        params![id, label, start.to_string(), end.to_string(), now.clone(), now],
+        "INSERT INTO academic_years (id, label, start_date, end_date, is_current, periods, created_at, updated_at) VALUES (?,?,?,?,1,?,?,?)",
+        params![id, label, start.to_string(), end.to_string(), periods, now.clone(), now],
     )?;
 
     for (name, p_start, p_end) in default_evaluation_periods(start, end) {

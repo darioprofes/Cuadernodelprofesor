@@ -434,15 +434,24 @@ mod tests {
     fn academic_years_seed_default_periods_and_activate_is_exclusive() {
         let conn = db::test_connection();
 
+        // Crear un curso académico lo marca como actual de inmediato (no
+        // hace falta un segundo paso manual de "activar") y siembra tanto
+        // los 3 periodos de evaluación como las franjas horarias por defecto.
         let year1 = dispatch(&conn, "POST", "/academic-years", Some(json!({"label": "2025-2026", "startDate": "2025-09-01", "endDate": "2026-06-30"}))).unwrap();
         let year1_id = year1["id"].as_str().unwrap().to_string();
-        assert_eq!(year1["isCurrent"], false);
+        assert_eq!(year1["isCurrent"], true);
+        assert_eq!(year1["periods"].as_array().unwrap().len(), 7);
 
         let periods = dispatch(&conn, "GET", &format!("/academic-years/{year1_id}/evaluation-periods"), None).unwrap();
         assert_eq!(periods.as_array().unwrap().len(), 3);
 
+        // Crear un segundo curso desactiva el primero y se convierte él
+        // mismo en el actual.
         let year2 = dispatch(&conn, "POST", "/academic-years", Some(json!({"label": "2026-2027", "startDate": "2026-09-01", "endDate": "2027-06-30"}))).unwrap();
         let year2_id = year2["id"].as_str().unwrap().to_string();
+        assert_eq!(year2["isCurrent"], true);
+        let year1_after_creating_year2 = dispatch(&conn, "GET", &format!("/academic-years/{year1_id}"), None).unwrap();
+        assert_eq!(year1_after_creating_year2["isCurrent"], false);
 
         dispatch(&conn, "POST", &format!("/academic-years/{year1_id}/activate"), None).unwrap();
         dispatch(&conn, "POST", &format!("/academic-years/{year2_id}/activate"), None).unwrap();

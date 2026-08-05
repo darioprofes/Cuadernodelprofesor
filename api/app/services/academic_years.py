@@ -116,18 +116,42 @@ def _default_evaluation_periods(start_date: date, end_date: date) -> list[tuple[
     ]
 
 
+# Reparto habitual en Secundaria: 3 sesiones de 55 min + recreo + 3 sesiones
+# más, empezando a las 8:15 — pedido explícito del usuario (2026-08-05), en
+# vez de las franjas que traía INITIAL_ACADEMIC_CONFIGURATION.periods en el
+# sistema del blob ya retirado (constants.ts). Igual que
+# _default_evaluation_periods arriba: sembrado por curso académico, no una
+# sola vez en toda la vida de la app — el profesor puede seguir editándolo
+# a mano desde Ajustes tras crear el curso.
+_DEFAULT_PERIODS = [
+    "1ª Hora (8:15-9:10)",
+    "2ª Hora (9:10-10:05)",
+    "3ª Hora (10:05-11:00)",
+    "Recreo (11:00-11:30)",
+    "4ª Hora (11:30-12:25)",
+    "5ª Hora (12:25-13:20)",
+    "6ª Hora (13:20-14:15)",
+]
+
+
 def create_academic_year(data: AcademicYearInput) -> AcademicYear:
 
     with get_conn() as conn:
 
         with conn.cursor() as cur:
 
+            # Desactivar el curso actual ANTES de insertar el nuevo como
+            # actual: el índice único parcial academic_years_one_current no
+            # tolera dos filas con is_current a la vez, ni siquiera de forma
+            # transitoria dentro de la misma transacción.
+            cur.execute("UPDATE academic_years SET is_current = false, updated_at = now() WHERE is_current = true")
+
             cur.execute(
                 f"""
-                INSERT INTO academic_years (label, start_date, end_date)
-                VALUES (%s, %s, %s) RETURNING {_YEAR_COLUMNS}
+                INSERT INTO academic_years (label, start_date, end_date, is_current, periods)
+                VALUES (%s, %s, %s, true, %s) RETURNING {_YEAR_COLUMNS}
                 """,
-                [data.label, data.start_date, data.end_date]
+                [data.label, data.start_date, data.end_date, Json(_DEFAULT_PERIODS)]
             )
 
             year = AcademicYear.model_validate(cur.fetchone())
