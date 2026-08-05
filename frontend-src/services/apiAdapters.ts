@@ -19,6 +19,15 @@ import type {
     GradeInput as ApiGradeInput,
 } from '../types/api';
 import { calculateToolGlobalScore, calculateCriterionScoresFromTool } from './gradeCalculations';
+import { isTauri, invoke } from '@tauri-apps/api/core';
+
+// Fase 7 bloque 7: en escritorio las fotos se sirven vía el protocolo
+// custom studentphoto:// (ver src-tauri/src/lib.rs), no por /api/photos/.
+// WebView2 (Windows, única plataforma de distribución de esta app) exige
+// la forma http://{scheme}.localhost/... para que un protocolo custom
+// funcione como src de un <img> — mismo criterio que usa el propio
+// convertFileSrc de Tauri para su protocolo "asset" nativo.
+const studentPhotoUrl = (studentId: string): string => `http://studentphoto.localhost/${studentId}`;
 
 // classes (Postgres) todavía no tiene alumnado/categorías/tareas/notas
 // embebidos (bloques 5/6) — se rellenan vacíos aquí; cada consumidor los
@@ -53,7 +62,7 @@ export const joinStudentEnrollment = (student: ApiStudent, enrollment: ApiEnroll
     nombre: student.nombre,
     primerApellido: student.primerApellido,
     segundoApellido: student.segundoApellido,
-    foto: student.fotoContentType ? `/api/photos/${student.id}` : undefined,
+    foto: student.fotoContentType ? (isTauri() ? studentPhotoUrl(student.id) : `/api/photos/${student.id}`) : undefined,
     acneae: enrollment.acneae,
     fechaNacimiento: student.fechaNacimiento,
     dni: student.dni,
@@ -84,13 +93,25 @@ export const joinStudentEnrollment = (student: ApiStudent, enrollment: ApiEnroll
     planoColor: enrollment.planoColor as Student['planoColor'],
 });
 
-// La foto viaja aparte de studentPatch/enrollmentPatch (PUT/DELETE
-// /photos/{id}, bytes crudos, no JSON) — ver splitStudentPatch justo
+// La foto viaja aparte de studentPatch/enrollmentPatch (bytes crudos, no
+// JSON: PUT/DELETE /photos/{id} en web, comandos set_student_photo/
+// delete_student_photo en escritorio) — ver splitStudentPatch justo
 // debajo, que por eso la excluye del patch normal. Si `foto` ya es una URL
-// propia (empieza por "/api/photos/", puesta ahí por joinStudentEnrollment)
-// es que no ha cambiado desde que se cargó la ficha: no hace falta volver a
-// subir los mismos bytes en cada guardado de un campo cualquiera.
+// propia (puesta ahí por joinStudentEnrollment) es que no ha cambiado
+// desde que se cargó la ficha: no hace falta volver a subir los mismos
+// bytes en cada guardado de un campo cualquiera.
 export const syncStudentPhoto = async (studentId: string, foto: string | undefined): Promise<void> => {
+    if (isTauri()) {
+        if (foto === undefined) {
+            await invoke('delete_student_photo', { studentId });
+            return;
+        }
+        if (foto.startsWith('http://studentphoto.localhost/')) return;
+        const blob = await (await fetch(foto)).blob();
+        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+        await invoke('set_student_photo', { studentId, bytes, contentType: blob.type || 'application/octet-stream' });
+        return;
+    }
     if (foto === undefined) {
         await fetch(`/api/photos/${studentId}`, { method: 'DELETE' });
         return;
