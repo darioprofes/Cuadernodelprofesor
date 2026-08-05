@@ -15,9 +15,12 @@ import { apiClassToLocal } from '../../services/apiAdapters';
 
 // La importación de horario en PDF depende del backend Python (pdfplumber,
 // ver api/app/services/horario_pdf.py) — no existe en la versión de
-// escritorio, que no tiene servidor. El horario se sigue pudiendo editar a
-// mano en la rejilla de abajo.
-const IS_DESKTOP = isTauri();
+// escritorio, que no tiene servidor, y eso NO cambia con la Fase 7 (no hay
+// equivalente en Rust). El horario se sigue pudiendo editar a mano en la
+// rejilla de abajo. A diferencia de esto, las clases/franjas en sí ya
+// tienen comando Rust real (bloque 4), así que esta es la ÚNICA rama
+// isDesktop que queda en este fichero.
+const PDF_IMPORT_AVAILABLE = !isTauri();
 
 interface ScheduleSlotInfo {
     classId: string;
@@ -81,52 +84,25 @@ const ScheduleSlotModal: React.FC<{
 };
 
 const ScheduleManager: React.FC<{
-    classes: ClassData[];
-    setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
     courses: Course[];
     academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
-}> = ({ classes, setClasses, courses, academicConfiguration, setAcademicConfiguration }) => {
+}> = ({ courses, academicConfiguration, setAcademicConfiguration }) => {
     const daysOfWeek = [{label: 'Lunes', value: 1}, {label: 'Martes', value: 2}, {label: 'Miércoles', value: 3}, {label: 'Jueves', value: 4}, {label: 'Viernes', value: 5}];
     const periods = academicConfiguration.periods || [];
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [editingSlot, setEditingSlot] = useState<{ day: number; periodIndex: number } | null>(null);
 
-    const currentYear = useCurrentAcademicYear({ enabled: !IS_DESKTOP });
+    const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
-    const remoteClasses = useApiClasses(yearId, { enabled: !IS_DESKTOP && !!yearId });
+    const remoteClasses = useApiClasses(yearId, { enabled: !!yearId });
     const updateClassMutation = useUpdateClass();
 
-    const effectiveClasses: ClassData[] = useMemo(() => {
-        if (IS_DESKTOP) return classes;
-        return (remoteClasses.data ?? []).map(apiClassToLocal);
-    }, [classes, remoteClasses.data]);
+    const effectiveClasses: ClassData[] = useMemo(() => (
+        (remoteClasses.data ?? []).map(apiClassToLocal)
+    ), [remoteClasses.data]);
 
     const handleSaveSlot = async (day: number, periodIndex: number, newClassId: string, aula: string, nota: string) => {
-        if (IS_DESKTOP) {
-            setClasses(prevClasses => {
-                return prevClasses.map(c => {
-                    const oldSchedule = c.schedule || [];
-                    const hasSlot = oldSchedule.some(slot => slot.day === day && slot.periodIndex === periodIndex);
-
-                    if (c.id === newClassId) {
-                        const newSlot: { day: number; periodIndex: number; aula?: string; nota?: string } = { day, periodIndex };
-                        if (aula.trim()) newSlot.aula = aula.trim();
-                        if (nota.trim()) newSlot.nota = nota.trim();
-                        const withoutSlot = oldSchedule.filter(slot => !(slot.day === day && slot.periodIndex === periodIndex));
-                        return { ...c, schedule: [...withoutSlot, newSlot] };
-                    }
-
-                    if (hasSlot) {
-                        return { ...c, schedule: oldSchedule.filter(slot => !(slot.day === day && slot.periodIndex === periodIndex)) };
-                    }
-
-                    return c;
-                });
-            });
-            return;
-        }
-
         const oldHolder = effectiveClasses.find(c => (c.schedule || []).some(slot => slot.day === day && slot.periodIndex === periodIndex));
         if (oldHolder && oldHolder.id !== newClassId) {
             const newSchedule = (oldHolder.schedule || []).filter(slot => !(slot.day === day && slot.periodIndex === periodIndex));
@@ -158,7 +134,7 @@ const ScheduleManager: React.FC<{
         <div>
             <div className="flex items-start justify-between gap-4 mb-2">
                 <h3 className="text-xl font-bold text-slate-800">Horario Semanal de Clases</h3>
-                {!IS_DESKTOP && (
+                {PDF_IMPORT_AVAILABLE && (
                     <button
                         onClick={() => setIsImportModalOpen(true)}
                         className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm"
@@ -169,9 +145,9 @@ const ScheduleManager: React.FC<{
             </div>
             <p className="text-sm text-slate-600 mb-4">
                 Asigna cada clase a su franja horaria correspondiente. Pulsa una celda para elegir clase, aula y una nota libre (p.ej. "Laboratorio").
-                {IS_DESKTOP && ' La importación desde PDF oficial no está disponible en la versión de escritorio.'}
+                {!PDF_IMPORT_AVAILABLE && ' La importación desde PDF oficial no está disponible en la versión de escritorio.'}
             </p>
-            {!IS_DESKTOP && (
+            {PDF_IMPORT_AVAILABLE && (
                 <ImportScheduleModal
                     isOpen={isImportModalOpen}
                     onClose={() => setIsImportModalOpen(false)}

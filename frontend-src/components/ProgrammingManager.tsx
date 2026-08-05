@@ -1,6 +1,5 @@
 
 import React, { useState, useMemo } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
 import type { ProgrammingUnit, Course, SessionDetail, EvaluationCriterion, BasicKnowledge, ClassData, AcademicConfiguration } from '../types';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon } from './Icons';
 import Modal from './Modal';
@@ -17,16 +16,6 @@ interface ProgrammingManagerProps {
     // dentro de este componente — ver CurriculumManager.tsx, mismo cambio.
     courseId: string;
     courses: Course[];
-    // units/setUnits: fallback de escritorio (blob) — en web el componente
-    // usa internamente useProgrammingUnits, igual que CurriculumManager hace
-    // con specificCompetences/evaluationCriteria/basicKnowledge (Fase 5
-    // fusionada, bloque 3), porque la consulta depende de selectedCourseId.
-    units: ProgrammingUnit[];
-    setUnits: (updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => void;
-    // criteria/basicKnowledge: mismo motivo, fallback de escritorio; en web
-    // se piden con useEvaluationCriteria/useBasicKnowledge por curso.
-    criteria: EvaluationCriterion[];
-    basicKnowledge: BasicKnowledge[];
     classes: ClassData[];
     academicConfiguration: AcademicConfiguration;
 }
@@ -45,31 +34,29 @@ const addDays = (date: Date, days: number): Date => {
 };
 
 
-const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, units, setUnits, criteria, basicKnowledge, classes, academicConfiguration }) => {
-    const isDesktop = isTauri();
+const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, classes, academicConfiguration }) => {
     const selectedCourseId = courseId;
     const [unitEditorState, setUnitEditorState] = useState<{ mode: 'create' } | { mode: 'edit', unit: ProgrammingUnit } | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
 
-    const remoteUnits = useProgrammingUnits(selectedCourseId, { enabled: !isDesktop });
+    const remoteUnits = useProgrammingUnits(selectedCourseId);
     const createUnitMutation = useCreateProgrammingUnit();
     const updateUnitMutation = useUpdateProgrammingUnit();
     const deleteUnitMutation = useDeleteProgrammingUnit();
-    const remoteCriteria = useEvaluationCriteria(selectedCourseId, { enabled: !isDesktop });
-    const remoteBasicKnowledge = useBasicKnowledge(selectedCourseId, { enabled: !isDesktop });
+    const remoteCriteria = useEvaluationCriteria(selectedCourseId);
+    const remoteBasicKnowledge = useBasicKnowledge(selectedCourseId);
 
     const selectedCourse = useMemo(() => courses.find(c => c.id === selectedCourseId), [courses, selectedCourseId]);
 
-    const filteredUnits = useMemo(() => {
-        if (isDesktop) return units.filter(u => u.courseId === selectedCourseId);
-        return (remoteUnits.data ?? []) as unknown as ProgrammingUnit[];
-    }, [isDesktop, units, remoteUnits.data, selectedCourseId]);
-    const filteredCriteria = useMemo(() => {
-        return isDesktop ? criteria.filter(c => c.courseId === selectedCourseId) : (remoteCriteria.data ?? []);
-    }, [isDesktop, criteria, remoteCriteria.data, selectedCourseId]);
-    const filteredBasicKnowledge = useMemo(() => {
-        return isDesktop ? basicKnowledge.filter(sb => sb.courseId === selectedCourseId) : (remoteBasicKnowledge.data ?? []);
-    }, [isDesktop, basicKnowledge, remoteBasicKnowledge.data, selectedCourseId]);
+    const filteredUnits = useMemo(() => (
+        (remoteUnits.data ?? []) as unknown as ProgrammingUnit[]
+    ), [remoteUnits.data]);
+    const filteredCriteria = useMemo(() => (
+        (remoteCriteria.data ?? []) as unknown as EvaluationCriterion[]
+    ), [remoteCriteria.data]);
+    const filteredBasicKnowledge = useMemo(() => (
+        (remoteBasicKnowledge.data ?? []) as unknown as BasicKnowledge[]
+    ), [remoteBasicKnowledge.data]);
 
     const unitDateRanges = useMemo(() => {
         const ranges = new Map<string, { start?: Date, end?: Date }>();
@@ -170,21 +157,6 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
 
 
     const handleSave = (unit: ProgrammingUnit) => {
-        if (isDesktop) {
-            if (unitEditorState?.mode === 'edit') {
-                setUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
-            } else { // create
-                const newUnit: ProgrammingUnit = {
-                    ...unit,
-                    id: `pu-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-                    courseId: selectedCourseId,
-                };
-                setUnits(prev => [...prev, newUnit]);
-            }
-            setUnitEditorState(null);
-            return;
-        }
-
         const data = {
             name: unit.name,
             sessions: unit.sessions,
@@ -202,10 +174,6 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
 
     const handleDelete = (unitId: string) => {
         if (!window.confirm("¿Seguro que quieres eliminar esta unidad de programación?")) return;
-        if (isDesktop) {
-            setUnits(prev => prev.filter(u => u.id !== unitId));
-            return;
-        }
         deleteUnitMutation.mutate({ id: unitId, courseId: selectedCourseId });
     };
 
@@ -311,22 +279,18 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
             }
 
             if (newUnits.length > 0) {
-                if (isDesktop) {
-                    setUnits(prev => [...prev, ...newUnits]);
-                } else {
-                    for (const u of newUnits) {
-                        await createUnitMutation.mutateAsync({
-                            courseId: selectedCourseId,
-                            data: {
-                                name: u.name,
-                                sessions: u.sessions,
-                                startDate: u.startDate,
-                                sessionDetails: u.sessionDetails,
-                                linkedCriteriaIds: u.linkedCriteriaIds,
-                                linkedBasicKnowledgeIds: u.linkedBasicKnowledgeIds,
-                            },
-                        });
-                    }
+                for (const u of newUnits) {
+                    await createUnitMutation.mutateAsync({
+                        courseId: selectedCourseId,
+                        data: {
+                            name: u.name,
+                            sessions: u.sessions,
+                            startDate: u.startDate,
+                            sessionDetails: u.sessionDetails,
+                            linkedCriteriaIds: u.linkedCriteriaIds,
+                            linkedBasicKnowledgeIds: u.linkedBasicKnowledgeIds,
+                        },
+                    });
                 }
                 alert(`Se han importado ${newUnits.length} unidades correctamente al curso seleccionado.`);
                 setShowImportHelp(false);

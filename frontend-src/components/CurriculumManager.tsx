@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
 import type { Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, BasicKnowledge } from '../types';
 import { api } from '../services/api';
 import {
@@ -87,29 +86,16 @@ interface CurriculumManagerProps {
     onCreateDescriptor: (keyCompetenceId: string, data: { code: string; description: string; stage?: 'eso' | 'bachillerato' }) => Promise<OperationalDescriptor>;
     onUpdateDescriptor: (id: string, data: Partial<{ code: string; description: string; stage: 'eso' | 'bachillerato' }>) => Promise<void>;
     onDeleteDescriptor: (id: string) => Promise<void>;
-    specificCompetences: SpecificCompetence[];
-    setSpecificCompetences: (updater: React.SetStateAction<SpecificCompetence[]>) => void;
-    evaluationCriteria: EvaluationCriterion[];
-    setEvaluationCriteria: (updater: React.SetStateAction<EvaluationCriterion[]>) => void;
-    basicKnowledge: BasicKnowledge[];
-    setBasicKnowledge: (updater: React.SetStateAction<BasicKnowledge[]>) => void;
 }
 
 // Recibe {...props} desde SettingsModal (todas las props de Ajustes), pero
 // solo usa este subconjunto — de ahí que el tipo no sea "SettingsModalProps"
 // completo, sino justo lo que se destructura aquí abajo.
-//
-// keyCompetences/operational_descriptors ya vienen del backend granular
-// nuevo (ver plan, "Fase 5 fusionada", bloque 3) — de ahí que sus
-// operaciones sean async (onCreate.../onUpdate...) en vez del patrón
-// setX(prev => ...) que todavía usan specificCompetences/evaluationCriteria/
-// basicKnowledge (pendientes de migrar, siguen en el blob).
 const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     const {
         courseId, courses, onUpdateCourse, keyCompetences,
         onCreateKeyCompetence, onUpdateKeyCompetence, onDeleteKeyCompetence,
         onCreateDescriptor, onUpdateDescriptor, onDeleteDescriptor,
-        specificCompetences, setSpecificCompetences, evaluationCriteria, setEvaluationCriteria, basicKnowledge, setBasicKnowledge,
     } = props;
     const selectedCourseId = courseId;
     // Elemento recién creado (criterio, competencia específica/clave o
@@ -118,36 +104,21 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     // la vez, es suficiente para el flujo de "añadir uno y rellenarlo".
     const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
 
-    // specificCompetences/evaluationCriteria/basicKnowledge: a diferencia de
-    // keyCompetences (global), estas son por-curso en el backend nuevo — la
-    // consulta necesita selectedCourseId, así que a diferencia del resto de
-    // entidades ya migradas (donde App.tsx resuelve la plataforma de forma
-    // centralizada), aquí el propio componente decide blob vs. API. Las
-    // props specificCompetences/setSpecificCompetences etc. (sin cambios,
-    // ver interfaz arriba) solo se usan en escritorio.
-    const isDesktop = isTauri();
-    const remoteSpecificCompetences = useSpecificCompetences(selectedCourseId, { enabled: !isDesktop });
+    const remoteSpecificCompetences = useSpecificCompetences(selectedCourseId);
     const createCompetence = useCreateSpecificCompetence();
     const updateCompetenceMutation = useUpdateSpecificCompetence();
     const deleteCompetenceMutation = useDeleteSpecificCompetence();
     const linkDescriptorMutation = useLinkDescriptor();
-    const remoteEvaluationCriteria = useEvaluationCriteria(selectedCourseId, { enabled: !isDesktop });
+    const remoteEvaluationCriteria = useEvaluationCriteria(selectedCourseId);
     const createCriterionMutation = useCreateCriterion();
     const updateCriterionMutation = useUpdateCriterion();
     const deleteCriterionMutation = useDeleteCriterion();
-    const remoteBasicKnowledge = useBasicKnowledge(selectedCourseId, { enabled: !isDesktop });
+    const remoteBasicKnowledge = useBasicKnowledge(selectedCourseId);
     const createBasicKnowledgeMutation = useCreateBasicKnowledge();
     const updateBasicKnowledgeMutation = useUpdateBasicKnowledge();
     const deleteBasicKnowledgeMutation = useDeleteBasicKnowledge();
 
     const handleAddCriterion = async (competenceId: string) => {
-        if (isDesktop) {
-            const newId = `ec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-            const newCriterion: EvaluationCriterion = { id: newId, code: '', description: '', competenceId, courseId: selectedCourseId };
-            setEvaluationCriteria((prev: EvaluationCriterion[]) => [...prev, newCriterion]);
-            setNewlyAddedId(newId);
-            return;
-        }
         const created = await createCriterionMutation.mutateAsync({ courseId: selectedCourseId, data: { competenceId, code: '', description: '' } });
         setNewlyAddedId(created.id);
     };
@@ -160,20 +131,12 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         switch (type) {
             case 'ec': {
                 const criterion = item as EvaluationCriterion;
-                if (isDesktop) {
-                    setEvaluationCriteria(prev => prev.map(i => i.id === criterion.id ? criterion : i));
-                } else {
-                    updateCriterionMutation.mutate({ id: criterion.id, courseId: selectedCourseId, data: { code: criterion.code, description: criterion.description, weight: criterion.weight, excludeFromWeighting: criterion.excludeFromWeighting } });
-                }
+                updateCriterionMutation.mutate({ id: criterion.id, courseId: selectedCourseId, data: { code: criterion.code, description: criterion.description, weight: criterion.weight, excludeFromWeighting: criterion.excludeFromWeighting } });
                 break;
             }
             case 'sc': {
                 const competence = item as SpecificCompetence;
-                if (isDesktop) {
-                    setSpecificCompetences(prev => prev.map(i => i.id === competence.id ? competence : i));
-                } else {
-                    updateCompetenceMutation.mutate({ id: competence.id, courseId: selectedCourseId, data: { code: competence.code, description: competence.description } });
-                }
+                updateCompetenceMutation.mutate({ id: competence.id, courseId: selectedCourseId, data: { code: competence.code, description: competence.description } });
                 break;
             }
             case 'kc': {
@@ -183,11 +146,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
             }
             case 'sb': {
                 const basic = item as BasicKnowledge;
-                if (isDesktop) {
-                    setBasicKnowledge(prev => prev.map(i => i.id === basic.id ? basic : i));
-                } else {
-                    updateBasicKnowledgeMutation.mutate({ id: basic.id, courseId: selectedCourseId, data: { code: basic.code, description: basic.description } });
-                }
+                updateBasicKnowledgeMutation.mutate({ id: basic.id, courseId: selectedCourseId, data: { code: basic.code, description: basic.description } });
                 break;
             }
             case 'od': {
@@ -205,26 +164,18 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
 
         switch (type) {
             case 'ec':
-                if (isDesktop) {
-                    setEvaluationCriteria((prev: EvaluationCriterion[]) => prev.filter(c => c.id !== id));
-                } else {
-                    deleteCriterionMutation.mutate({ id, courseId: selectedCourseId });
-                }
+                deleteCriterionMutation.mutate({ id, courseId: selectedCourseId });
                 break;
             case 'sc': {
-                const currentCriteria = isDesktop ? evaluationCriteria : (remoteEvaluationCriteria.data ?? []);
+                const currentCriteria = remoteEvaluationCriteria.data ?? [];
                 const isDependency = currentCriteria.some((ec: EvaluationCriterion) => ec.competenceId === id);
                 if (isDependency) {
                     alert("No se puede eliminar esta competencia específica porque hay criterios de evaluación que dependen de ella.");
                     return;
                 }
-                if (isDesktop) {
-                    setSpecificCompetences((prev: SpecificCompetence[]) => prev.filter(c => c.id !== id));
-                } else {
-                    deleteCompetenceMutation.mutate({ id, courseId: selectedCourseId }, {
-                        onError: () => alert("No se puede eliminar esta competencia específica porque hay criterios de evaluación que dependen de ella."),
-                    });
-                }
+                deleteCompetenceMutation.mutate({ id, courseId: selectedCourseId }, {
+                    onError: () => alert("No se puede eliminar esta competencia específica porque hay criterios de evaluación que dependen de ella."),
+                });
                 break;
             }
             case 'kc':
@@ -232,11 +183,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                 alert("La eliminación de Competencias Clave y Descriptores no está permitida para mantener la integridad del currículo base.");
                 break;
             case 'sb':
-                if (isDesktop) {
-                    setBasicKnowledge((prev: BasicKnowledge[]) => prev.filter(sb => sb.id !== id));
-                } else {
-                    deleteBasicKnowledgeMutation.mutate({ id, courseId: selectedCourseId });
-                }
+                deleteBasicKnowledgeMutation.mutate({ id, courseId: selectedCourseId });
                 break;
         }
     };
@@ -252,13 +199,6 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     };
 
     const handleAddSpecificCompetence = async () => {
-        if (isDesktop) {
-            const newId = `sc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-            const newSc: SpecificCompetence = { id: newId, code: '', description: '', keyCompetenceDescriptorIds: [], courseId: selectedCourseId };
-            setSpecificCompetences((prev: SpecificCompetence[]) => [...prev, newSc]);
-            setNewlyAddedId(newId);
-            return;
-        }
         const created = await createCompetence.mutateAsync({ courseId: selectedCourseId, data: { code: '', description: '' } });
         setNewlyAddedId(created.id);
     };
@@ -642,48 +582,8 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         // Augment IDs in the new data to make them stage-specific
         const augmentedODs = newODs.map(od => ({ ...od, id: augmentId(od.id, suffix) }));
 
-        if (isDesktop) {
-            setEvaluationCriteria((prevCriteria: EvaluationCriterion[]) => {
-                const criteriaFromOtherCourses = prevCriteria.filter(c => c.courseId !== courseId);
-                return [...criteriaFromOtherCourses, ...newECs].sort((a, b) => compararCodigo(a.code, b.code));
-            });
-
-            setBasicKnowledge((prevSBs: BasicKnowledge[]) => {
-                const sbsFromOtherCourses = prevSBs.filter(sb => sb.courseId !== courseId);
-                return [...sbsFromOtherCourses, ...newSBs].sort((a, b) => compararCodigo(a.code, b.code));
-            });
-
-            const odIdReplacementMap = await syncKeyCompetencesFromImport(newKCs, augmentedODs, stageValue);
-
-            // SPECIFIC COMPETENCES MERGING (WITH LINK RESOLUTION)
-            setSpecificCompetences((prev: SpecificCompetence[]) => {
-                const scsFromOtherCourses = prev.filter(sc => sc.courseId !== courseId);
-
-                const resolvedSCs = newSCs.map(sc => {
-                    // 1. Augment IDs first (add suffix)
-                    const rawDescriptorIds = sc.keyCompetenceDescriptorIds.map(id => augmentId(id, suffix));
-
-                    // 2. Resolve IDs using the replacement map generated during Descriptor merging
-                    const resolvedDescriptorIds = rawDescriptorIds.map(id => {
-                        if (odIdReplacementMap.has(id)) {
-                            return odIdReplacementMap.get(id)!;
-                        }
-                        return id;
-                    });
-
-                    // Remove duplicates in links just in case
-                    return {
-                        ...sc,
-                        keyCompetenceDescriptorIds: Array.from(new Set(resolvedDescriptorIds))
-                    };
-                });
-
-                return [...scsFromOtherCourses, ...resolvedSCs].sort((a, b) => compararCodigo(a.code, b.code));
-            });
-        } else {
-            const odIdReplacementMap = await syncKeyCompetencesFromImport(newKCs, augmentedODs, stageValue);
-            await syncCourseContentFromImport(courseId, newSCs, newECs, newSBs, odIdReplacementMap, suffix);
-        }
+        const odIdReplacementMap = await syncKeyCompetencesFromImport(newKCs, augmentedODs, stageValue);
+        await syncCourseContentFromImport(courseId, newSCs, newECs, newSBs, odIdReplacementMap, suffix);
 
         const courseName = `${course.level} - ${course.subject}`;
         alert(`Currículo para '${courseName}' (${stage.toUpperCase()}) importado con éxito.\n\nSe ha aplicado una fusión inteligente de Descriptores Operativos para evitar duplicados entre cursos.`);
@@ -719,28 +619,20 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
             `¿Estás absolutamente seguro de que quieres continuar?`;
 
         if (window.confirm(confirmationMessage)) {
-            const courseIdsSet = new Set(courseIdsForStage);
-
-            if (isDesktop) {
-                setEvaluationCriteria((prev: EvaluationCriterion[]) => prev.filter(item => !courseIdsSet.has(item.courseId)));
-                setSpecificCompetences((prev: SpecificCompetence[]) => prev.filter(item => !courseIdsSet.has(item.courseId)));
-                setBasicKnowledge((prev: BasicKnowledge[]) => prev.filter(item => !courseIdsSet.has(item.courseId)));
-            } else {
-                // Cruza TODOS los cursos de la etapa, no solo el seleccionado —
-                // las queries de react-query solo cubren el curso activo, así
-                // que aquí se usa `api` directamente por curso, uno a uno.
-                // Mismo orden que syncCourseContentFromImport: criterios antes
-                // que competencias (RESTRICT), el resto sin dependencias.
-                for (const courseId of courseIdsForStage) {
-                    const [criteriaForCourse, competencesForCourse, basicKnowledgeForCourse] = await Promise.all([
-                        api.get<EvaluationCriterion[]>(`/courses/${courseId}/criteria`),
-                        api.get<SpecificCompetence[]>(`/courses/${courseId}/competences`),
-                        api.get<BasicKnowledge[]>(`/courses/${courseId}/basic-knowledge`),
-                    ]);
-                    for (const c of criteriaForCourse) await deleteCriterionMutation.mutateAsync({ id: c.id, courseId });
-                    for (const sc of competencesForCourse) await deleteCompetenceMutation.mutateAsync({ id: sc.id, courseId });
-                    for (const sb of basicKnowledgeForCourse) await deleteBasicKnowledgeMutation.mutateAsync({ id: sb.id, courseId });
-                }
+            // Cruza TODOS los cursos de la etapa, no solo el seleccionado —
+            // las queries de react-query solo cubren el curso activo, así
+            // que aquí se usa `api` directamente por curso, uno a uno.
+            // Mismo orden que syncCourseContentFromImport: criterios antes
+            // que competencias (RESTRICT), el resto sin dependencias.
+            for (const courseId of courseIdsForStage) {
+                const [criteriaForCourse, competencesForCourse, basicKnowledgeForCourse] = await Promise.all([
+                    api.get<EvaluationCriterion[]>(`/courses/${courseId}/criteria`),
+                    api.get<SpecificCompetence[]>(`/courses/${courseId}/competences`),
+                    api.get<BasicKnowledge[]>(`/courses/${courseId}/basic-knowledge`),
+                ]);
+                for (const c of criteriaForCourse) await deleteCriterionMutation.mutateAsync({ id: c.id, courseId });
+                for (const sc of competencesForCourse) await deleteCompetenceMutation.mutateAsync({ id: sc.id, courseId });
+                for (const sb of basicKnowledgeForCourse) await deleteBasicKnowledgeMutation.mutateAsync({ id: sb.id, courseId });
             }
 
             // Borra primero los descriptores de la etapa, luego la propia
@@ -763,17 +655,14 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
 
     const courseName = courses.find((c: Course) => c.id === selectedCourseId)?.subject || '...';
     const filteredCriteria = useMemo(() => {
-        const source = isDesktop ? evaluationCriteria.filter((ec: EvaluationCriterion) => ec.courseId === selectedCourseId) : (remoteEvaluationCriteria.data ?? []);
-        return [...source].sort((a, b) => compararCodigo(a.code, b.code));
-    }, [isDesktop, evaluationCriteria, remoteEvaluationCriteria.data, selectedCourseId]);
+        return [...(remoteEvaluationCriteria.data ?? [])].sort((a, b) => compararCodigo(a.code, b.code));
+    }, [remoteEvaluationCriteria.data]);
     const filteredCompetences = useMemo(() => {
-        const source = isDesktop ? specificCompetences.filter((sc: SpecificCompetence) => sc.courseId === selectedCourseId) : (remoteSpecificCompetences.data ?? []);
-        return [...source].sort((a, b) => compararCodigo(a.code, b.code));
-    }, [isDesktop, specificCompetences, remoteSpecificCompetences.data, selectedCourseId]);
+        return [...(remoteSpecificCompetences.data ?? [])].sort((a, b) => compararCodigo(a.code, b.code));
+    }, [remoteSpecificCompetences.data]);
     const filteredBasicKnowledge = useMemo(() => {
-        const source = isDesktop ? basicKnowledge.filter((sb: BasicKnowledge) => sb.courseId === selectedCourseId) : (remoteBasicKnowledge.data ?? []);
-        return [...source].sort((a, b) => compararCodigo(a.code, b.code));
-    }, [isDesktop, basicKnowledge, remoteBasicKnowledge.data, selectedCourseId]);
+        return [...(remoteBasicKnowledge.data ?? [])].sort((a, b) => compararCodigo(a.code, b.code));
+    }, [remoteBasicKnowledge.data]);
 
     // Agrupa los criterios por competencia específica (los que no encajen en
     // ninguna, p.ej. por currículos importados con datos inconsistentes, van
@@ -912,15 +801,9 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                             weighted.forEach((c: EvaluationCriterion, i: number) => weightMap.set(c.id, weightedRounded[i]));
                             unweighted.forEach((c: EvaluationCriterion, i: number) => weightMap.set(c.id, unweightedWeights[i]));
 
-                            if (isDesktop) {
-                                setEvaluationCriteria((prev: EvaluationCriterion[]) => prev.map((c: EvaluationCriterion) =>
-                                    weightMap.has(c.id) ? { ...c, weight: weightMap.get(c.id) } : c
-                                ));
-                            } else {
-                                weightMap.forEach((weight, id) => {
-                                    updateCriterionMutation.mutate({ id, courseId: selectedCourseId, data: { weight } });
-                                });
-                            }
+                            weightMap.forEach((weight, id) => {
+                                updateCriterionMutation.mutate({ id, courseId: selectedCourseId, data: { weight } });
+                            });
                         };
 
                         return (

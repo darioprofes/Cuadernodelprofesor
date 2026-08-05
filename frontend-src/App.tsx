@@ -409,7 +409,7 @@ const App = () => {
     const createEvaluationTool = useCreateEvaluationTool();
     const updateEvaluationTool = useUpdateEvaluationTool();
     const deleteEvaluationTool = useDeleteEvaluationTool();
-    const remoteKeyCompetences = useKeyCompetences({ enabled: !isDesktop });
+    const remoteKeyCompetences = useKeyCompetences();
     const createKeyCompetence = useCreateKeyCompetence();
     const updateKeyCompetence = useUpdateKeyCompetence();
     const deleteKeyCompetence = useDeleteKeyCompetence();
@@ -422,7 +422,7 @@ const App = () => {
     // curso del blob viejo que usan ClassManager/CourseManager/GradebookTable
     // etc. hasta que classes migre (bloque 4) — dos listas de cursos
     // conviven a propósito durante la transición, ver plan.
-    const remoteCourses = useCourses({ enabled: !isDesktop });
+    const remoteCourses = useCourses();
     const updateCourseMutation = useUpdateCourse();
     // Currículo/planificación de TODAS las materias a la vez (bloque 7):
     // varios consumidores (ExportModal, BackupManager, EvaluationToolManager,
@@ -431,10 +431,10 @@ const App = () => {
     // activeCourseId como effectiveCriteria/effectiveCompetences — antes
     // recibían la lista congelada del blob por error (bug real, ver bloque 7).
     const remoteCourseIds = useMemo(() => (remoteCourses.data ?? []).map(c => c.id), [remoteCourses.data]);
-    const allCriteriaQueries = useEvaluationCriteriaForCourses(remoteCourseIds, { enabled: !isDesktop });
-    const allCompetencesQueries = useSpecificCompetencesForCourses(remoteCourseIds, { enabled: !isDesktop });
-    const allBasicKnowledgeQueries = useBasicKnowledgeForCourses(remoteCourseIds, { enabled: !isDesktop });
-    const allProgrammingUnitsQueries = useProgrammingUnitsForCourses(remoteCourseIds, { enabled: !isDesktop });
+    const allCriteriaQueries = useEvaluationCriteriaForCourses(remoteCourseIds);
+    const allCompetencesQueries = useSpecificCompetencesForCourses(remoteCourseIds);
+    const allBasicKnowledgeQueries = useBasicKnowledgeForCourses(remoteCourseIds);
+    const allProgrammingUnitsQueries = useProgrammingUnitsForCourses(remoteCourseIds);
 
     // Hidratación completa de TODAS las clases del curso actual, para web
     // (ver plan, bloque 6): GradebookTable/CalendarView/los 4 informes de
@@ -446,22 +446,29 @@ const App = () => {
     // [] porque estos hooks se declaran antes del `if (!appState)` de más
     // abajo (Rules of Hooks) — el valor real no importa hasta que appState
     // exista, momento en el que ya está resuelto de verdad.
-    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+    // academic_years/classes/students+enrollments (Fase 7 bloque 4) ya
+    // tienen comando Rust real en escritorio -- solo categories/assignments/
+    // grades (bloque 5, todavía sin construir) siguen desactivadas ahí abajo.
+    const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
     // Cabecera de 3 contextos (Fase 8): lista completa de años para el
     // desplegable (currentYear solo trae el activo) + "materias de este año"
     // para el desplegable de Materia.
-    const allYears = useAcademicYears({ enabled: !isDesktop });
+    const allYears = useAcademicYears();
     const activateYearMutation = useActivateAcademicYear();
-    const yearCoursesQuery = useAcademicYearCourses(yearId, { enabled: !isDesktop && !!yearId });
-    const remoteClasses = useApiClasses(yearId, { enabled: !isDesktop && !!yearId });
-    const remoteStudents = useApiStudents({ enabled: !isDesktop });
+    const yearCoursesQuery = useAcademicYearCourses(yearId, { enabled: !!yearId });
+    const remoteClasses = useApiClasses(yearId, { enabled: !!yearId });
+    const remoteStudents = useApiStudents();
     const remoteClassIds = useMemo(() => (remoteClasses.data ?? []).map(c => c.id), [remoteClasses.data]);
-    const enrollmentQueries = useEnrollmentsForClasses(remoteClassIds, { enabled: !isDesktop });
+    const enrollmentQueries = useEnrollmentsForClasses(remoteClassIds);
+    // categories/assignments/grades: bloque 5, todavía sin comando Rust --
+    // en escritorio estas tres quedan vacías (hydrateClassData recibe []),
+    // así que el cuaderno de notas aparece vacío hasta ese bloque, pero
+    // clases/alumnado/currículo ya funcionan de verdad.
     const categoryQueries = useCategoriesForClasses(remoteClassIds, { enabled: !isDesktop });
     const assignmentQueries = useAssignmentsForClasses(remoteClassIds, { enabled: !isDesktop });
     const gradeQueries = useGradesForClasses(remoteClassIds, { enabled: !isDesktop });
-    const remoteEvaluationPeriods = useEvaluationPeriods(yearId, { enabled: !isDesktop && !!yearId });
+    const remoteEvaluationPeriods = useEvaluationPeriods(yearId, { enabled: !!yearId });
     const updateAcademicYearMutation = useUpdateAcademicYear();
     // Fase 6: journalEntries/tasks/meetings/agendaNotes + el resto de
     // academicConfiguration (holidays/periods/gradeScale/defaultCalendarView)
@@ -481,17 +488,10 @@ const App = () => {
     const createAgendaNoteMutation = useCreateAgendaNote();
     const updateAgendaNoteMutation = useUpdateAgendaNote();
     const deleteAgendaNoteMutation = useDeleteAgendaNote();
-    // preferences SÍ tiene ya comando Rust real (bloque 2), pero a
-    // diferencia de shortcuts/evaluationTools su único consumidor
-    // (effectiveAcademicConfiguration, más abajo) mezcla gradeScale/
-    // defaultCalendarView con academicYearStart/holidays/evaluationPeriods
-    // — esos siguen siendo blob en escritorio hasta que academic_years
-    // migre (bloque 4). Leer gradeScale de remoto pero escribirlo en el
-    // blob (o viceversa) editaría un sitio y leería del otro sin que se
-    // reflejara — se deja tal cual (isDesktop sigue apagando esta query,
-    // igual que el resto de abajo) hasta que el bloque 4 pueda resolver
-    // academicConfiguration entera de una vez, sin esa mezcla a medias.
-    const remotePreferences = usePreferences({ enabled: !isDesktop });
+    // preferences: el bloque 4 ya tiene academic_years real en escritorio,
+    // así que effectiveAcademicConfiguration (más abajo) puede resolverse
+    // entera de una vez -- ya no hay mezcla a medias entre blob y remoto.
+    const remotePreferences = usePreferences();
     const updatePreferencesMutation = useUpdatePreferences();
     const createAssignmentMutation = useCreateAssignment();
     // Memoizado a propósito (bug real encontrado 2026-08-04): sin esto,
@@ -511,7 +511,7 @@ const App = () => {
     const assignmentsUpdatedKey = assignmentQueries.map(q => q.dataUpdatedAt).join(',');
     const gradesUpdatedKey = gradeQueries.map(q => q.dataUpdatedAt).join(',');
     const hydratedClasses: ClassData[] = useMemo(() => (
-        isDesktop ? (appState?.classes ?? []) : (remoteClasses.data ?? []).map((cls, i) => hydrateClassData(
+        (remoteClasses.data ?? []).map((cls, i) => hydrateClassData(
             cls,
             enrollmentQueries[i]?.data ?? [],
             remoteStudents.data ?? [],
@@ -521,7 +521,7 @@ const App = () => {
             remoteEvaluationTools.data ?? [],
         ))
     ), [
-        isDesktop, appState?.classes, remoteClasses.data, remoteStudents.data, remoteEvaluationTools.data,
+        remoteClasses.data, remoteStudents.data, remoteEvaluationTools.data,
         enrollmentsUpdatedKey, categoriesUpdatedKey, assignmentsUpdatedKey, gradesUpdatedKey,
         // eslint-disable-next-line react-hooks/exhaustive-deps
     ]);
@@ -540,21 +540,21 @@ const App = () => {
     const allBasicKnowledgeUpdatedKey = allBasicKnowledgeQueries.map(q => q.dataUpdatedAt).join(',');
     const allProgrammingUnitsUpdatedKey = allProgrammingUnitsQueries.map(q => q.dataUpdatedAt).join(',');
     const allCriteria: EvaluationCriterion[] = useMemo(() => (
-        isDesktop ? (appState?.criteria ?? []) : allCriteriaQueries.flatMap(q => q.data ?? [])
+        allCriteriaQueries.flatMap(q => q.data ?? [])
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.criteria, allCriteriaUpdatedKey]);
+    ), [allCriteriaUpdatedKey]);
     const allCompetences: SpecificCompetence[] = useMemo(() => (
-        isDesktop ? (appState?.competences ?? []) : allCompetencesQueries.flatMap(q => q.data ?? [])
+        allCompetencesQueries.flatMap(q => q.data ?? [])
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.competences, allCompetencesUpdatedKey]);
+    ), [allCompetencesUpdatedKey]);
     const allBasicKnowledge: BasicKnowledge[] = useMemo(() => (
-        isDesktop ? (appState?.basicKnowledge ?? []) : allBasicKnowledgeQueries.flatMap(q => q.data ?? [])
+        allBasicKnowledgeQueries.flatMap(q => q.data ?? [])
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.basicKnowledge, allBasicKnowledgeUpdatedKey]);
+    ), [allBasicKnowledgeUpdatedKey]);
     const allProgrammingUnits: ProgrammingUnit[] = useMemo(() => (
-        isDesktop ? (appState?.programmingUnits ?? []) : (allProgrammingUnitsQueries.flatMap(q => q.data ?? []) as unknown as ProgrammingUnit[])
+        allProgrammingUnitsQueries.flatMap(q => q.data ?? []) as unknown as ProgrammingUnit[]
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.programmingUnits, allProgrammingUnitsUpdatedKey]);
+    ), [allProgrammingUnitsUpdatedKey]);
     // Mismo motivo — encontrado por auditoría tras el bug del Diario
     // (2026-08-04): AssignmentModal.tsx reinicializa el desplegable de
     // "Evaluación" en un useEffect con esta prop en las dependencias; sin
@@ -567,20 +567,18 @@ const App = () => {
     // último hueco: en web ya no queda ni un campo de academicConfiguration
     // sin migrar. layoutMode/defaultStartView no se migran a propósito
     // (código muerto, nada los lee — ver App.tsx:529 antes de esta fase).
-    const effectiveAcademicConfiguration: AcademicConfiguration = useMemo(() => (
-        isDesktop ? (appState?.academicConfiguration as AcademicConfiguration) : {
-            ...(appState?.academicConfiguration as AcademicConfiguration),
-            academicYearStart: currentYear.data?.startDate ?? '',
-            academicYearEnd: currentYear.data?.endDate ?? '',
-            holidays: currentYear.data?.holidays ?? [],
-            periods: currentYear.data?.periods ?? [],
-            evaluationPeriods: (remoteEvaluationPeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate })),
-            evaluationPeriodWeights: Object.fromEntries((remoteEvaluationPeriods.data ?? []).map(p => [p.id, p.weight])),
-            gradeScale: remotePreferences.data?.gradeScale,
-            defaultCalendarView: remotePreferences.data?.defaultCalendarView,
-        }
+    const effectiveAcademicConfiguration: AcademicConfiguration = useMemo(() => ({
+        ...(appState?.academicConfiguration as AcademicConfiguration),
+        academicYearStart: currentYear.data?.startDate ?? '',
+        academicYearEnd: currentYear.data?.endDate ?? '',
+        holidays: currentYear.data?.holidays ?? [],
+        periods: currentYear.data?.periods ?? [],
+        evaluationPeriods: (remoteEvaluationPeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate })),
+        evaluationPeriodWeights: Object.fromEntries((remoteEvaluationPeriods.data ?? []).map(p => [p.id, p.weight])),
+        gradeScale: remotePreferences.data?.gradeScale,
+        defaultCalendarView: remotePreferences.data?.defaultCalendarView,
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.academicConfiguration, currentYear.data, remoteEvaluationPeriods.data, remotePreferences.data]);
+    }), [appState?.academicConfiguration, currentYear.data, remoteEvaluationPeriods.data, remotePreferences.data]);
     const effectiveTasks: Task[] = useMemo(() => (
         isDesktop ? (appState?.tasks ?? []) : (remoteTasks.data ?? [])
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -660,13 +658,9 @@ const App = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [appState, initialized]);
 
-    const activeClass = useMemo(() => {
-        if (isDesktop) {
-            if (!appState) return null;
-            return appState.classes.find(c => c.id === activeClassId);
-        }
-        return hydratedClasses.find(c => c.id === activeClassId);
-    }, [isDesktop, appState, activeClassId, hydratedClasses]);
+    const activeClass = useMemo(() => (
+        hydratedClasses.find(c => c.id === activeClassId)
+    ), [activeClassId, hydratedClasses]);
 
     // Clase→Materia: cualquier cambio de activeClassId (los sitios que ya
     // llaman a setActiveClassId directamente, sin pasar por los handlers
@@ -689,7 +683,7 @@ const App = () => {
     // este efecto tiene que declararse aquí sin condicionales (Rules of
     // Hooks).
     useEffect(() => {
-        if (isDesktop || !yearId) return;
+        if (!yearId) return;
         const yearCourseIds = new Set((yearCoursesQuery.data ?? []).map(yc => yc.courseId));
         if (activeCourseId && !yearCourseIds.has(activeCourseId)) {
             setActiveCourseId('');
@@ -703,15 +697,14 @@ const App = () => {
         // cambios de AÑO (y a que lleguen los datos de ese año), no debe
         // dispararse de nuevo cuando limpia esos dos estados él mismo.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [yearId, isDesktop, yearCoursesQuery.data, remoteClasses.data]);
+    }, [yearId, yearCoursesQuery.data, remoteClasses.data]);
 
-    // criteria/competences (bloque 3b) dejaron de escribirse en el blob en
-    // web desde CurriculumManager — para que GradebookTable/los informes de
-    // la clase activa vean los criterios/competencias reales de su materia
-    // (no los del blob, congelados), se piden aquí, ya acotados al curso de
-    // `activeClass`.
-    const remoteActiveCriteria = useEvaluationCriteria(activeCourseId, { enabled: !isDesktop && !!activeCourseId });
-    const remoteActiveCompetences = useSpecificCompetences(activeCourseId, { enabled: !isDesktop && !!activeCourseId });
+    // criteria/competences (bloque 3b en web, bloque 4 en escritorio) —
+    // para que GradebookTable/los informes de la clase activa vean los
+    // criterios/competencias reales de su materia (no los del blob,
+    // congelados), se piden aquí, ya acotados al curso de `activeClass`.
+    const remoteActiveCriteria = useEvaluationCriteria(activeCourseId, { enabled: !!activeCourseId });
+    const remoteActiveCompetences = useSpecificCompetences(activeCourseId, { enabled: !!activeCourseId });
 
     const handleUpdateClass = useCallback((updatedClass: ClassData) => {
         updateState(prev => ({
@@ -724,7 +717,7 @@ const App = () => {
     // usa CalendarView para el "+" de un día en la Agenda).
     const handleSaveFavoritoAssignment = async (newAssignment: Omit<Assignment, 'id'>, classId: string) => {
         if (isDesktop) {
-            const classToUpdate = classes.find(c => c.id === classId);
+            const classToUpdate = appState?.classes.find(c => c.id === classId);
             if (!classToUpdate) return;
             const fullAssignment: Assignment = {
                 ...newAssignment,
@@ -803,21 +796,12 @@ const App = () => {
     }, [isDesktop, updateState, yearId, saveJournalEntryMutation]);
 
     const setClassesCallback = useCallback((updater: React.SetStateAction<ClassData[]>) => updateState(prev => ({ ...prev, classes: typeof updater === 'function' ? updater(prev.classes) : updater })), [updateState]);
-    const setCoursesCallback = useCallback((updater: React.SetStateAction<Course[]>) => updateState(prev => ({ ...prev, courses: typeof updater === 'function' ? updater(prev.courses) : updater })), [updateState]);
-    const setKeyCompetencesCallback = useCallback((updater: React.SetStateAction<KeyCompetence[]>) => updateState(prev => ({ ...prev, keyCompetences: typeof updater === 'function' ? updater(prev.keyCompetences) : updater })), [updateState]);
-    const setSpecificCompetencesCallback = useCallback((updater: React.SetStateAction<SpecificCompetence[]>) => updateState(prev => ({ ...prev, competences: typeof updater === 'function' ? updater(prev.competences) : updater })), [updateState]);
-    const setEvaluationCriteriaCallback = useCallback((updater: React.SetStateAction<EvaluationCriterion[]>) => updateState(prev => ({ ...prev, criteria: typeof updater === 'function' ? updater(prev.criteria) : updater })), [updateState]);
-    const setBasicKnowledgeCallback = useCallback((updater: React.SetStateAction<BasicKnowledge[]>) => updateState(prev => ({ ...prev, basicKnowledge: typeof updater === 'function' ? updater(prev.basicKnowledge) : updater })), [updateState]);
     // Fase 6: en web, compara el resultado del updater contra el valor
     // efectivo actual y manda solo los campos que de verdad cambiaron —
     // academicYearStart/End quedan fuera (ver comentario junto a
     // effectiveAcademicConfiguration: AcademicConfigManager.tsx los escribe
     // aparte, directo contra academic_years, sin pasar por aquí).
     const setAcademicConfigurationCallback = useCallback((updater: React.SetStateAction<AcademicConfiguration>) => {
-        if (isDesktop) {
-            updateState(prev => ({ ...prev, academicConfiguration: typeof updater === 'function' ? updater(prev.academicConfiguration) : updater }));
-            return;
-        }
         const next = typeof updater === 'function' ? updater(effectiveAcademicConfiguration) : updater;
         if (yearId && (next.holidays !== effectiveAcademicConfiguration.holidays || next.periods !== effectiveAcademicConfiguration.periods)) {
             updateAcademicYearMutation.mutate({ id: yearId, data: { holidays: next.holidays, periods: next.periods } });
@@ -825,7 +809,7 @@ const App = () => {
         if (next.gradeScale !== effectiveAcademicConfiguration.gradeScale || next.defaultCalendarView !== effectiveAcademicConfiguration.defaultCalendarView) {
             updatePreferencesMutation.mutate({ gradeScale: next.gradeScale, defaultCalendarView: next.defaultCalendarView });
         }
-    }, [isDesktop, updateState, effectiveAcademicConfiguration, yearId, updateAcademicYearMutation, updatePreferencesMutation]);
+    }, [effectiveAcademicConfiguration, yearId, updateAcademicYearMutation, updatePreferencesMutation]);
     const setProgrammingUnitsCallback = useCallback((updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => updateState(prev => ({ ...prev, programmingUnits: updater(prev.programmingUnits) })), [updateState]);
     // setTasks/setMeetings/setAgendaNotes: en web, diffAndSyncList traduce
     // el resultado del updater (mismo patrón prev => [...prev, nuevo] que ya
@@ -905,76 +889,40 @@ const App = () => {
     // (crear una competencia clave y, con su id real, crear sus descriptores)
     // — de ahí que devuelvan Promise<...> en vez de ser "dispara y olvida".
     const handleCreateKeyCompetence = useCallback(async (data: { code: string; description: string }): Promise<KeyCompetence> => {
-        if (isDesktop) {
-            const newKc: KeyCompetence = { id: `kc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, ...data, descriptors: [] };
-            setKeyCompetencesCallback(prev => [...prev, newKc]);
-            return newKc;
-        }
         return createKeyCompetence.mutateAsync(data);
-    }, [isDesktop, setKeyCompetencesCallback, createKeyCompetence]);
+    }, [createKeyCompetence]);
 
     const handleUpdateKeyCompetence = useCallback(async (id: string, data: Partial<{ code: string; description: string }>): Promise<void> => {
-        if (isDesktop) {
-            setKeyCompetencesCallback(prev => prev.map(kc => kc.id === id ? { ...kc, ...data } : kc));
-            return;
-        }
         await updateKeyCompetence.mutateAsync({ id, data });
-    }, [isDesktop, setKeyCompetencesCallback, updateKeyCompetence]);
+    }, [updateKeyCompetence]);
 
     // Sin uso desde la UI normal (borrar KC/OD está bloqueado a propósito,
     // ver EditableItem) — solo lo usa el borrado de una etapa curricular
     // completa, que sí necesita poder quitar una competencia clave que se
     // quede sin descriptores.
     const handleDeleteKeyCompetence = useCallback(async (id: string): Promise<void> => {
-        if (isDesktop) {
-            setKeyCompetencesCallback(prev => prev.filter(kc => kc.id !== id));
-            return;
-        }
         await deleteKeyCompetence.mutateAsync(id);
-    }, [isDesktop, setKeyCompetencesCallback, deleteKeyCompetence]);
+    }, [deleteKeyCompetence]);
 
     const handleCreateDescriptor = useCallback(async (keyCompetenceId: string, data: { code: string; description: string; stage?: 'eso' | 'bachillerato' }): Promise<OperationalDescriptor> => {
-        if (isDesktop) {
-            const newDescriptor: OperationalDescriptor = { id: `od-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, ...data };
-            setKeyCompetencesCallback(prev => prev.map(kc => kc.id === keyCompetenceId ? { ...kc, descriptors: [...(kc.descriptors || []), newDescriptor] } : kc));
-            return newDescriptor;
-        }
         return createDescriptor.mutateAsync({ keyCompetenceId, data });
-    }, [isDesktop, setKeyCompetencesCallback, createDescriptor]);
+    }, [createDescriptor]);
 
     const handleUpdateDescriptor = useCallback(async (id: string, data: Partial<{ code: string; description: string; stage: 'eso' | 'bachillerato' }>): Promise<void> => {
-        if (isDesktop) {
-            setKeyCompetencesCallback(prev => prev.map(kc => ({
-                ...kc,
-                descriptors: (kc.descriptors || []).map(d => d.id === id ? { ...d, ...data } : d),
-            })));
-            return;
-        }
         await updateDescriptor.mutateAsync({ id, data });
-    }, [isDesktop, setKeyCompetencesCallback, updateDescriptor]);
+    }, [updateDescriptor]);
 
     // Igual que handleDeleteKeyCompetence: solo lo usa el borrado de etapa.
     const handleDeleteDescriptor = useCallback(async (id: string): Promise<void> => {
-        if (isDesktop) {
-            setKeyCompetencesCallback(prev => prev.map(kc => ({
-                ...kc,
-                descriptors: (kc.descriptors || []).filter(d => d.id !== id),
-            })));
-            return;
-        }
         await deleteDescriptor.mutateAsync(id);
-    }, [isDesktop, setKeyCompetencesCallback, deleteDescriptor]);
+    }, [deleteDescriptor]);
 
     // Único punto de escritura que CurriculumManager necesita sobre
     // "materias" (el toggle de reparto manual de pesos) — alta/edición/
     // borrado de materias vive en AcademicYearManager.tsx, no aquí.
     const handleUpdateCourse = useCallback(async (id: string, data: Partial<{ level: string; subject: string; type: 'academic' | 'other'; pesoCriteriosManual: boolean }>): Promise<void> => {
-        if (isDesktop) {
-            setCoursesCallback(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
-            return;
-        }
         await updateCourseMutation.mutateAsync({ id, data });
-    }, [isDesktop, setCoursesCallback, updateCourseMutation]);
+    }, [updateCourseMutation]);
 
     // --- Render Logic ---
     if (loading) {
@@ -989,34 +937,29 @@ const App = () => {
         return <div className="flex items-center justify-center min-h-screen bg-slate-100 text-slate-600">Inicializando...</div>;
     }
 
-    const { classes, criteria, competences, courses, programmingUnits, basicKnowledge } = appState;
     // Fuente resuelta según plataforma (ver handlers granulares más arriba):
     // blob local en escritorio, backend nuevo en web.
     const shortcuts = remoteShortcuts.data ?? [];
     const evaluationTools = remoteEvaluationTools.data ?? [];
-    const keyCompetences = isDesktop ? appState.keyCompetences : (remoteKeyCompetences.data ?? []);
-    // Ver comentario junto a useCourses() más arriba: lista de materias
-    // separada de `courses` (el curso del blob viejo), solo para
-    // CurriculumManager/ProgrammingManager.
-    const curriculumCourses = isDesktop ? courses : (remoteCourses.data ?? []);
+    const keyCompetences = remoteKeyCompetences.data ?? [];
+    // Ver comentario junto a useCourses() más arriba: lista de materias,
+    // usada por CurriculumManager/ProgrammingManager y por el resto de la
+    // app para resolver nombres/tipo de materia de cada clase.
+    const curriculumCourses = remoteCourses.data ?? [];
     // Currículo/planificación de TODAS las materias (bloque 7) — a
     // diferencia de effectiveCriteria/effectiveCompetences (acotadas a
     // activeCourseId), estas alimentan vistas que no tienen "una" materia
     // activa concreta (exportar CSV, comprobar integridad, vincular
     // criterios a un instrumento, ficha de alumno de cualquier clase...).
-    const academicClasses = isDesktop
-        ? classes.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other')
-        : hydratedClasses.filter(c => curriculumCourses.find(course => course.id === c.courseId)?.type !== 'other');
+    const academicClasses = hydratedClasses.filter(c => curriculumCourses.find(course => course.id === c.courseId)?.type !== 'other');
     const handleSelectYear = (id: string) => {
         if (!id || activateYearMutation.isPending) return;
         activateYearMutation.mutate(id);
     };
 
-    // Igual que curriculumCourses: en escritorio son literalmente el mismo
-    // array (blob); en web, los reales del curso de `activeClass` (bloque
-    // 3b los dejó de escribir en el blob), pedidos más arriba.
-    const effectiveCriteria = isDesktop ? criteria : (remoteActiveCriteria.data ?? []);
-    const effectiveCompetences = isDesktop ? competences : (remoteActiveCompetences.data ?? []);
+    // Criterios/competencias reales del curso de `activeClass`, pedidos más arriba.
+    const effectiveCriteria = remoteActiveCriteria.data ?? [];
+    const effectiveCompetences = remoteActiveCompetences.data ?? [];
 
     const renderContent = () => {
         // Vistas que no requieren una clase activa
@@ -1057,13 +1000,11 @@ const App = () => {
 
         if (activeView === 'clases') {
             return <ClasesView
-                classes={hydratedClasses}
                 courses={curriculumCourses}
                 academicConfiguration={effectiveAcademicConfiguration}
                 criteria={allCriteria}
                 specificCompetences={allCompetences}
                 keyCompetences={keyCompetences}
-                onUpdateClass={handleUpdateClass}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
             />;
@@ -1149,22 +1090,12 @@ const App = () => {
                                 onCreateDescriptor={handleCreateDescriptor}
                                 onUpdateDescriptor={handleUpdateDescriptor}
                                 onDeleteDescriptor={handleDeleteDescriptor}
-                                specificCompetences={competences}
-                                setSpecificCompetences={setSpecificCompetencesCallback}
-                                evaluationCriteria={criteria}
-                                setEvaluationCriteria={setEvaluationCriteriaCallback}
-                                basicKnowledge={basicKnowledge}
-                                setBasicKnowledge={setBasicKnowledgeCallback}
                             />
                         )}
                         {activeView === 'planner' && (
                             <ProgrammingManager
                                 courseId={activeCourseId}
                                 courses={curriculumCourses}
-                                units={programmingUnits}
-                                setUnits={setProgrammingUnitsCallback}
-                                criteria={criteria}
-                                basicKnowledge={basicKnowledge}
                                 classes={hydratedClasses}
                                 academicConfiguration={effectiveAcademicConfiguration}
                             />
@@ -1328,7 +1259,7 @@ const App = () => {
                         onClose={() => setIsSettingsModalOpen(false)}
                         onOpenExportModal={() => { setIsSettingsModalOpen(false); setIsExportModalOpen(true); }}
                         classes={hydratedClasses} setClasses={setClassesCallback}
-                        courses={curriculumCourses} setCourses={setCoursesCallback}
+                        courses={curriculumCourses}
                         curriculumCourses={curriculumCourses}
                         onUpdateCourse={handleUpdateCourse}
                         keyCompetences={keyCompetences}
@@ -1339,14 +1270,10 @@ const App = () => {
                         onUpdateDescriptor={handleUpdateDescriptor}
                         onDeleteDescriptor={handleDeleteDescriptor}
                         specificCompetences={allCompetences}
-                        setSpecificCompetences={setSpecificCompetencesCallback}
                         evaluationCriteria={allCriteria}
-                        setEvaluationCriteria={setEvaluationCriteriaCallback}
                         basicKnowledge={allBasicKnowledge}
-                        setBasicKnowledge={setBasicKnowledgeCallback}
                         academicConfiguration={effectiveAcademicConfiguration} setAcademicConfiguration={setAcademicConfigurationCallback}
                         programmingUnits={allProgrammingUnits}
-                        setProgrammingUnits={setProgrammingUnitsCallback}
                         evaluationTools={evaluationTools}
                         onCreateEvaluationTool={handleCreateEvaluationTool}
                         onUpdateEvaluationTool={handleUpdateEvaluationTool}

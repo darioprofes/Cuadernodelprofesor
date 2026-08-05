@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { isTauri } from '@tauri-apps/api/core';
 import type { ClassData, Course, AcademicConfiguration, View, EvaluationCriterion, SpecificCompetence, KeyCompetence, Student } from '../types';
 import { UserGroupIcon, ClockIcon, BookOpenIcon, ChevronDownIcon, CalendarDaysIcon, AcademicCapIcon } from './Icons';
 import PageHeader from './PageHeader';
@@ -20,13 +19,11 @@ import { useEnrollmentsForClasses, useUpdateEnrollment } from '../hooks/useEnrol
 import { apiClassToLocal, joinStudentEnrollment, splitStudentPatch, syncStudentPhoto } from '../services/apiAdapters';
 
 interface ClasesViewProps {
-    classes: ClassData[];
     courses: Course[];
     academicConfiguration: AcademicConfiguration;
     criteria: EvaluationCriterion[];
     specificCompetences: SpecificCompetence[];
     keyCompetences: KeyCompetence[];
-    onUpdateClass: (updated: ClassData) => void;
     setActiveView: (view: View) => void;
     setActiveClassId: (id: string) => void;
 }
@@ -65,8 +62,7 @@ const StudentAvatar: React.FC<{ student: Student; bgColor: string; className?: s
 // Listado de clases (renombrado de "Grupos"), con click-through directo al
 // Cuaderno de cada una y a la ficha de cada alumno. La edición (alta/baja,
 // alumnado...) sigue en Ajustes → Clases y Alumnado.
-const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfiguration, criteria, specificCompetences, keyCompetences, onUpdateClass, setActiveView, setActiveClassId }) => {
-    const isDesktop = isTauri();
+const ClasesView: React.FC<ClasesViewProps> = ({ courses, academicConfiguration, criteria, specificCompetences, keyCompetences, setActiveView, setActiveClassId }) => {
     const queryClient = useQueryClient();
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [fichaTarget, setFichaTarget] = useState<{ student: Student; classData: ClassData } | null>(null);
@@ -74,21 +70,19 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; student: Student; classData: ClassData } | null>(null);
     const [planoTarget, setPlanoTarget] = useState<ClassData | null>(null);
 
-    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+    const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
-    const remoteClasses = useApiClasses(yearId, { enabled: !isDesktop && !!yearId });
-    const remoteStudents = useApiStudents({ enabled: !isDesktop });
+    const remoteClasses = useApiClasses(yearId, { enabled: !!yearId });
+    const remoteStudents = useApiStudents();
     const remoteClassIds = useMemo(() => (remoteClasses.data ?? []).map(c => c.id), [remoteClasses.data]);
-    const enrollmentQueries = useEnrollmentsForClasses(remoteClassIds, { enabled: !isDesktop });
+    const enrollmentQueries = useEnrollmentsForClasses(remoteClassIds);
     const updateClassMutation = useUpdateClass();
     const updateEnrollmentMutation = useUpdateEnrollment();
     const updateStudentMutation = useUpdateStudent();
 
     // Hidrata cada clase del backend nuevo con su alumnado real (STUDENT
-    // global + ENROLLMENT de esta clase, ver services/apiAdapters.ts) — en
-    // escritorio `classes` ya trae el alumnado embebido, sin más que hacer.
+    // global + ENROLLMENT de esta clase, ver services/apiAdapters.ts).
     const effectiveClasses: ClassData[] = useMemo(() => {
-        if (isDesktop) return classes;
         const studentsById = new Map((remoteStudents.data ?? []).map(s => [s.id, s]));
         return (remoteClasses.data ?? []).map((cls, i) => {
             const enrollments = enrollmentQueries[i]?.data ?? [];
@@ -100,7 +94,7 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
                 .filter((s): s is Student => !!s);
             return { ...apiClassToLocal(cls), students };
         });
-    }, [isDesktop, classes, remoteClasses.data, remoteStudents.data, enrollmentQueries]);
+    }, [remoteClasses.data, remoteStudents.data, enrollmentQueries]);
 
     useEffect(() => {
         if (!contextMenu) return;
@@ -112,16 +106,6 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
 
     const handleSaveFichaEdit = async (studentId: string, data: Partial<Student>) => {
         if (!fichaEditTarget) return;
-
-        if (isDesktop) {
-            const updatedClass: ClassData = {
-                ...fichaEditTarget.classData,
-                students: fichaEditTarget.classData.students.map(s => s.id === studentId ? { ...s, ...data } : s),
-            };
-            onUpdateClass(updatedClass);
-            setFichaEditTarget(prev => prev ? { ...prev, classData: updatedClass } : null);
-            return;
-        }
 
         const enrollment = fichaEditTarget.classData.students.find(s => s.id === studentId);
         const { studentPatch, enrollmentPatch } = splitStudentPatch(data);
@@ -143,23 +127,11 @@ const ClasesView: React.FC<ClasesViewProps> = ({ classes, courses, academicConfi
     };
 
     const handleUpdateMesaProfesor = async (classData: ClassData, x: number, y: number) => {
-        if (isDesktop) {
-            const updated = { ...classData, mesaProfesorX: x, mesaProfesorY: y };
-            onUpdateClass(updated);
-            setPlanoTarget(updated);
-            return;
-        }
         setPlanoTarget(prev => prev ? { ...prev, mesaProfesorX: x, mesaProfesorY: y } : null);
         await updateClassMutation.mutateAsync({ id: classData.id, yearId, data: { mesaProfesorX: x, mesaProfesorY: y } });
     };
 
     const handleUpdateStudentPosition = async (classData: ClassData, studentId: string, x: number, y: number) => {
-        if (isDesktop) {
-            const updated = { ...classData, students: classData.students.map(s => s.id === studentId ? { ...s, planoX: x, planoY: y } : s) };
-            onUpdateClass(updated);
-            setPlanoTarget(updated);
-            return;
-        }
         setPlanoTarget(prev => prev ? { ...prev, students: prev.students.map(s => s.id === studentId ? { ...s, planoX: x, planoY: y } : s) } : null);
         const student = classData.students.find(s => s.id === studentId);
         if (student?.enrollmentId) {

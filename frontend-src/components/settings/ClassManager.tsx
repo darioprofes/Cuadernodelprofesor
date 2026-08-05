@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { isTauri } from '@tauri-apps/api/core';
-import type { AcademicConfiguration, ClassData, Course, Student } from '../../types';
+import type { ClassData, Course, Student } from '../../types';
 import { formatClassLabel, getNombreCompleto, buildDefaultCategories } from '../../utils';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, UserCircleIcon, MagnifyingGlassIcon } from '../Icons';
 import ClassModal from '../ClassModal';
@@ -127,17 +126,13 @@ const ExistingStudentPicker: React.FC<{
 };
 
 const ClassManager: React.FC<{
-    classes: ClassData[];
-    setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
     courses: Course[];
-    academicConfiguration: AcademicConfiguration;
-}> = ({ classes, setClasses, courses, academicConfiguration }) => {
-    const isDesktop = isTauri();
+}> = ({ courses }) => {
     const queryClient = useQueryClient();
-    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+    const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
-    const remoteClasses = useApiClasses(yearId, { enabled: !isDesktop && !!yearId });
-    const remoteStudents = useApiStudents({ enabled: !isDesktop });
+    const remoteClasses = useApiClasses(yearId, { enabled: !!yearId });
+    const remoteStudents = useApiStudents();
     const createClassMutation = useCreateClass();
     const updateClassMutation = useUpdateClass();
     const deleteClassMutation = useDeleteClass();
@@ -145,19 +140,17 @@ const ClassManager: React.FC<{
     const updateEnrollmentMutation = useUpdateEnrollment();
     const deleteEnrollmentMutation = useDeleteEnrollment();
     const updateStudentMutation = useUpdateStudent();
-    // Bug real (2026-08-04): igual que en ImportScheduleModal.tsx — en web,
-    // academicConfiguration.evaluationPeriods es el del blob (vacío, sin
-    // relación con el backend nuevo) y createClassMutation solo manda los
-    // campos "cáscara", así que una clase creada a mano se quedaba sin
-    // categorías de calificación por defecto.
-    const remotePeriods = useEvaluationPeriods(yearId, { enabled: !isDesktop && !!yearId });
+    // Bug real (2026-08-04): igual que en ImportScheduleModal.tsx —
+    // createClassMutation solo manda los campos "cáscara", así que una
+    // clase creada a mano se quedaba sin categorías de calificación por
+    // defecto si no se sembraban aparte.
+    const remotePeriods = useEvaluationPeriods(yearId, { enabled: !!yearId });
     const realEvaluationPeriods = (remotePeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate }));
     const createCategoryMutation = useCreateCategory();
 
-    const effectiveClasses: ClassData[] = useMemo(() => {
-        if (isDesktop) return classes;
-        return (remoteClasses.data ?? []).map(apiClassToLocal);
-    }, [isDesktop, classes, remoteClasses.data]);
+    const effectiveClasses: ClassData[] = useMemo(() => (
+        (remoteClasses.data ?? []).map(apiClassToLocal)
+    ), [remoteClasses.data]);
 
     const academicClasses = useMemo(() => {
         const academicCourseIds = new Set(courses.filter(c => c.type !== 'other').map(c => c.id));
@@ -178,10 +171,9 @@ const ClassManager: React.FC<{
         }
     }, [academicClasses, activeClassId]);
 
-    const remoteEnrollments = useEnrollments(activeClassId, { enabled: !isDesktop && !!activeClassId });
+    const remoteEnrollments = useEnrollments(activeClassId, { enabled: !!activeClassId });
 
     const activeClassStudents: Student[] = useMemo(() => {
-        if (isDesktop) return [];
         const studentsById = new Map((remoteStudents.data ?? []).map(s => [s.id, s]));
         return (remoteEnrollments.data ?? [])
             .map(e => {
@@ -189,22 +181,14 @@ const ClassManager: React.FC<{
                 return student ? joinStudentEnrollment(student, e) : null;
             })
             .filter((s): s is Student => !!s);
-    }, [isDesktop, remoteStudents.data, remoteEnrollments.data]);
+    }, [remoteStudents.data, remoteEnrollments.data]);
 
     const activeClassShell = effectiveClasses.find((c: ClassData) => c.id === activeClassId);
     const activeClass: ClassData | undefined = activeClassShell
-        ? (isDesktop ? classes.find(c => c.id === activeClassId) : { ...activeClassShell, students: activeClassStudents })
+        ? { ...activeClassShell, students: activeClassStudents }
         : undefined;
 
     const handleStudentUpdate = async (studentId: string, updatedStudent: Partial<Student>) => {
-        if (isDesktop) {
-            setClasses((prevClasses: ClassData[]) => prevClasses.map(c =>
-                c.id === activeClassId
-                    ? { ...c, students: c.students.map(s => s.id === studentId ? { ...s, ...updatedStudent } : s) }
-                    : c
-            ));
-            return;
-        }
         const enrollment = activeClassStudents.find(s => s.id === studentId);
         const { studentPatch, enrollmentPatch } = splitStudentPatch(updatedStudent);
         if (Object.keys(studentPatch).length > 0) {
@@ -219,38 +203,8 @@ const ClassManager: React.FC<{
         }
     };
 
-    const handleReorderStudent = (studentId: string, direction: 'up' | 'down') => {
-        setClasses(prevClasses => prevClasses.map(c => {
-            if (c.id !== activeClassId) return c;
-
-            const students = c.students;
-            const currentIndex = students.findIndex(s => s.id === studentId);
-            if (currentIndex === -1) return c;
-
-            const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-            if (newIndex < 0 || newIndex >= students.length) return c;
-
-            const newStudents = [...students];
-            const [movedStudent] = newStudents.splice(currentIndex, 1);
-            newStudents.splice(newIndex, 0, movedStudent);
-
-            return { ...c, students: newStudents };
-        }));
-    };
-
     const handleDeleteStudent = async (studentId: string) => {
         if (!window.confirm('¿Seguro que quieres eliminar a este/a alumn@? Se perderán todas sus calificaciones.')) {
-            return;
-        }
-        if (isDesktop) {
-            setClasses(prevClasses => prevClasses.map(c => {
-                if (c.id === activeClassId) {
-                    const updatedStudents = c.students.filter(s => s.id !== studentId);
-                    const updatedGrades = c.grades.filter(g => g.studentId !== studentId);
-                    return { ...c, students: updatedStudents, grades: updatedGrades };
-                }
-                return c;
-            }));
             return;
         }
         const enrollment = activeClassStudents.find(s => s.id === studentId);
@@ -259,23 +213,6 @@ const ClassManager: React.FC<{
     };
 
     const handleSaveClass = async (classData: Omit<ClassData, 'students' | 'categories' | 'assignments' | 'grades'>) => {
-        if (isDesktop) {
-            if (classToEdit) {
-                setClasses(prev => prev.map(c => c.id === classToEdit.id ? { ...c, ...classData } : c));
-            } else {
-                const newClass: ClassData = {
-                    ...classData,
-                    students: [],
-                    categories: buildDefaultCategories(academicConfiguration.evaluationPeriods ?? []),
-                    assignments: [],
-                    grades: [],
-                    schedule: [],
-                };
-                setClasses(prev => [...prev, newClass]);
-                setActiveClassId(newClass.id);
-            }
-            return;
-        }
         if (classToEdit) {
             await updateClassMutation.mutateAsync({
                 id: classData.id,
@@ -301,42 +238,11 @@ const ClassManager: React.FC<{
         if (!window.confirm('¿Seguro que quieres eliminar esta clase? Se perderá TODA la información asociada (alumnado, tareas, calificaciones).')) {
             return;
         }
-        if (isDesktop) {
-            setClasses(prev => {
-                const newClasses = prev.filter(c => c.id !== classId);
-                if (activeClassId === classId) {
-                    setActiveClassId(newClasses[0]?.id || '');
-                }
-                return newClasses;
-            });
-            return;
-        }
         await deleteClassMutation.mutateAsync({ id: classId, yearId });
     };
 
     const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => {
         if (!activeClassId) return;
-
-        if (isDesktop) {
-            const newStudents: Student[] = newStudentData.map((data, index) => ({
-                id: `s-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 7)}`,
-                nombre: data.nombre,
-                primerApellido: data.primerApellido,
-                segundoApellido: data.segundoApellido,
-                acneae: data.acneae,
-            }));
-
-            if (newStudents.length > 0) {
-                setClasses(prevClasses => prevClasses.map(c =>
-                    c.id === activeClassId
-                        ? { ...c, students: [...c.students, ...newStudents] }
-                        : c
-                ));
-                alert(`${newStudents.length} alumn@s importados con éxito a la clase "${activeClass ? formatClassLabel(activeClass, courses) : ''}".`);
-            }
-            setIsBulkAddModalOpen(false);
-            return;
-        }
 
         for (const data of newStudentData) {
             await createEnrollmentMutation.mutateAsync({
@@ -392,7 +298,6 @@ const ClassManager: React.FC<{
                                     key={student.id}
                                     student={student}
                                     onDelete={handleDeleteStudent}
-                                    onReorder={isDesktop ? handleReorderStudent : undefined}
                                     onOpenFicha={setStudentForFicha}
                                     index={index}
                                     totalStudents={activeClass.students.length}
@@ -404,13 +309,11 @@ const ClassManager: React.FC<{
                         <button onClick={() => setIsBulkAddModalOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-green-600 hover:bg-green-100 bg-white rounded-md border border-slate-200 shadow-sm">
                            Añadir Alumnado en Lote
                         </button>
-                        {!isDesktop && (
-                            <ExistingStudentPicker
-                                allStudents={remoteStudents.data ?? []}
-                                alreadyEnrolledIds={new Set(activeClassStudents.map(s => s.id))}
-                                onEnroll={handleEnrollExisting}
-                            />
-                        )}
+                        <ExistingStudentPicker
+                            allStudents={remoteStudents.data ?? []}
+                            alreadyEnrolledIds={new Set(activeClassStudents.map(s => s.id))}
+                            onEnroll={handleEnrollExisting}
+                        />
                     </div>
                 </div>
             ) : (

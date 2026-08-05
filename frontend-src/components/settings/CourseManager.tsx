@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
-import type { ClassData, Course } from '../../types';
+import type { Course } from '../../types';
 import { PencilIcon, TrashIcon, XMarkIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
@@ -12,36 +11,28 @@ import { useApiClasses, useCreateClass, useUpdateClass, useDeleteClass } from '.
 
 // Solo se usan los campos "cáscara" de una clase (id/courseId/colorAcento/
 // schedule) — nunca alumnado/categorías/tareas/notas, así que no hace falta
-// el tipo ClassData completo (types.ts) para la lista resuelta por
-// plataforma; students/categories/assignments/grades siguen en el blob
-// hasta los bloques 5/6, sin tocarlos aquí.
+// el tipo ClassData completo (types.ts); students/categories/assignments/
+// grades siguen sin migrar (bloque 5), sin tocarlos aquí.
 type ClassShell = { id: string; courseId: string; colorAcento?: number; schedule?: unknown[] };
 
 const CourseManager: React.FC<{
     courses: Course[];
-    setCourses: (updater: React.SetStateAction<Course[]>) => void;
-    classes: ClassData[];
-    setClasses: (updater: React.SetStateAction<ClassData[]>) => void;
-}> = ({ courses, setCourses, classes, setClasses }) => {
-    const isDesktop = isTauri();
-    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+}> = ({ courses }) => {
+    const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
-    const remoteClasses = useApiClasses(yearId, { enabled: !isDesktop && !!yearId });
+    const remoteClasses = useApiClasses(yearId, { enabled: !!yearId });
     const createCourseMutation = useCreateCourse();
     const updateCourseMutation = useUpdateCourse();
     const deleteCourseMutation = useDeleteCourse();
     const createClassMutation = useCreateClass();
     const updateClassMutation = useUpdateClass();
     const deleteClassMutation = useDeleteClass();
-    // Materias "de este curso académico" (Fase 8): en escritorio no existe
-    // el concepto (blob sin academic_years), se sigue mostrando la lista
-    // global de materias tal cual, sin filtrar.
-    const yearCoursesQuery = useAcademicYearCourses(yearId, { enabled: !isDesktop && !!yearId });
+    const yearCoursesQuery = useAcademicYearCourses(yearId, { enabled: !!yearId });
     const addYearCourseMutation = useAddAcademicYearCourse();
     const removeYearCourseMutation = useRemoveAcademicYearCourse();
     const linkedCourseIds = new Set((yearCoursesQuery.data ?? []).map(yc => yc.courseId));
 
-    const effectiveClasses: ClassShell[] = isDesktop ? classes : (remoteClasses.data ?? []);
+    const effectiveClasses: ClassShell[] = remoteClasses.data ?? [];
 
     const [newLevel, setNewLevel] = useState('1º ESO');
     const [newSubject, setNewSubject] = useState('');
@@ -54,8 +45,8 @@ const CourseManager: React.FC<{
     const [existingToLink, setExistingToLink] = useState('');
 
     const allAcademicCourses = courses.filter(c => c.type !== 'other');
-    const academicCourses = isDesktop ? allAcademicCourses : allAcademicCourses.filter(c => linkedCourseIds.has(c.id));
-    const unlinkedCourses = isDesktop ? [] : allAcademicCourses.filter(c => !linkedCourseIds.has(c.id));
+    const academicCourses = allAcademicCourses.filter(c => linkedCourseIds.has(c.id));
+    const unlinkedCourses = allAcademicCourses.filter(c => !linkedCourseIds.has(c.id));
     const otherOccupations = courses.filter(c => c.type === 'other');
 
     const handleStartEdit = (course: Course) => {
@@ -76,29 +67,15 @@ const CourseManager: React.FC<{
         const editingCourse = courses.find(c => c.id === editingCourseId);
         const newLevelValue = editingCourse?.type === 'other' ? editingCourse.level : editLevel;
 
-        if (isDesktop) {
-            setCourses(prev => prev.map(c => c.id === editingCourseId
-                ? { ...c, subject: editSubject.trim(), level: newLevelValue }
-                : c
-            ));
-
-            // El color de acento vive en la clase, no en el curso — solo se toca
-            // aquí para "Otras Ocupaciones", que siempre tienen una única clase
-            // asociada (a diferencia de un curso académico, que puede tener
-            // varios grupos con colores distintos gestionados desde Clases).
-            if (editingCourse?.type === 'other') {
-                setClasses(prev => prev.map(cl => cl.courseId === editingCourseId
-                    ? { ...cl, colorAcento: editColorAcento }
-                    : cl
-                ));
-            }
-        } else {
-            await updateCourseMutation.mutateAsync({ id: editingCourseId, data: { subject: editSubject.trim(), level: newLevelValue } });
-            if (editingCourse?.type === 'other') {
-                const cls = effectiveClasses.find(cl => cl.courseId === editingCourseId);
-                if (cls) {
-                    await updateClassMutation.mutateAsync({ id: cls.id, yearId, data: { colorAcento: editColorAcento } });
-                }
+        await updateCourseMutation.mutateAsync({ id: editingCourseId, data: { subject: editSubject.trim(), level: newLevelValue } });
+        // El color de acento vive en la clase, no en el curso — solo se toca
+        // aquí para "Otras Ocupaciones", que siempre tienen una única clase
+        // asociada (a diferencia de un curso académico, que puede tener
+        // varios grupos con colores distintos gestionados desde Clases).
+        if (editingCourse?.type === 'other') {
+            const cls = effectiveClasses.find(cl => cl.courseId === editingCourseId);
+            if (cls) {
+                await updateClassMutation.mutateAsync({ id: cls.id, yearId, data: { colorAcento: editColorAcento } });
             }
         }
 
@@ -108,21 +85,11 @@ const CourseManager: React.FC<{
     const handleAddCourse = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newSubject.trim() === '') return;
-        if (isDesktop) {
-            const newCourse: Course = {
-                id: `course-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-                level: newLevel,
-                subject: newSubject.trim(),
-                type: 'academic',
-            };
-            setCourses(prev => [...prev, newCourse]);
-        } else {
-            const newCourse = await createCourseMutation.mutateAsync({ level: newLevel, subject: newSubject.trim(), type: 'academic' });
-            // Crear una materia nueva desde aquí significa "la voy a impartir
-            // este curso académico" — se enlaza en el mismo paso, si no
-            // quedaría creada pero invisible en la lista (filtrada por año).
-            await addYearCourseMutation.mutateAsync({ yearId, data: { courseId: newCourse.id } });
-        }
+        const newCourse = await createCourseMutation.mutateAsync({ level: newLevel, subject: newSubject.trim(), type: 'academic' });
+        // Crear una materia nueva desde aquí significa "la voy a impartir
+        // este curso académico" — se enlaza en el mismo paso, si no
+        // quedaría creada pero invisible en la lista (filtrada por año).
+        await addYearCourseMutation.mutateAsync({ yearId, data: { courseId: newCourse.id } });
         setNewSubject('');
     };
 
@@ -148,31 +115,8 @@ const CourseManager: React.FC<{
     const handleAddOtherOccupation = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newOtherName.trim() === '') return;
-
-        if (isDesktop) {
-            const newCourse: Course = {
-                id: `course-other-${Date.now()}`,
-                level: 'Otro',
-                subject: newOtherName.trim(),
-                type: 'other'
-            };
-
-            const newClass: ClassData = {
-                id: `class-other-${Date.now()}`,
-                courseId: newCourse.id,
-                students: [],
-                categories: [],
-                assignments: [],
-                grades: [],
-                schedule: [],
-            };
-
-            setCourses(prev => [...prev, newCourse]);
-            setClasses(prev => [...prev, newClass]);
-        } else {
-            const newCourse = await createCourseMutation.mutateAsync({ level: 'Otro', subject: newOtherName.trim(), type: 'other' });
-            await createClassMutation.mutateAsync({ yearId, data: { courseId: newCourse.id, schedule: [] } });
-        }
+        const newCourse = await createCourseMutation.mutateAsync({ level: 'Otro', subject: newOtherName.trim(), type: 'other' });
+        await createClassMutation.mutateAsync({ yearId, data: { courseId: newCourse.id, schedule: [] } });
         setNewOtherName('');
     };
 
@@ -195,24 +139,19 @@ const CourseManager: React.FC<{
 
         if (!window.confirm(confirmationMessage)) return;
 
-        if (isDesktop) {
-            setCourses(prev => prev.filter(c => c.id !== courseId));
-            setClasses(prev => prev.filter(c => c.courseId !== courseId));
-        } else {
-            for (const cls of associatedClasses) {
-                await deleteClassMutation.mutateAsync({ id: cls.id, yearId });
-            }
-            // course_id es RESTRICT en academic_year_courses (Fase 8) — si la
-            // materia sigue declarada como impartida este año, borrarla
-            // directamente daría 409. Solo cubre el año actual, igual que
-            // associatedClasses de arriba: limitación ya existente (una
-            // materia con clases/enlaces en OTROS años seguiría bloqueando
-            // el borrado, sin cambios respecto al comportamiento previo).
-            if (isAcademic && linkedCourseIds.has(courseId)) {
-                await removeYearCourseMutation.mutateAsync({ yearId, courseId });
-            }
-            await deleteCourseMutation.mutateAsync(courseId);
+        for (const cls of associatedClasses) {
+            await deleteClassMutation.mutateAsync({ id: cls.id, yearId });
         }
+        // course_id es RESTRICT en academic_year_courses (Fase 8) — si la
+        // materia sigue declarada como impartida este año, borrarla
+        // directamente daría 409. Solo cubre el año actual, igual que
+        // associatedClasses de arriba: limitación ya existente (una
+        // materia con clases/enlaces en OTROS años seguiría bloqueando
+        // el borrado, sin cambios respecto al comportamiento previo).
+        if (isAcademic && linkedCourseIds.has(courseId)) {
+            await removeYearCourseMutation.mutateAsync({ yearId, courseId });
+        }
+        await deleteCourseMutation.mutateAsync(courseId);
     };
 
     return (
@@ -220,7 +159,7 @@ const CourseManager: React.FC<{
             <h3 className="text-xl font-bold text-slate-800 mb-4">Materias</h3>
             <div className="space-y-6">
                 <div>
-                    <h4 className="text-lg font-semibold text-slate-700 mb-2">{isDesktop ? 'Materias' : 'Materias de este curso académico'}</h4>
+                    <h4 className="text-lg font-semibold text-slate-700 mb-2">Materias de este curso académico</h4>
                     <div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50/50">
                         {academicCourses.length > 0 ? academicCourses.map(course => (
                             editingCourseId === course.id ? (
@@ -244,16 +183,16 @@ const CourseManager: React.FC<{
                                 <div key={course.id} className="flex items-center justify-between bg-white p-2 rounded-md border">
                                     <p><span className="font-semibold text-slate-700">{course.level}</span> - {course.subject}</p>
                                     <div className="flex items-center gap-1">
-                                        {!isDesktop && <IconButton label="Quitar de este curso académico" onClick={() => handleUnlinkCourse(course.id, course.subject)}><XMarkIcon className="w-4 h-4"/></IconButton>}
+                                        <IconButton label="Quitar de este curso académico" onClick={() => handleUnlinkCourse(course.id, course.subject)}><XMarkIcon className="w-4 h-4"/></IconButton>
                                         <IconButton label="Editar materia" onClick={() => handleStartEdit(course)}><PencilIcon className="w-4 h-4"/></IconButton>
                                         <IconButton label="Eliminar materia" tone="danger" onClick={() => handleDeleteCourse(course.id)}><TrashIcon className="w-4 h-4"/></IconButton>
                                     </div>
                                 </div>
                             )
-                        )) : <p className="text-slate-500 text-center py-4">{isDesktop ? 'No hay materias definidas.' : 'No impartes ninguna materia este curso académico todavía.'}</p>}
+                        )) : <p className="text-slate-500 text-center py-4">No impartes ninguna materia este curso académico todavía.</p>}
                     </div>
 
-                    {!isDesktop && unlinkedCourses.length > 0 && (
+                    {unlinkedCourses.length > 0 && (
                         <form onSubmit={handleLinkExisting} className="flex flex-col sm:flex-row items-end gap-2 p-3 border rounded-lg mb-2 bg-slate-50/50">
                             <div className="w-full sm:w-auto flex-grow">
                                 <label className="text-xs font-medium text-slate-600">Añadir materia ya existente (de otro curso académico)</label>

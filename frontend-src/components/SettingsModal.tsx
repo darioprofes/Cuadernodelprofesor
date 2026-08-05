@@ -19,10 +19,10 @@ export interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
     onOpenExportModal: () => void;
+    // courses: solo lectura, para el chequeo de integridad de BackupManager
+    // (healthCheck) — CurriculumManager/ProgrammingManager/etc. ya hablan
+    // directo con el backend granular y no necesitan un setter aquí.
     courses: Course[];
-    setCourses: (updater: React.SetStateAction<Course[]>) => void;
-    // Materias del backend nuevo (bloque 3) — solo para CurriculumManager/
-    // ProgrammingManager, distintas de `courses` (blob viejo, todo lo demás).
     curriculumCourses: Course[];
     onUpdateCourse: (id: string, data: Partial<{ level: string; subject: string; type: 'academic' | 'other'; pesoCriteriosManual: boolean }>) => Promise<void>;
     classes: ClassData[];
@@ -35,18 +35,14 @@ export interface SettingsModalProps {
     onUpdateDescriptor: (id: string, data: Partial<{ code: string; description: string; stage: 'eso' | 'bachillerato' }>) => Promise<void>;
     onDeleteDescriptor: (id: string) => Promise<void>;
     specificCompetences: SpecificCompetence[];
-    setSpecificCompetences: (updater: React.SetStateAction<SpecificCompetence[]>) => void;
     evaluationCriteria: EvaluationCriterion[];
-    setEvaluationCriteria: (updater: React.SetStateAction<EvaluationCriterion[]>) => void;
     importDatabase: (buffer: ArrayBuffer) => Promise<void>;
     exportDatabase: () => Promise<Uint8Array | null>;
     resetDatabase: () => Promise<void>;
     basicKnowledge: BasicKnowledge[];
-    setBasicKnowledge: (updater: React.SetStateAction<BasicKnowledge[]>) => void;
     academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
     programmingUnits: ProgrammingUnit[];
-    setProgrammingUnits: (updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => void;
     evaluationTools: EvaluationTool[];
     onCreateEvaluationTool: (data: Omit<EvaluationTool, 'id'>) => void;
     onUpdateEvaluationTool: (id: string, data: Omit<EvaluationTool, 'id'>) => void;
@@ -57,13 +53,12 @@ type SettingsView = 'classes' | 'schedule' | 'courses' | 'academicConfig' | 'cur
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const {
-        isOpen, onClose, classes, setClasses, courses, setCourses, curriculumCourses, onUpdateCourse,
+        isOpen, onClose, classes, setClasses, courses, curriculumCourses, onUpdateCourse,
         onOpenExportModal, academicConfiguration, setAcademicConfiguration, evaluationTools,
         onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria,
         keyCompetences, onCreateKeyCompetence, onUpdateKeyCompetence, onDeleteKeyCompetence,
         onCreateDescriptor, onUpdateDescriptor, onDeleteDescriptor,
-        specificCompetences, setSpecificCompetences, setEvaluationCriteria,
-        basicKnowledge, setBasicKnowledge, programmingUnits, setProgrammingUnits,
+        basicKnowledge, programmingUnits,
     } = props;
     const [activeView, setActiveView] = useState<SettingsView>('academicConfig');
     // Currículo/Planificación UD se gestionan por materia, pero a diferencia
@@ -91,11 +86,11 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const renderView = () => {
         switch (activeView) {
             case 'classes':
-                return <ClassManager classes={classes} setClasses={setClasses} courses={curriculumCourses} academicConfiguration={academicConfiguration} />;
+                return <ClassManager courses={curriculumCourses} />;
             case 'schedule':
-                return <ScheduleManager classes={classes} setClasses={setClasses} courses={curriculumCourses} academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
+                return <ScheduleManager courses={curriculumCourses} academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
             case 'courses':
-                return <CourseManager courses={curriculumCourses} setCourses={setCourses} classes={classes} setClasses={setClasses} />;
+                return <CourseManager courses={curriculumCourses} />;
              case 'academicConfig':
                 // Fusionado en Fase 8 (bloque 5): antes "Cursos Académicos"
                 // (gestión de años) y "Configuración del Curso" (fechas/
@@ -125,12 +120,6 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                                 onCreateDescriptor={onCreateDescriptor}
                                 onUpdateDescriptor={onUpdateDescriptor}
                                 onDeleteDescriptor={onDeleteDescriptor}
-                                specificCompetences={specificCompetences}
-                                setSpecificCompetences={setSpecificCompetences}
-                                evaluationCriteria={evaluationCriteria}
-                                setEvaluationCriteria={setEvaluationCriteria}
-                                basicKnowledge={basicKnowledge}
-                                setBasicKnowledge={setBasicKnowledge}
                             />
                         ) : (
                             <p className="text-sm text-slate-500">Da de alta una materia en "Materias" antes de gestionar su currículo.</p>
@@ -145,10 +134,6 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                             <ProgrammingManager
                                 courseId={effectiveCourseId}
                                 courses={curriculumCourses}
-                                units={programmingUnits}
-                                setUnits={setProgrammingUnits}
-                                criteria={evaluationCriteria}
-                                basicKnowledge={basicKnowledge}
                                 classes={classes}
                                 academicConfiguration={academicConfiguration}
                             />

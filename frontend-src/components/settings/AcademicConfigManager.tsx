@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
 import type { AcademicConfiguration, Holiday, EvaluationPeriod, GradeScaleRule } from '../../types';
 import { TrashIcon } from '../Icons';
 import Input from '../Input';
@@ -41,54 +40,37 @@ const AcademicConfigManager: React.FC<{
     academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
 }> = ({ academicConfiguration, setAcademicConfiguration }) => {
-    const isDesktop = isTauri();
-    const currentYear = useCurrentAcademicYear({ enabled: !isDesktop });
+    const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
     const updateYearMutation = useUpdateAcademicYear();
-    const remotePeriods = useEvaluationPeriods(yearId, { enabled: !isDesktop && !!yearId });
+    const remotePeriods = useEvaluationPeriods(yearId, { enabled: !!yearId });
     const createPeriodMutation = useCreateEvaluationPeriod();
     const updatePeriodMutation = useUpdateEvaluationPeriod();
     const deletePeriodMutation = useDeleteEvaluationPeriod();
 
-    // Fechas del curso (Fase 8): antes escribían solo en el blob
-    // (academicConfiguration.academicYearStart/End), un campo huérfano y
-    // desincronizado de academic_years.startDate/endDate (lo real, fijado
-    // al crear el año en la píldora de la cabecera, sin UI de edición
-    // hasta ahora). En web pasan a leer/escribir directamente sobre el año
-    // activo; en escritorio siguen en el blob (sin concepto de año).
-    const effectiveYearStart = isDesktop ? academicConfiguration.academicYearStart : (currentYear.data?.startDate ?? '');
-    const effectiveYearEnd = isDesktop ? academicConfiguration.academicYearEnd : (currentYear.data?.endDate ?? '');
+    // Fechas del curso (Fase 8 en web, Fase 7 bloque 4 en escritorio): antes
+    // escribían solo en el blob (academicConfiguration.academicYearStart/
+    // End), un campo huérfano y desincronizado de academic_years.startDate/
+    // endDate (lo real, fijado al crear el año en la píldora de la
+    // cabecera). Ahora ambas plataformas leen/escriben directamente sobre
+    // el año activo.
+    const effectiveYearStart = currentYear.data?.startDate ?? '';
+    const effectiveYearEnd = currentYear.data?.endDate ?? '';
     const handleYearDateChange = async (field: 'startDate' | 'endDate', value: string) => {
-        if (isDesktop) {
-            handleConfigChange(field === 'startDate' ? 'academicYearStart' : 'academicYearEnd', value);
-            return;
-        }
         if (!yearId) return;
         await updateYearMutation.mutateAsync({ id: yearId, data: { [field]: value } });
     };
 
-    // Periodos de evaluación reales (Postgres, ver bloque 6): a diferencia
-    // del resto de academicConfiguration (fechas del curso, festivos,
-    // franjas horarias, escala de notas — todo eso sigue en el blob, fuera
-    // de alcance de la Fase 5 fusionada), estos SÍ tienen que ser reales
-    // porque categories/assignments los referencian con una FK
-    // (evaluation_period_id). `weight` vive en la propia fila del período
-    // en el backend nuevo, no en un mapa aparte como en el blob viejo
-    // (evaluationPeriodWeights) — se reconstruye ese mapa aquí solo para
-    // que el resto de la app (gradeCalculations, sin tocar) siga
-    // encontrándolo donde ya lo espera.
-    const effectivePeriods: EvaluationPeriod[] = isDesktop
-        ? academicConfiguration.evaluationPeriods
-        : (remotePeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate }));
-    const effectiveWeights: Record<string, number> = isDesktop
-        ? (academicConfiguration.evaluationPeriodWeights || {})
-        : Object.fromEntries((remotePeriods.data ?? []).map(p => [p.id, p.weight]));
+    // Periodos de evaluación reales (Postgres/SQLite): categories/
+    // assignments los referencian con una FK (evaluation_period_id).
+    // `weight` vive en la propia fila del período en el backend nuevo, no
+    // en un mapa aparte como en el blob viejo (evaluationPeriodWeights) —
+    // se reconstruye ese mapa aquí solo para que el resto de la app
+    // (gradeCalculations, sin tocar) siga encontrándolo donde ya lo espera.
+    const effectivePeriods: EvaluationPeriod[] = (remotePeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate }));
+    const effectiveWeights: Record<string, number> = Object.fromEntries((remotePeriods.data ?? []).map(p => [p.id, p.weight]));
 
     const handlePeriodFieldChange = async (index: number, field: 'name' | 'startDate' | 'endDate', value: string) => {
-        if (isDesktop) {
-            handleListItemChange('evaluationPeriods', index, field, value);
-            return;
-        }
         const period = effectivePeriods[index];
         if (!period) return;
         const apiField = field === 'startDate' ? 'startDate' : field === 'endDate' ? 'endDate' : 'name';
@@ -96,26 +78,14 @@ const AcademicConfigManager: React.FC<{
     };
 
     const handleAddPeriod = async () => {
-        if (isDesktop) {
-            handleAddListItem('evaluationPeriods');
-            return;
-        }
-        await createPeriodMutation.mutateAsync({ yearId, data: { name: `Nueva Evaluación ${effectivePeriods.length + 1}`, startDate: academicConfiguration.academicYearStart || '', endDate: academicConfiguration.academicYearEnd || '', weight: 1 } });
+        await createPeriodMutation.mutateAsync({ yearId, data: { name: `Nueva Evaluación ${effectivePeriods.length + 1}`, startDate: effectiveYearStart || '', endDate: effectiveYearEnd || '', weight: 1 } });
     };
 
     const handleRemovePeriod = async (periodId: string) => {
-        if (isDesktop) {
-            handleRemoveListItem('evaluationPeriods', periodId);
-            return;
-        }
         await deletePeriodMutation.mutateAsync({ id: periodId, yearId });
     };
 
     const handlePeriodWeightChange = async (periodId: string, weight: string) => {
-        if (isDesktop) {
-            handleWeightChange(periodId, weight);
-            return;
-        }
         const numWeight = parseFloat(weight);
         await updatePeriodMutation.mutateAsync({ id: periodId, yearId, data: { weight: isNaN(numWeight) ? 0 : numWeight } });
     };
@@ -203,17 +173,6 @@ const AcademicConfigManager: React.FC<{
             }
             return { ...prev, [type]: newList };
         });
-    };
-
-    const handleWeightChange = (periodId: string, weight: string) => {
-        const numWeight = parseFloat(weight);
-        setAcademicConfiguration(prev => ({
-            ...prev,
-            evaluationPeriodWeights: {
-                ...(prev.evaluationPeriodWeights || {}),
-                [periodId]: isNaN(numWeight) ? 0 : numWeight,
-            }
-        }));
     };
 
     const handleGradeScaleChange = <K extends keyof GradeScaleRule>(index: number, field: K, value: GradeScaleRule[K]) => {
