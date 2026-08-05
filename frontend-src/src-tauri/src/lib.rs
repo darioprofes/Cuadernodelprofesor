@@ -1,5 +1,7 @@
 use tauri::Manager;
 
+mod db;
+
 // Nombre fijo del fichero SQLite en el directorio de datos de la app
 // (independiente por completo de la persistencia remota que usa la versión
 // web, ver frontend-src/services/localDb.ts).
@@ -33,6 +35,8 @@ pub fn run() {
             .build(),
         )?;
       }
+      let conn = db::open(&app.handle()).expect("no se pudo abrir/migrar el SQLite relacional");
+      app.manage(db::DbState(std::sync::Mutex::new(conn)));
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![load_db, save_db])
