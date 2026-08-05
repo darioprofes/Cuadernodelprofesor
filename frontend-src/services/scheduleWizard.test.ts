@@ -7,6 +7,24 @@ const ALUMNADO_CABECERA = ['Nivel', 'Materia', 'Grupo', 'Nombre', 'Primer Apelli
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 const SUBCOLS_ORDEN_NORMAL = ['Nivel', 'Materia', 'Grupo', 'Aula'] as const;
 
+// Cada hoja de datos empieza con una franja explicativa propia (fila 1 =
+// banner, fila 2 = separador) — ver `PRIMERA_FILA_CONTENIDO` en
+// scheduleWizard.ts. Los tests que construyen hojas a mano reproducen aquí
+// el mismo desplazamiento, sin importar los valores del banner en sí
+// (nunca se parsean).
+const PRIMERA_FILA_CONTENIDO = 3;
+const HORARIO_FILA_DIA = PRIMERA_FILA_CONTENIDO;
+const HORARIO_FILA_SUBCOL = HORARIO_FILA_DIA + 1;
+const HORARIO_FILA_DATOS_INICIO = HORARIO_FILA_SUBCOL + 1;
+const ALUMNADO_FILA_CABECERA = PRIMERA_FILA_CONTENIDO;
+const ALUMNADO_FILA_DATOS_INICIO = ALUMNADO_FILA_CABECERA + 1;
+const CURSO_FILA_NOMBRE = PRIMERA_FILA_CONTENIDO;
+const CURSO_FILA_INICIO = PRIMERA_FILA_CONTENIDO + 1;
+const CURSO_FILA_FIN = PRIMERA_FILA_CONTENIDO + 2;
+const FESTIVOS_FILA_INICIO = PRIMERA_FILA_CONTENIDO + 6; // 9
+const FESTIVOS_FILAS = 20;
+const EVALUACIONES_FILA_INICIO = FESTIVOS_FILA_INICIO + FESTIVOS_FILAS + 3; // 32
+
 interface DatosDia {
     nivel?: string;
     materia?: string;
@@ -19,24 +37,24 @@ interface FilaHorarioTest {
     dias?: (DatosDia | undefined)[]; // índice 0=Lunes .. 4=Viernes
 }
 
-// Construye la hoja "Horario" con el layout de producción (v2): cabeceras
-// de día combinadas en la fila 1, subcabeceras Nivel/Materia/Grupo/Aula en
-// la fila 2 (en el orden dado, por defecto el normal — se puede pasar
-// desordenado para probar que el parseo no depende de la posición).
+// Construye la hoja "Horario" con el layout de producción: banner+separador,
+// cabeceras de día combinadas, subcabeceras Nivel/Materia/Grupo/Aula (en el
+// orden dado, por defecto el normal — se puede pasar desordenado para
+// probar que el parseo no depende de la posición).
 function addHorarioSheet(wb: import('exceljs').Workbook, filas: FilaHorarioTest[], subcolsOrden: readonly string[] = SUBCOLS_ORDEN_NORMAL) {
     const sheet = wb.addWorksheet('Horario');
-    sheet.getCell(1, 1).value = 'Hora';
+    sheet.getCell(HORARIO_FILA_DIA, 1).value = 'Hora';
     DIAS.forEach((dia, d) => {
         const colInicio = 2 + d * 4;
-        sheet.mergeCells(1, colInicio, 1, colInicio + 3);
-        sheet.getCell(1, colInicio).value = dia;
+        sheet.mergeCells(HORARIO_FILA_DIA, colInicio, HORARIO_FILA_DIA, colInicio + 3);
+        sheet.getCell(HORARIO_FILA_DIA, colInicio).value = dia;
         subcolsOrden.forEach((sub, i) => {
-            sheet.getCell(2, colInicio + i).value = sub;
+            sheet.getCell(HORARIO_FILA_SUBCOL, colInicio + i).value = sub;
         });
     });
 
     filas.forEach((fila, i) => {
-        const r = 3 + i;
+        const r = HORARIO_FILA_DATOS_INICIO + i;
         if (fila.hora !== undefined) sheet.getCell(r, 1).value = fila.hora;
         DIAS.forEach((_, d) => {
             const datos = fila.dias?.[d];
@@ -55,8 +73,11 @@ function addHorarioSheet(wb: import('exceljs').Workbook, filas: FilaHorarioTest[
 
 function addAlumnadoSheet(wb: import('exceljs').Workbook, opts?: { cabecera?: string[]; filas?: (string | undefined)[][] }) {
     const sheet = wb.addWorksheet('Alumnado');
-    sheet.addRow(opts?.cabecera ?? ALUMNADO_CABECERA);
-    opts?.filas?.forEach(fila => sheet.addRow(fila));
+    const cabecera = opts?.cabecera ?? ALUMNADO_CABECERA;
+    cabecera.forEach((v, i) => { sheet.getCell(ALUMNADO_FILA_CABECERA, i + 1).value = v; });
+    opts?.filas?.forEach((fila, i) => {
+        fila.forEach((v, c) => { if (v !== undefined) sheet.getCell(ALUMNADO_FILA_DATOS_INICIO + i, c + 1).value = v; });
+    });
     return sheet;
 }
 
@@ -70,23 +91,23 @@ interface DatosCursoAcademico {
 
 const CURSO_ACADEMICO_POR_DEFECTO: DatosCursoAcademico = { label: '2026-2027', startDate: '2026-09-09', endDate: '2027-06-23' };
 
-// Layout real de "Curso Académico" (ver scheduleWizard.ts): B1/B2/B3 =
-// nombre/inicio/fin, festivos en filas 7-26, periodos de evaluación en
-// filas 30-39 — se hardcodean aquí las mismas filas que usa
-// parseCursoAcademicoSheet, no se exportan como constantes solo para esto.
+// Layout real de "Curso Académico" (ver scheduleWizard.ts): B{CURSO_FILA_*}
+// = nombre/inicio/fin, festivos y periodos de evaluación en los rangos de
+// filas de arriba — se reproducen aquí, no se exportan como constantes
+// solo para esto.
 function addCursoAcademicoSheet(wb: import('exceljs').Workbook, datos: DatosCursoAcademico = {}) {
     const sheet = wb.addWorksheet('Curso Académico');
-    if (datos.label !== undefined) sheet.getCell(1, 2).value = datos.label;
-    if (datos.startDate !== undefined) sheet.getCell(2, 2).value = datos.startDate;
-    if (datos.endDate !== undefined) sheet.getCell(3, 2).value = datos.endDate;
+    if (datos.label !== undefined) sheet.getCell(CURSO_FILA_NOMBRE, 2).value = datos.label;
+    if (datos.startDate !== undefined) sheet.getCell(CURSO_FILA_INICIO, 2).value = datos.startDate;
+    if (datos.endDate !== undefined) sheet.getCell(CURSO_FILA_FIN, 2).value = datos.endDate;
     (datos.holidays ?? []).forEach(([nombre, inicio, fin], i) => {
-        const r = 7 + i;
+        const r = FESTIVOS_FILA_INICIO + i;
         sheet.getCell(r, 1).value = nombre;
         sheet.getCell(r, 2).value = inicio;
         sheet.getCell(r, 3).value = fin;
     });
     (datos.evaluationPeriods ?? []).forEach(([nombre, inicio, fin, peso], i) => {
-        const r = 30 + i;
+        const r = EVALUACIONES_FILA_INICIO + i;
         sheet.getCell(r, 1).value = nombre;
         sheet.getCell(r, 2).value = inicio;
         sheet.getCell(r, 3).value = fin;
@@ -206,10 +227,10 @@ describe('scheduleWizard', () => {
             const { Workbook } = await import('exceljs');
             const wb = new Workbook();
             const sheet = wb.addWorksheet('Horario');
-            sheet.getCell(1, 1).value = 'Hora';
-            sheet.mergeCells(1, 2, 1, 5);
-            sheet.getCell(1, 2).value = 'Sábado'; // no es un día lectivo válido
-            ['Nivel', 'Materia', 'Grupo', 'Aula'].forEach((sub, i) => { sheet.getCell(2, 2 + i).value = sub; });
+            sheet.getCell(HORARIO_FILA_DIA, 1).value = 'Hora';
+            sheet.mergeCells(HORARIO_FILA_DIA, 2, HORARIO_FILA_DIA, 5);
+            sheet.getCell(HORARIO_FILA_DIA, 2).value = 'Sábado'; // no es un día lectivo válido
+            ['Nivel', 'Materia', 'Grupo', 'Aula'].forEach((sub, i) => { sheet.getCell(HORARIO_FILA_SUBCOL, 2 + i).value = sub; });
             addAlumnadoSheet(wb);
             const buffer = await wb.xlsx.writeBuffer() as unknown as ArrayBuffer;
 
@@ -221,10 +242,10 @@ describe('scheduleWizard', () => {
             const { Workbook } = await import('exceljs');
             const wb = new Workbook();
             const sheet = wb.addWorksheet('Horario');
-            sheet.getCell(1, 1).value = 'Hora';
-            sheet.mergeCells(1, 2, 1, 5);
-            sheet.getCell(1, 2).value = 'Lunes';
-            ['Nivel', 'Grupo', 'Aula'].forEach((sub, i) => { sheet.getCell(2, 2 + i).value = sub; }); // sin "Materia"
+            sheet.getCell(HORARIO_FILA_DIA, 1).value = 'Hora';
+            sheet.mergeCells(HORARIO_FILA_DIA, 2, HORARIO_FILA_DIA, 5);
+            sheet.getCell(HORARIO_FILA_DIA, 2).value = 'Lunes';
+            ['Nivel', 'Grupo', 'Aula'].forEach((sub, i) => { sheet.getCell(HORARIO_FILA_SUBCOL, 2 + i).value = sub; }); // sin "Materia"
             addAlumnadoSheet(wb);
             const buffer = await wb.xlsx.writeBuffer() as unknown as ArrayBuffer;
 
@@ -479,11 +500,32 @@ describe('scheduleWizard', () => {
             await wb.xlsx.load(buffer);
             const config = wb.getWorksheet('Configuración');
             expect(config).toBeDefined();
-            expect(config!.getCell(2, 1).value).toBe('1º ESO'); // Niveles
-            expect(config!.getCell(2, 2).value).toBe('Biología y Geología'); // Materias/actividades
-            expect(config!.getCell(3, 2).value).toBe('Guardia');
-            expect(config!.getCell(2, 3).value).toBe('1º ESO A'); // Grupos
-            expect(config!.getCell(2, 4).value).toBe('A16'); // Aulas
+            const filaDatos = PRIMERA_FILA_CONTENIDO + 1;
+            expect(config!.getCell(filaDatos, 1).value).toBe('1º ESO'); // Niveles
+            expect(config!.getCell(filaDatos, 2).value).toBe('Biología y Geología'); // Materias/actividades
+            expect(config!.getCell(filaDatos + 1, 2).value).toBe('Guardia');
+            expect(config!.getCell(filaDatos, 3).value).toBe('1º ESO A'); // Grupos
+            expect(config!.getCell(filaDatos, 4).value).toBe('A16'); // Aulas
+        });
+
+        it('cada hoja de datos trae su propia franja explicativa (banner) en la fila 1', async () => {
+            const blob = await generateTemplate({ label: '2026-2027', startDate: '2026-09-09', endDate: '2027-06-23' });
+            const buffer = await blob.arrayBuffer();
+            const { Workbook } = await import('exceljs');
+            const wb = new Workbook();
+            await wb.xlsx.load(buffer);
+
+            for (const nombreHoja of ['Curso Académico', 'Configuración', 'Horario', 'Alumnado']) {
+                const sheet = wb.getWorksheet(nombreHoja);
+                expect(sheet, `hoja "${nombreHoja}"`).toBeDefined();
+                const valor = sheet!.getCell(1, 1).value;
+                expect(valor, `banner de "${nombreHoja}"`).not.toBeNull();
+                // richText: primer "run" es el título en negrita con icono.
+                const texto = typeof valor === 'object' && valor !== null && 'richText' in valor
+                    ? (valor as { richText: { text: string }[] }).richText.map(r => r.text).join('')
+                    : String(valor);
+                expect(texto.length, `banner de "${nombreHoja}" no debería estar vacío`).toBeGreaterThan(10);
+            }
         });
     });
 });

@@ -1,9 +1,10 @@
-// Asistente de inicio de curso: genera y parsea una plantilla Excel de 4
-// hojas (Instrucciones / Configuración / Horario / Alumnado) para dar de
-// alta de una vez materias, clases, horario y alumnado. Funciones puras,
-// sin React ni backend — igual en web y en escritorio (exceljs trabaja
-// enteramente en memoria vía ArrayBuffer/Blob, sin acceso a filesystem de
-// Node).
+// Asistente de inicio de curso: genera y parsea una plantilla Excel de 5
+// hojas (Instrucciones / Curso Académico / Configuración / Horario /
+// Alumnado) para dar de alta de una vez un curso académico completo:
+// nombre, fechas, festivos, periodos de evaluación, materias, horario y
+// alumnado. Funciones puras, sin React ni backend — igual en web y en
+// escritorio (exceljs trabaja enteramente en memoria vía ArrayBuffer/Blob,
+// sin acceso a filesystem de Node).
 //
 // v2 (2026-08-05): la hoja Horario pasó de "una celda con hasta 3 líneas
 // separadas por Alt+Intro" (v1, ver git log de este fichero) a columnas
@@ -11,11 +12,17 @@
 // datos distintas dentro de una misma celda combinada, así que combinar
 // celdas (para el nombre de cada día) y tener desplegables (para Nivel/
 // Materia/Grupo/Aula) obliga a repartir esos datos en columnas separadas.
-// La hoja Configuración nueva es la fuente de esos desplegables: el
-// profesor declara una vez qué niveles/materias/grupos/aulas usa, y el
-// resto del libro tira de esas listas en vez de tenerlas que teclear a
-// mano en cada franja (motivo real: en la verificación de la v1 una fila
-// de Alumnado no resolvió a ninguna clase por una errata de tecleo).
+// La hoja Configuración nueva es la fuente de esos desplegables.
+//
+// v3 (2026-08-06): el asistente pasa de "rellenar el curso activo" a
+// "crear un curso académico nuevo" — nueva hoja "Curso Académico".
+//
+// v3.1 (2026-08-06): repaso estético completo pedido por el usuario —
+// cada hoja de datos lleva ahora una franja explicativa propia arriba (en
+// vez de amontonar toda la mecánica en "Instrucciones", que pasa a ser un
+// texto general corto, estilo documento), más filas alternas, bordes
+// finos y algunos iconos en cabeceras que NUNCA se leen por texto al
+// parsear (ver nota junto a `PRIMERA_FILA_CONTENIDO` y los `estiliza*`).
 
 import type { FilaHorario } from '../types';
 
@@ -70,21 +77,28 @@ const HOJA_CONFIGURACION = 'Configuración';
 const HOJA_HORARIO = 'Horario';
 const HOJA_ALUMNADO = 'Alumnado';
 
-// Layout de la hoja "Curso Académico": bloque clave/valor (filas 1-3) +
-// dos tablas apiladas verticalmente (Festivos, luego Periodos de
-// evaluación) — más simple de construir/parsear que ponerlas una al lado
-// de otra, y esta hoja es corta así que no hace falta ahorrar espacio.
-const CURSO_FILA_NOMBRE = 1;
-const CURSO_FILA_INICIO = 2;
-const CURSO_FILA_FIN = 3;
-const FESTIVOS_FILA_TITULO = 5;
-const FESTIVOS_FILA_CABECERA = 6;
-const FESTIVOS_FILA_INICIO = 7;
-const FESTIVOS_FILAS = 20; // filas de datos 7..26
-const EVALUACIONES_FILA_TITULO = 28;
-const EVALUACIONES_FILA_CABECERA = 29;
-const EVALUACIONES_FILA_INICIO = 30;
-const EVALUACIONES_FILAS = 10; // filas de datos 30..39
+// Cada hoja de datos (todas menos Instrucciones) empieza con una franja
+// explicativa propia: fila 1 = banner (texto), fila 2 = separador fino.
+// El contenido real de cada hoja arranca aquí. Todo lo que sigue en este
+// fichero da por hecho este desplazamiento — no hay "fila 1 = cabecera"
+// en ninguna hoja de datos, a diferencia de la v3.0.
+const PRIMERA_FILA_CONTENIDO = 3;
+
+// Layout de la hoja "Curso Académico": bloque clave/valor + dos tablas
+// apiladas verticalmente (Festivos, luego Periodos de evaluación) — más
+// simple de construir/parsear que ponerlas una al lado de otra, y esta
+// hoja es corta así que no hace falta ahorrar espacio.
+const CURSO_FILA_NOMBRE = PRIMERA_FILA_CONTENIDO;
+const CURSO_FILA_INICIO = PRIMERA_FILA_CONTENIDO + 1;
+const CURSO_FILA_FIN = PRIMERA_FILA_CONTENIDO + 2;
+const FESTIVOS_FILA_TITULO = PRIMERA_FILA_CONTENIDO + 4;
+const FESTIVOS_FILA_CABECERA = PRIMERA_FILA_CONTENIDO + 5;
+const FESTIVOS_FILA_INICIO = PRIMERA_FILA_CONTENIDO + 6;
+const FESTIVOS_FILAS = 20;
+const EVALUACIONES_FILA_TITULO = FESTIVOS_FILA_INICIO + FESTIVOS_FILAS + 1;
+const EVALUACIONES_FILA_CABECERA = EVALUACIONES_FILA_TITULO + 1;
+const EVALUACIONES_FILA_INICIO = EVALUACIONES_FILA_TITULO + 2;
+const EVALUACIONES_FILAS = 10;
 
 const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
@@ -107,12 +121,19 @@ const CONFIG_COL_NIVEL = 1;
 const CONFIG_COL_MATERIA = 2;
 const CONFIG_COL_GRUPO = 3;
 const CONFIG_COL_AULA = 4;
-const CONFIG_FILAS = 40; // filas de datos por lista (2..41)
+const CONFIG_FILA_CABECERA = PRIMERA_FILA_CONTENIDO;
+const CONFIG_FILA_DATOS_INICIO = CONFIG_FILA_CABECERA + 1;
+const CONFIG_FILAS = 40; // filas de datos por lista
 
 const SUBCOLUMNAS_DIA = ['Nivel', 'Materia', 'Grupo', 'Aula'] as const;
 const COLS_POR_DIA = SUBCOLUMNAS_DIA.length;
 
 const COLOR_CABECERA = 'FF2563EB'; // Tailwind blue-600, mismo azul que los botones primarios de la app
+const COLOR_BANNER_TITULO = 'FF1E3A8A'; // Tailwind blue-900
+const COLOR_BANNER_TEXTO = 'FF475569'; // Tailwind slate-600
+const COLOR_BANNER_FONDO = 'FFEFF6FF'; // Tailwind blue-50
+const COLOR_ZEBRA = 'FFF8FAFC'; // Tailwind slate-50, apenas perceptible
+const COLOR_BORDE_FINO = 'FFE2E8F0'; // Tailwind slate-200
 
 const sinAcentos = (texto: string): string =>
     texto.normalize('NFKD').replace(/[̀-ͯ]/g, '');
@@ -220,7 +241,7 @@ const setDateHint = (cell: import('exceljs').Cell) => {
 // desplegable en otra hoja (formulae de dataValidation no lleva "=").
 const configRange = (col: number): string => {
     const letra = String.fromCharCode(64 + col); // 1 -> 'A', 2 -> 'B'...
-    return `${HOJA_CONFIGURACION}!$${letra}$2:$${letra}$${CONFIG_FILAS + 1}`;
+    return `${HOJA_CONFIGURACION}!$${letra}$${CONFIG_FILA_DATOS_INICIO}:$${letra}$${CONFIG_FILA_DATOS_INICIO + CONFIG_FILAS - 1}`;
 };
 
 // Desplegable "flexible" (decisión explícita del usuario): sugiere desde
@@ -236,6 +257,70 @@ const setListValidation = (cell: import('exceljs').Cell, rangeRef: string) => {
 };
 
 const colInicioDia = (diaIndex: number): number => 2 + diaIndex * COLS_POR_DIA;
+
+function estilizarCabecera(cell: import('exceljs').Cell) {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_CABECERA } };
+    cell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+}
+
+const ESTILO_BORDE_FINO = { style: 'thin' as const, color: { argb: COLOR_BORDE_FINO } };
+
+function bordeFino(cell: import('exceljs').Cell) {
+    cell.border = { ...cell.border, top: ESTILO_BORDE_FINO, left: ESTILO_BORDE_FINO, bottom: ESTILO_BORDE_FINO, right: ESTILO_BORDE_FINO };
+}
+
+// Filas alternas (zebra striping) dentro de una tabla de datos —
+// `filaIndex` es 0-based DENTRO de esa tabla (0 = primera fila de datos),
+// no el número de fila real de la hoja.
+function estilizarCeldaDatos(cell: import('exceljs').Cell, filaIndex: number) {
+    bordeFino(cell);
+    if (filaIndex % 2 === 1) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_ZEBRA } };
+    }
+}
+
+// Excel NO recalcula la altura de una fila con texto envuelto (wrapText)
+// cuando la celda está combinada — es una limitación conocida del propio
+// Excel, no algo que se pueda pedir vía exceljs; hay que fijar la altura a
+// mano o el texto se ve cortado (bug real reportado por el usuario: con una
+// altura fija de 54pt para las 4 hojas, el texto no cabía en las más
+// estrechas). Estimación aproximada: 1 unidad de ancho de columna ≈ 1
+// carácter de la fuente por defecto (con un 15% de margen porque el título
+// va en negrita, más ancha) — de sobra para no quedarse corto; que sobre
+// espacio es mucho menos molesto que un texto cortado.
+function estimarAlturaTexto(anchoColumnas: number, texto: string, lineasExtra = 0): number {
+    const charsPorLinea = Math.max(10, anchoColumnas * 0.85);
+    const lineas = lineasExtra + Math.ceil(texto.length / charsPorLinea);
+    return Math.max(40, lineas * 16 + 22);
+}
+
+// Franja explicativa propia de cada hoja de datos (fila 1 = texto en dos
+// tonos dentro de la misma celda combinada — título en negrita + azul
+// oscuro, descripción en gris —, fila 2 = separador fino). Sustituye a la
+// vieja "Instrucciones" como único sitio con la mecánica de cada hoja: el
+// profesor ve la explicación justo donde la necesita, sin tener que volver
+// a una hoja aparte. El texto de aquí NUNCA se parsea (a diferencia de las
+// cabeceras de columna reales, que si llevan icono no se podrían reconocer
+// por texto al subir el fichero — ver comentario en cada `build*Sheet`).
+// `anchoTotal` es la suma de anchos de las columnas que abarca el banner
+// (no `colFin`, que es solo el número de columnas) — hace falta para
+// estimar cuántas líneas ocupará el texto.
+function addBanner(sheet: import('exceljs').Worksheet, colFin: number, anchoTotal: number, icono: string, titulo: string, descripcion: string) {
+    sheet.mergeCells(1, 1, 1, colFin);
+    const cell = sheet.getCell(1, 1);
+    cell.value = {
+        richText: [
+            { font: { bold: true, size: 12, color: { argb: COLOR_BANNER_TITULO } }, text: `${icono} ${titulo}\n` },
+            { font: { size: 10, color: { argb: COLOR_BANNER_TEXTO } }, text: descripcion },
+        ],
+    };
+    cell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'left' };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_BANNER_FONDO } };
+    // +1 línea extra por el título, que va en su propia línea antes de la descripción.
+    sheet.getRow(1).height = estimarAlturaTexto(anchoTotal, descripcion, 1);
+    sheet.getRow(2).height = 6;
+}
 
 // ==========================================================
 // Generación de la plantilla
@@ -263,6 +348,44 @@ export async function generateTemplate(prefill?: PrefillCursoAcademico): Promise
     return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
+// Hoja de portada: un texto general corto, a modo de documento (fondo
+// suave, párrafos con aire), sin mecánica columna-por-columna — esa vive
+// ahora en el banner propio de cada hoja (ver `addBanner`). Petición
+// explícita del usuario: el wall-of-text anterior no invitaba a leerlo.
+function buildInstruccionesSheet(wb: import('exceljs').Workbook) {
+    const sheet = wb.addWorksheet(HOJA_INSTRUCCIONES);
+    sheet.getColumn(1).width = 100;
+
+    const titulo = sheet.getCell(1, 1);
+    titulo.value = '🚀 Asistente de inicio de curso';
+    titulo.font = { bold: true, size: 18, color: { argb: COLOR_BANNER_TITULO } };
+    titulo.alignment = { vertical: 'middle' };
+    sheet.getRow(1).height = 34;
+
+    const parrafos = [
+        'Este libro te permite arrancar un curso académico nuevo de una sola vez: nombre y fechas del curso, festivos, periodos de evaluación, las materias que impartes, tu horario semanal y el alumnado de cada clase — todo en un único fichero.',
+        'Rellena las hojas en el orden en que aparecen. Cada una trae su propia explicación arriba, en la franja de color — no hace falta volver aquí para saber qué va en cada columna.',
+        'Cuando termines, súbelo desde Ajustes → Curso Académico → "Iniciar nuevo curso académico". Verás un resumen de lo que se va a crear antes de confirmar nada, así que no hay ningún riesgo en subirlo y revisar primero.',
+        'Este asistente SIEMPRE crea un curso académico nuevo y lo activa — nunca modifica el curso que tengas activo ahora mismo.',
+    ];
+
+    let fila = 3;
+    parrafos.forEach(texto => {
+        const cell = sheet.getCell(fila, 1);
+        cell.value = texto;
+        cell.font = { size: 12 };
+        cell.alignment = { wrapText: true, vertical: 'middle' };
+        sheet.getRow(fila).height = estimarAlturaTexto(100, texto);
+        fila += 1;
+    });
+
+    // "Tarjeta" de fondo suave para que se lea como un documento, no como
+    // una hoja de cálculo de trabajo.
+    for (let r = 1; r <= fila - 1; r++) {
+        sheet.getCell(r, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_BANNER_FONDO } };
+    }
+}
+
 // La hoja "Curso Académico" declara el curso NUEVO que este asistente va a
 // crear y activar — nunca modifica el curso ya activo (decisión explícita,
 // ver asistente-inicio-curso.md v3). `prefill` viene del mini-formulario
@@ -276,15 +399,23 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
     sheet.getColumn(3).width = 20;
     sheet.getColumn(4).width = 10;
 
+    addBanner(
+        sheet, 4, 32 + 20 + 20 + 10, '🚀', 'Curso Académico',
+        'Datos del curso NUEVO que este asistente va a crear y activar (nunca toca el que tengas activo). Abajo: nombre y fechas; más abajo, festivos y periodos de evaluación — si diste las fechas, ya vienen 3 periodos calculados a partes iguales.',
+    );
+
+    // Los iconos de estas 3 etiquetas son solo decorativos: el parseo lee
+    // B3/B4/B5 directamente por posición, nunca por el texto de A3/A4/A5.
     const setEtiqueta = (fila: number, etiqueta: string, valor?: string) => {
         const etiquetaCell = sheet.getCell(fila, 1);
         etiquetaCell.value = etiqueta;
         etiquetaCell.font = { bold: true };
+        etiquetaCell.alignment = { vertical: 'middle' };
         if (valor) sheet.getCell(fila, 2).value = valor;
     };
-    setEtiqueta(CURSO_FILA_NOMBRE, 'Nombre del curso', prefill?.label);
-    setEtiqueta(CURSO_FILA_INICIO, 'Fecha de inicio (AAAA-MM-DD)', prefill?.startDate);
-    setEtiqueta(CURSO_FILA_FIN, 'Fecha de fin (AAAA-MM-DD)', prefill?.endDate);
+    setEtiqueta(CURSO_FILA_NOMBRE, '🏷️ Nombre del curso', prefill?.label);
+    setEtiqueta(CURSO_FILA_INICIO, '📅 Fecha de inicio (AAAA-MM-DD)', prefill?.startDate);
+    setEtiqueta(CURSO_FILA_FIN, '📅 Fecha de fin (AAAA-MM-DD)', prefill?.endDate);
     setDateHint(sheet.getCell(CURSO_FILA_INICIO, 2));
     setDateHint(sheet.getCell(CURSO_FILA_FIN, 2));
 
@@ -293,6 +424,7 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
         const cell = sheet.getCell(fila, 1);
         cell.value = texto;
         cell.font = { bold: true, size: 12 };
+        cell.alignment = { vertical: 'middle' };
     };
     const cabeceraTabla = (fila: number, columnas: string[]) => {
         columnas.forEach((h, i) => {
@@ -302,16 +434,20 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
         });
     };
 
-    tituloSeccion(FESTIVOS_FILA_TITULO, 3, 'Festivos y días no lectivos');
+    tituloSeccion(FESTIVOS_FILA_TITULO, 3, '🎉 Festivos y días no lectivos');
     cabeceraTabla(FESTIVOS_FILA_CABECERA, ['Nombre', 'Fecha inicio (AAAA-MM-DD)', 'Fecha fin (AAAA-MM-DD)']);
-    for (let r = FESTIVOS_FILA_INICIO; r < FESTIVOS_FILA_INICIO + FESTIVOS_FILAS; r++) {
+    for (let i = 0; i < FESTIVOS_FILAS; i++) {
+        const r = FESTIVOS_FILA_INICIO + i;
+        for (let c = 1; c <= 3; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
         setDateHint(sheet.getCell(r, 2));
         setDateHint(sheet.getCell(r, 3));
     }
 
-    tituloSeccion(EVALUACIONES_FILA_TITULO, 4, 'Periodos de evaluación');
+    tituloSeccion(EVALUACIONES_FILA_TITULO, 4, '📊 Periodos de evaluación');
     cabeceraTabla(EVALUACIONES_FILA_CABECERA, ['Nombre', 'Fecha inicio (AAAA-MM-DD)', 'Fecha fin (AAAA-MM-DD)', 'Peso']);
-    for (let r = EVALUACIONES_FILA_INICIO; r < EVALUACIONES_FILA_INICIO + EVALUACIONES_FILAS; r++) {
+    for (let i = 0; i < EVALUACIONES_FILAS; i++) {
+        const r = EVALUACIONES_FILA_INICIO + i;
+        for (let c = 1; c <= 4; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
         setDateHint(sheet.getCell(r, 2));
         setDateHint(sheet.getCell(r, 3));
     }
@@ -326,127 +462,133 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
     }
 }
 
-function buildInstruccionesSheet(wb: import('exceljs').Workbook) {
-    const sheet = wb.addWorksheet(HOJA_INSTRUCCIONES);
-    sheet.getColumn(1).width = 100;
-
-    const parrafos = [
-        'Asistente de inicio de curso',
-        '',
-        'Rellena las hojas de este libro EN ORDEN — "Curso Académico" y "Configuración" primero, para que el resto de hojas tengan lo que necesitan — y súbelo desde Ajustes → Curso Académico → "Iniciar nuevo curso académico". Antes de aplicar nada, la app te enseña un resumen de lo que va a crear para que lo confirmes.',
-        '',
-        'Hoja "Curso Académico":',
-        '- Nombre del curso (p.ej. "2026-2027") y fechas de inicio/fin (AAAA-MM-DD): este asistente SIEMPRE crea un curso académico nuevo y lo activa — nunca modifica el que tengas activo ahora mismo.',
-        '- Festivos y días no lectivos: opcional, uno por fila.',
-        '- Periodos de evaluación: si ya pusiste las fechas de inicio/fin de arriba, aquí tienes 3 periodos calculados a partes iguales — puedes editarlos o añadir/quitar filas. "Peso" sirve para ponderar la nota final entre evaluaciones (1 por defecto, igual para todas).',
-        '',
-        'Hoja "Configuración":',
-        '- 4 listas simples, una por columna: Niveles que impartes, Materias/actividades que impartes (incluye guardias, reuniones... no solo materias con alumnado), Grupos a los que das clase, Aulas habituales.',
-        '- Un valor por fila. Estas listas alimentan los desplegables de "Horario" y "Alumnado".',
-        '',
-        'Hoja "Horario":',
-        '- Cada fila es una franja horaria (p.ej. "08:15 - 09:10"); cada día tiene sus propias columnas: Nivel, Materia, Grupo, Aula.',
-        '- Nivel/Materia/Grupo/Aula tienen desplegable (sugiere desde "Configuración", pero puedes escribir otra cosa si hace falta).',
-        '- Solo Materia es obligatoria para que esa franja cuente ese día. Si además rellenas Grupo, se crea una clase académica real (con alumnado y calificaciones); si dejas Grupo vacío, se trata como una "otra ocupación" (guardia, reunión...) sin alumnado.',
-        '- Deja Materia vacía si esa franja está libre ese día.',
-        '',
-        'Hoja "Alumnado":',
-        '- Una fila por alumno/a.',
-        '- Nivel/Materia/Grupo (con el mismo desplegable) deben coincidir con una clase de la hoja "Horario" — si no coinciden con ninguna, esa fila da error y no se importa.',
-        '- "Fecha Nacimiento" (AAAA-MM-DD), "DNI" y "ACNEAE" son opcionales. El resto de la ficha (tutores, domicilio, datos sanitarios...) se rellena después desde la propia app.',
-        '- Truco: para copiar Nivel/Grupo en varias filas seguidas (varios alumnos del mismo grupo), arrastra el tirador de relleno con la tecla Ctrl pulsada — si no, Excel puede incrementar el número en vez de copiarlo tal cual.',
-        '',
-        'No borres ninguna fila de cabecera. Esta hoja de instrucciones no se procesa al importar.',
-    ];
-
-    parrafos.forEach((texto, i) => {
-        const row = sheet.getRow(i + 1);
-        row.getCell(1).value = texto;
-        row.getCell(1).alignment = { wrapText: true, vertical: 'top' };
-        if (i === 0) {
-            row.getCell(1).font = { bold: true, size: 14 };
-        } else if (/^Hoja "/.test(texto)) {
-            row.getCell(1).font = { bold: true };
-        }
-    });
-}
-
+// Los iconos de estas 4 cabeceras son solo decorativos: nada las lee por
+// texto al parsear (a diferencia de las cabeceras de Alumnado/Horario, que
+// si llevaran icono dejarían de coincidir con el emparejamiento por texto
+// que ya usan `parseAlumnadoSheet`/`mapearSubcolumnas` — por eso esas se
+// quedan sin icono).
 function buildConfiguracionSheet(wb: import('exceljs').Workbook) {
     const sheet = wb.addWorksheet(HOJA_CONFIGURACION);
 
+    addBanner(
+        sheet, 4, 32 * 4, '📋', 'Configuración',
+        'Declara aquí, una vez, lo que usas: niveles, materias/actividades (incluye guardias, reuniones...), grupos y aulas — un valor por fila. Estas listas alimentan los desplegables de "Horario" y "Alumnado". Son 4 listas INDEPENDIENTES entre sí: la fila 5 de una columna no tiene por qué tener nada que ver con la fila 5 de otra — cada columna es su propia lista suelta.',
+    );
+
     const columnas: { header: string; ejemplo: string; ejemplo2?: string }[] = [
-        { header: 'Niveles que impartes', ejemplo: '1º ESO' },
-        { header: 'Materias / actividades que impartes', ejemplo: 'Biología y Geología', ejemplo2: 'Guardia' },
-        { header: 'Grupos a los que das clase', ejemplo: '1º ESO A' },
-        { header: 'Aulas habituales', ejemplo: 'A16' },
+        { header: '🎓 Niveles que impartes', ejemplo: '1º ESO' },
+        { header: '📘 Materias / actividades que impartes', ejemplo: 'Biología y Geología', ejemplo2: 'Guardia' },
+        { header: '👥 Grupos a los que das clase', ejemplo: '1º ESO A' },
+        { header: '🏫 Aulas habituales', ejemplo: 'A16' },
     ];
 
     columnas.forEach((c, i) => {
         const col = i + 1;
         sheet.getColumn(col).width = 32;
-        const headerCell = sheet.getCell(1, col);
+        const headerCell = sheet.getCell(CONFIG_FILA_CABECERA, col);
         headerCell.value = c.header;
         estilizarCabecera(headerCell);
-        headerCell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
-        sheet.getCell(2, col).value = c.ejemplo;
-        if (c.ejemplo2) sheet.getCell(3, col).value = c.ejemplo2;
+        sheet.getCell(CONFIG_FILA_DATOS_INICIO, col).value = c.ejemplo;
+        if (c.ejemplo2) sheet.getCell(CONFIG_FILA_DATOS_INICIO + 1, col).value = c.ejemplo2;
     });
 
-    sheet.getRow(1).height = 32;
-    sheet.views = [{ state: 'frozen', ySplit: 1 }];
-}
+    for (let i = 0; i < CONFIG_FILAS; i++) {
+        const r = CONFIG_FILA_DATOS_INICIO + i;
+        for (let c = 1; c <= 4; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
+    }
 
-function estilizarCabecera(cell: import('exceljs').Cell) {
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_CABECERA } };
+    sheet.getRow(CONFIG_FILA_CABECERA).height = 32;
+    sheet.views = [{ state: 'frozen', ySplit: CONFIG_FILA_CABECERA }];
 }
 
 const FILAS_HORARIO = 15;
-const PRIMERA_FILA_DATOS_HORARIO = 3;
+const HORARIO_FILA_DIA = PRIMERA_FILA_CONTENIDO;
+const HORARIO_FILA_SUBCOL = HORARIO_FILA_DIA + 1;
+const PRIMERA_FILA_DATOS_HORARIO = HORARIO_FILA_SUBCOL + 1;
+
+// Ancho (en unidades de columna) del bloque donde va la explicación del
+// banner de Horario — 2 bloques de día (8 columnas), ni tan estrecho que
+// obligue a demasiadas líneas ni tan ancho que vuelva a necesitar scroll
+// horizontal para leerlo entero.
+const HORARIO_BANNER_EXPLICACION_COLS = 8;
 
 function buildHorarioSheet(wb: import('exceljs').Workbook) {
     const sheet = wb.addWorksheet(HOJA_HORARIO);
+    const ultimaColumna = colInicioDia(DIAS_SEMANA.length - 1) + COLS_POR_DIA - 1;
 
-    // "Hora" combinada verticalmente (sin subcolumnas propias).
-    sheet.mergeCells(1, 1, 2, 1);
-    const horaHeader = sheet.getCell(1, 1);
-    horaHeader.value = 'Hora';
+    // Banner en dos celdas, no una sola combinada a lo ancho de las 21
+    // columnas como en el resto de hojas: con esa versión el texto quedaba
+    // en líneas larguísimas que había que desplazar horizontalmente para
+    // leer enteras (petición explícita del usuario: nada de scroll para
+    // leer la explicación). Ahora: icono+título en la columna "Hora" —
+    // que además queda inmovilizada al hacer scroll horizontal, así el
+    // rótulo de la hoja siempre está a la vista — y la explicación, en
+    // varias líneas cortas, en un bloque más estrecho justo a su derecha.
+    for (let c = 1; c <= ultimaColumna; c++) {
+        sheet.getCell(1, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_BANNER_FONDO } };
+    }
+    const tituloCell = sheet.getCell(1, 1);
+    tituloCell.value = { richText: [{ font: { bold: true, size: 11, color: { argb: COLOR_BANNER_TITULO } }, text: '🗓️ Horario' }] };
+    tituloCell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+
+    const descripcionHorario = 'Una fila por franja horaria. Cada día tiene sus columnas Nivel/Materia/Grupo/Aula (con desplegable). Solo Materia es obligatoria: si además pones Grupo, se crea una clase académica real; si no, es una "otra ocupación" sin alumnado. Deja Materia vacía si esa franja está libre ese día.';
+    sheet.mergeCells(1, 2, 1, 1 + HORARIO_BANNER_EXPLICACION_COLS);
+    const descCell = sheet.getCell(1, 2);
+    descCell.value = descripcionHorario;
+    descCell.font = { size: 10, color: { argb: COLOR_BANNER_TEXTO } };
+    descCell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'left' };
+
+    const anchoExplicacion = (HORARIO_BANNER_EXPLICACION_COLS / COLS_POR_DIA) * (14 + 26 + 14 + 14);
+    sheet.getRow(1).height = estimarAlturaTexto(anchoExplicacion, descripcionHorario);
+    sheet.getRow(2).height = 6;
+
+    // "Hora" combinada verticalmente (sin subcolumnas propias). Sin icono:
+    // esta celda no se lee por texto al parsear, pero mantenerla igual que
+    // las demás cabeceras evita una excepción visual sin motivo.
+    sheet.mergeCells(HORARIO_FILA_DIA, 1, HORARIO_FILA_SUBCOL, 1);
+    const horaHeader = sheet.getCell(HORARIO_FILA_DIA, 1);
+    horaHeader.value = '🕐 Hora';
     horaHeader.alignment = { vertical: 'middle', horizontal: 'center' };
     sheet.getColumn(1).width = 18;
 
+    // Los nombres de día (Lunes..Viernes) y las subcabeceras Nivel/Materia/
+    // Grupo/Aula SE LEEN POR TEXTO al parsear (`normalizarDia`/
+    // `mapearSubcolumnas`) — llevar un icono aquí rompería ese
+    // emparejamiento, así que se quedan en texto plano a propósito.
     DIAS_SEMANA.forEach((dia, d) => {
         const colInicio = colInicioDia(d);
         const colFin = colInicio + COLS_POR_DIA - 1;
 
-        // Nombre del día en una celda combinada que abarca sus 4 subcolumnas.
-        sheet.mergeCells(1, colInicio, 1, colFin);
-        const diaCell = sheet.getCell(1, colInicio);
+        sheet.mergeCells(HORARIO_FILA_DIA, colInicio, HORARIO_FILA_DIA, colFin);
+        const diaCell = sheet.getCell(HORARIO_FILA_DIA, colInicio);
         diaCell.value = dia;
         diaCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
         SUBCOLUMNAS_DIA.forEach((sub, i) => {
             const col = colInicio + i;
-            const subCell = sheet.getCell(2, col);
+            const subCell = sheet.getCell(HORARIO_FILA_SUBCOL, col);
             subCell.value = sub;
             subCell.alignment = { vertical: 'middle', horizontal: 'center' };
             sheet.getColumn(col).width = sub === 'Materia' ? 26 : 14;
         });
     });
 
-    const ultimaColumna = colInicioDia(DIAS_SEMANA.length - 1) + COLS_POR_DIA - 1;
-    for (let r = 1; r <= 2; r++) {
+    for (let r = HORARIO_FILA_DIA; r <= HORARIO_FILA_SUBCOL; r++) {
         for (let c = 1; c <= ultimaColumna; c++) {
             estilizarCabecera(sheet.getCell(r, c));
         }
     }
-    sheet.getRow(1).height = 22;
-    sheet.getRow(2).height = 20;
+    sheet.getRow(HORARIO_FILA_DIA).height = 22;
+    sheet.getRow(HORARIO_FILA_SUBCOL).height = 20;
 
     // Cabecera (2 filas) y columna Hora siempre visibles al bajar por la tabla.
-    sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 2 }];
+    sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: HORARIO_FILA_SUBCOL }];
 
     const filaFinDatos = PRIMERA_FILA_DATOS_HORARIO + FILAS_HORARIO - 1;
     for (let r = PRIMERA_FILA_DATOS_HORARIO; r <= filaFinDatos; r++) {
+        const filaIndex = r - PRIMERA_FILA_DATOS_HORARIO;
+        for (let c = 1; c <= ultimaColumna; c++) estilizarCeldaDatos(sheet.getCell(r, c), filaIndex);
+
         // Validación de formato de hora — de AVISO, no bloqueante: una
         // comprobación estricta por fórmula de Excel es frágil con horas de
         // 1-2 dígitos y distintos tipos de guion, así que solo se
@@ -487,51 +629,68 @@ function buildHorarioSheet(wb: import('exceljs').Workbook) {
     // Borde grueso al principio de cada bloque de día (y al final del
     // último) — sin esto cuesta ver a simple vista dónde empieza cada día,
     // ya que las 4 subcolumnas de Lunes/Martes/... no tienen ninguna
-    // separación visual propia más allá de la cabecera combinada de la
-    // fila 1.
+    // separación visual propia más allá de la cabecera combinada. Se aplica
+    // DESPUÉS del borde fino de `estilizarCeldaDatos` para que el grueso
+    // gane en los lados que coinciden (izquierda del primer día, derecha
+    // del último).
     DIAS_SEMANA.forEach((_, d) => {
         const colInicio = colInicioDia(d);
-        for (let r = 1; r <= filaFinDatos; r++) {
+        for (let r = HORARIO_FILA_DIA; r <= filaFinDatos; r++) {
             const cell = sheet.getCell(r, colInicio);
             cell.border = { ...cell.border, left: { style: 'thick' } };
         }
     });
-    for (let r = 1; r <= filaFinDatos; r++) {
+    for (let r = HORARIO_FILA_DIA; r <= filaFinDatos; r++) {
         const cell = sheet.getCell(r, ultimaColumna);
         cell.border = { ...cell.border, right: { style: 'thick' } };
     }
 }
 
 const FILAS_ALUMNADO = 60;
+const ALUMNADO_FILA_CABECERA = PRIMERA_FILA_CONTENIDO;
+const ALUMNADO_FILA_DATOS_INICIO = ALUMNADO_FILA_CABECERA + 1;
 
 // Excel incrementa por defecto el número de un texto (p.ej. "1º ESO" ->
 // "2º ESO") al arrastrar el tirador de relleno desde una sola celda — es
 // comportamiento nativo del cliente Excel (AutoFill), no algo que se pueda
 // desactivar desde el .xlsx generado; lo único real es documentarlo (nota
-// de celda + Instrucciones), útil aquí porque es habitual copiar Nivel/
-// Grupo en varias filas seguidas al dar de alta un grupo entero.
+// de celda + banner), útil aquí porque es habitual copiar Nivel/Grupo en
+// varias filas seguidas al dar de alta un grupo entero.
 const NOTA_AUTOINCREMENTO = 'Si arrastras el tirador de relleno (la crucecita de la esquina) para copiar este valor en varias filas seguidas, mantén pulsada la tecla Ctrl mientras arrastras. Si no, Excel puede incrementar el número que contiene (p.ej. "1º ESO" pasaría a "2º ESO") en vez de repetir el mismo valor.';
 
+// Cabeceras en texto plano a propósito, sin icono: `parseAlumnadoSheet`
+// las empareja por texto (insensible a mayúsculas/acentos/espacios) contra
+// `CAMPOS_ALUMNADO` — un icono delante rompería ese emparejamiento.
 function buildAlumnadoSheet(wb: import('exceljs').Workbook) {
     const sheet = wb.addWorksheet(HOJA_ALUMNADO);
+
     const columnas = ['Nivel', 'Materia', 'Grupo', 'Nombre', 'Primer Apellido', 'Segundo Apellido', 'Fecha Nacimiento', 'DNI', 'ACNEAE'];
+    const anchos = [20, 26, 20, 18, 20, 20, 18, 14, 20];
+
+    addBanner(
+        sheet, 9, anchos.reduce((a, b) => a + b, 0), '🧑‍🎓', 'Alumnado',
+        'Una fila por alumno/a. Nivel/Materia/Grupo deben coincidir con una clase de la hoja "Horario". El resto de la ficha (tutores, domicilio, datos sanitarios...) se rellena después desde la app. Consejo: para copiar Nivel/Grupo en varias filas, arrastra con Ctrl pulsado — si no, Excel puede incrementar el número.',
+    );
+
     columnas.forEach((c, i) => {
         const col = i + 1;
-        const headerCell = sheet.getCell(1, col);
+        const headerCell = sheet.getCell(ALUMNADO_FILA_CABECERA, col);
         headerCell.value = c;
         estilizarCabecera(headerCell);
-        sheet.getColumn(col).width = 20;
+        sheet.getColumn(col).width = anchos[i];
         if (c === 'Nivel' || c === 'Grupo') headerCell.note = NOTA_AUTOINCREMENTO;
     });
-    sheet.getRow(1).height = 20;
-    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    sheet.getRow(ALUMNADO_FILA_CABECERA).height = 20;
+    sheet.views = [{ state: 'frozen', ySplit: ALUMNADO_FILA_CABECERA }];
 
-    const ejemplo = sheet.getRow(2);
+    const ejemplo = sheet.getRow(ALUMNADO_FILA_DATOS_INICIO);
     ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', 'López', '2012-03-15', '', ''].forEach((v, i) => {
         ejemplo.getCell(i + 1).value = v;
     });
 
-    for (let r = 2; r <= FILAS_ALUMNADO + 1; r++) {
+    for (let i = 0; i < FILAS_ALUMNADO; i++) {
+        const r = ALUMNADO_FILA_DATOS_INICIO + i;
+        for (let c = 1; c <= 9; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
         setListValidation(sheet.getCell(r, 1), configRange(CONFIG_COL_NIVEL));
         setListValidation(sheet.getCell(r, 2), configRange(CONFIG_COL_MATERIA));
         setListValidation(sheet.getCell(r, 3), configRange(CONFIG_COL_GRUPO));
@@ -577,10 +736,10 @@ function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: s
     const startDate = startDateTexto ? parsearFechaISO(startDateTexto) : null;
     const endDate = endDateTexto ? parsearFechaISO(endDateTexto) : null;
 
-    if (!label) errores.push(`Hoja "${HOJA_CURSO}": falta el nombre del curso (celda B1).`);
-    if (!startDateTexto) errores.push(`Hoja "${HOJA_CURSO}": falta la fecha de inicio (celda B2).`);
+    if (!label) errores.push(`Hoja "${HOJA_CURSO}": falta el nombre del curso (celda B${CURSO_FILA_NOMBRE}).`);
+    if (!startDateTexto) errores.push(`Hoja "${HOJA_CURSO}": falta la fecha de inicio (celda B${CURSO_FILA_INICIO}).`);
     else if (!startDate) errores.push(`Hoja "${HOJA_CURSO}": fecha de inicio inválida: "${startDateTexto}" (usa AAAA-MM-DD).`);
-    if (!endDateTexto) errores.push(`Hoja "${HOJA_CURSO}": falta la fecha de fin (celda B3).`);
+    if (!endDateTexto) errores.push(`Hoja "${HOJA_CURSO}": falta la fecha de fin (celda B${CURSO_FILA_FIN}).`);
     else if (!endDate) errores.push(`Hoja "${HOJA_CURSO}": fecha de fin inválida: "${endDateTexto}" (usa AAAA-MM-DD).`);
     if (startDate && endDate && endDate <= startDate) {
         errores.push(`Hoja "${HOJA_CURSO}": la fecha de fin debe ser posterior a la de inicio.`);
@@ -629,18 +788,18 @@ interface BloqueDia {
     colFin: number;
 }
 
-// Cada celda no vacía de la fila 1 marca el inicio de un bloque de día (su
-// valor, normalizado); el bloque se extiende hasta la siguiente celda no
-// vacía de esa fila (o el final de las columnas usadas). OJO: al leer una
-// celda combinada, exceljs devuelve el mismo valor en TODAS las celdas del
-// rango (no solo en la superior-izquierda) — `cell.isMerged` es cierto
-// tanto para la maestra como para sus "espejos", así que no sirve para
-// distinguirlas; el tipo de celda sí: los espejos tienen
+// Cada celda no vacía de la fila de días marca el inicio de un bloque de
+// día (su valor, normalizado); el bloque se extiende hasta la siguiente
+// celda no vacía de esa fila (o el final de las columnas usadas). OJO: al
+// leer una celda combinada, exceljs devuelve el mismo valor en TODAS las
+// celdas del rango (no solo en la superior-izquierda) — `cell.isMerged` es
+// cierto tanto para la maestra como para sus "espejos", así que no sirve
+// para distinguirlas; el tipo de celda sí: los espejos tienen
 // `type === ValueType.Merge` (1), la maestra conserva su tipo real.
 function detectarBloquesDia(sheet: import('exceljs').Worksheet, errores: string[]): BloqueDia[] {
-    const row1 = sheet.getRow(1);
+    const rowDia = sheet.getRow(HORARIO_FILA_DIA);
     const marcas: { col: number; dia: number | null; textoOriginal: string }[] = [];
-    row1.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+    rowDia.eachCell({ includeEmpty: false }, (cell, colNumber) => {
         if (colNumber === 1) return; // "Hora"
         if (cell.type === 1 /* ValueType.Merge */) return; // celda "espejo" de una combinación, no el inicio
         const texto = celdaTexto(cell.value);
@@ -675,14 +834,14 @@ const SUBCOLUMNA_CLAVES: Record<string, keyof MapaSubcolumnas> = {
 };
 
 // Localiza, dentro del rango de columnas de un bloque de día, cuál es la
-// subcolumna Nivel/Materia/Grupo/Aula por el TEXTO de su cabecera (fila 2)
-// — no por posición fija, así que reordenar columnas dentro de un bloque
-// no rompe el parseo.
+// subcolumna Nivel/Materia/Grupo/Aula por el TEXTO de su cabecera — no por
+// posición fija, así que reordenar columnas dentro de un bloque no rompe
+// el parseo.
 function mapearSubcolumnas(sheet: import('exceljs').Worksheet, bloque: BloqueDia, errores: string[]): MapaSubcolumnas | null {
-    const row2 = sheet.getRow(2);
+    const rowSubcol = sheet.getRow(HORARIO_FILA_SUBCOL);
     const mapa: Partial<MapaSubcolumnas> = {};
     for (let c = bloque.colInicio; c <= bloque.colFin; c++) {
-        const clave = sinAcentos(celdaTexto(row2.getCell(c).value).toLowerCase());
+        const clave = sinAcentos(celdaTexto(rowSubcol.getCell(c).value).toLowerCase());
         if (clave in SUBCOLUMNA_CLAVES) {
             mapa[SUBCOLUMNA_CLAVES[clave]] = c;
         }
@@ -743,7 +902,7 @@ function parseHorarioSheet(sheet: import('exceljs').Worksheet, errores: string[]
 const CAMPOS_ALUMNADO = ['nivel', 'materia', 'grupo', 'nombre', 'primerapellido', 'segundoapellido', 'fechanacimiento', 'dni', 'acneae'] as const;
 
 function parseAlumnadoSheet(sheet: import('exceljs').Worksheet, errores: string[]): FilaAlumnado[] {
-    const header = sheet.getRow(1);
+    const header = sheet.getRow(ALUMNADO_FILA_CABECERA);
     const indices = new Map<string, number>();
     header.eachCell({ includeEmpty: false }, (cell, colNumber) => {
         const clave = sinAcentos(celdaTexto(cell.value).toLowerCase()).replace(/\s+/g, '');
@@ -766,7 +925,7 @@ function parseAlumnadoSheet(sheet: import('exceljs').Worksheet, errores: string[
 
     const alumnado: FilaAlumnado[] = [];
 
-    for (let r = 2; r <= sheet.rowCount; r++) {
+    for (let r = ALUMNADO_FILA_DATOS_INICIO; r <= sheet.rowCount; r++) {
         const row = sheet.getRow(r);
         const fila = CAMPOS_ALUMNADO.map(c => valor(row, c));
         if (fila.every(v => !v)) continue; // fila totalmente vacía
