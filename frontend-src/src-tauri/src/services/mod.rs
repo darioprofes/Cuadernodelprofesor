@@ -8,6 +8,9 @@ pub mod specific_competences;
 pub mod evaluation_criteria;
 pub mod basic_knowledge;
 pub mod programming_units;
+pub mod academic_years;
+pub mod classes;
+pub mod enrollments;
 
 use serde_json::Value;
 

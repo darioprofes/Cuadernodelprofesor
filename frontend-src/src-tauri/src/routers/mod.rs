@@ -3,8 +3,9 @@ use serde_json::Value;
 
 use crate::error::ApiError;
 use crate::services::{
-    basic_knowledge, courses, evaluation_criteria, evaluation_tools, key_competences, preferences,
-    programming_units, shortcuts, specific_competences, students,
+    academic_years, basic_knowledge, classes, courses, evaluation_criteria, evaluation_tools,
+    enrollments, key_competences, preferences, programming_units, shortcuts, specific_competences,
+    students,
 };
 
 fn require_body(body: Option<Value>) -> Result<Value, ApiError> {
@@ -91,6 +92,47 @@ pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>
         ("POST", ["courses", course_id, "programming-units"]) => programming_units::create(conn, course_id, require_body(body)?),
         ("PATCH", ["programming-units", id]) => programming_units::update(conn, id, require_body(body)?),
         ("DELETE", ["programming-units", id]) => programming_units::delete(conn, id),
+
+        // ---- Bloque 4: curso académico + instancia ----
+        ("GET", ["academic-years"]) => academic_years::list(conn),
+        ("POST", ["academic-years"]) => academic_years::create(conn, require_body(body)?),
+        ("GET", ["academic-years", id]) => found(academic_years::get_one(conn, id)?, "Curso académico no encontrado."),
+        ("PATCH", ["academic-years", id]) => academic_years::update(conn, id, require_body(body)?),
+        ("POST", ["academic-years", id, "activate"]) => academic_years::activate(conn, id),
+        ("DELETE", ["academic-years", id]) => academic_years::delete(conn, id),
+
+        ("GET", ["academic-years", year_id, "evaluation-periods"]) => academic_years::list_periods(conn, year_id),
+        ("POST", ["academic-years", year_id, "evaluation-periods"]) => academic_years::create_period(conn, year_id, require_body(body)?),
+        ("PATCH", ["academic-years", "evaluation-periods", id]) => academic_years::update_period(conn, id, require_body(body)?),
+        ("DELETE", ["academic-years", "evaluation-periods", id]) => academic_years::delete_period(conn, id),
+
+        ("GET", ["academic-years", year_id, "courses"]) => academic_years::list_year_courses(conn, year_id),
+        ("POST", ["academic-years", year_id, "courses"]) => academic_years::create_year_course(conn, year_id, require_body(body)?),
+        ("DELETE", ["academic-years", year_id, "courses", course_id]) => academic_years::delete_year_course(conn, year_id, course_id),
+
+        ("GET", ["academic-years", year_id, "classes"]) => classes::list(conn, year_id),
+        ("POST", ["academic-years", year_id, "classes"]) => classes::create(conn, year_id, require_body(body)?),
+        ("GET", ["classes", id]) => found(classes::get_one(conn, id)?, "Clase no encontrada."),
+        ("PATCH", ["classes", id]) => classes::update(conn, id, require_body(body)?),
+        ("DELETE", ["classes", id]) => classes::delete(conn, id),
+
+        ("GET", ["classes", class_id, "enrollments"]) => enrollments::list(conn, class_id),
+        ("POST", ["classes", class_id, "enrollments"]) => {
+            let payload = require_body(body)?;
+            let student_id_field = payload.get("studentId").and_then(Value::as_str);
+            let new_student_field = payload.get("newStudent").filter(|v| !v.is_null());
+            match (student_id_field, new_student_field) {
+                (Some(student_id), None) => enrollments::create(conn, class_id, student_id, &payload),
+                (None, Some(new_student)) => {
+                    let created_student = students::create(conn, new_student.clone())?;
+                    let student_id = created_student["id"].as_str().unwrap().to_string();
+                    enrollments::create(conn, class_id, &student_id, &payload)
+                }
+                _ => Err(ApiError::bad_request("Indica exactamente uno de studentId o newStudent.")),
+            }
+        }
+        ("PATCH", ["enrollments", id]) => enrollments::update(conn, id, require_body(body)?),
+        ("DELETE", ["enrollments", id]) => enrollments::delete(conn, id),
 
         _ => Err(ApiError { status: 404, detail: format!("Ruta no encontrada: {method} {path}") }),
     }
@@ -349,5 +391,105 @@ mod tests {
         dispatch(&conn, "DELETE", &format!("/criteria/{criterion_id}"), None).unwrap();
         let listed_after = dispatch(&conn, "GET", &format!("/courses/{course_id}/programming-units"), None).unwrap();
         assert_eq!(listed_after.as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn academic_years_seed_default_periods_and_activate_is_exclusive() {
+        let conn = db::test_connection();
+
+        let year1 = dispatch(&conn, "POST", "/academic-years", Some(json!({"label": "2025-2026", "startDate": "2025-09-01", "endDate": "2026-06-30"}))).unwrap();
+        let year1_id = year1["id"].as_str().unwrap().to_string();
+        assert_eq!(year1["isCurrent"], false);
+
+        let periods = dispatch(&conn, "GET", &format!("/academic-years/{year1_id}/evaluation-periods"), None).unwrap();
+        assert_eq!(periods.as_array().unwrap().len(), 3);
+
+        let year2 = dispatch(&conn, "POST", "/academic-years", Some(json!({"label": "2026-2027", "startDate": "2026-09-01", "endDate": "2027-06-30"}))).unwrap();
+        let year2_id = year2["id"].as_str().unwrap().to_string();
+
+        dispatch(&conn, "POST", &format!("/academic-years/{year1_id}/activate"), None).unwrap();
+        dispatch(&conn, "POST", &format!("/academic-years/{year2_id}/activate"), None).unwrap();
+
+        let year1_after = dispatch(&conn, "GET", &format!("/academic-years/{year1_id}"), None).unwrap();
+        let year2_after = dispatch(&conn, "GET", &format!("/academic-years/{year2_id}"), None).unwrap();
+        assert_eq!(year1_after["isCurrent"], false);
+        assert_eq!(year2_after["isCurrent"], true);
+    }
+
+    #[test]
+    fn academic_year_courses_link_conflicts_and_blocks() {
+        let conn = db::test_connection();
+        let year = dispatch(&conn, "POST", "/academic-years", Some(json!({"label": "2026-2027", "startDate": "2026-09-01", "endDate": "2027-06-30"}))).unwrap();
+        let year_id = year["id"].as_str().unwrap().to_string();
+        let course = dispatch(&conn, "POST", "/courses", Some(json!({"level": "1 ESO", "subject": "Música"}))).unwrap();
+        let course_id = course["id"].as_str().unwrap().to_string();
+
+        dispatch(&conn, "POST", &format!("/academic-years/{year_id}/courses"), Some(json!({"courseId": course_id}))).unwrap();
+        let duplicate_err = dispatch(&conn, "POST", &format!("/academic-years/{year_id}/courses"), Some(json!({"courseId": course_id}))).unwrap_err();
+        assert_eq!(duplicate_err.status, 409);
+
+        let missing_course_err = dispatch(&conn, "POST", &format!("/academic-years/{year_id}/courses"), Some(json!({"courseId": "no-existe"}))).unwrap_err();
+        assert_eq!(missing_course_err.status, 404);
+
+        dispatch(&conn, "POST", &format!("/academic-years/{year_id}/classes"), Some(json!({"courseId": course_id, "grupo": "A"}))).unwrap();
+        let blocked_err = dispatch(&conn, "DELETE", &format!("/academic-years/{year_id}/courses/{course_id}"), None).unwrap_err();
+        assert_eq!(blocked_err.status, 409);
+    }
+
+    #[test]
+    fn classes_and_enrollments_full_chain() {
+        let conn = db::test_connection();
+        let year = dispatch(&conn, "POST", "/academic-years", Some(json!({"label": "2026-2027", "startDate": "2026-09-01", "endDate": "2027-06-30"}))).unwrap();
+        let year_id = year["id"].as_str().unwrap().to_string();
+        let course = dispatch(&conn, "POST", "/courses", Some(json!({"level": "3 ESO", "subject": "Historia"}))).unwrap();
+        let course_id = course["id"].as_str().unwrap().to_string();
+
+        let class = dispatch(&conn, "POST", &format!("/academic-years/{year_id}/classes"), Some(json!({"courseId": course_id, "grupo": "B"}))).unwrap();
+        let class_id = class["id"].as_str().unwrap().to_string();
+        assert_eq!(class["grupo"], "B");
+
+        // Alta con persona nueva en el mismo paso (newStudent).
+        let enrollment1 = dispatch(
+            &conn, "POST", &format!("/classes/{class_id}/enrollments"),
+            Some(json!({"newStudent": {"nombre": "Carla", "primerApellido": "Ruiz"}})),
+        ).unwrap();
+        let student1_id = enrollment1["studentId"].as_str().unwrap().to_string();
+        assert!(!student1_id.is_empty());
+
+        // Confirma que la persona quedó realmente creada en /students.
+        let student_check = dispatch(&conn, "GET", &format!("/students/{student1_id}"), None).unwrap();
+        assert_eq!(student_check["nombre"], "Carla");
+
+        // Alta de persona ya existente en una segunda clase.
+        let student2 = dispatch(&conn, "POST", "/students", Some(json!({"nombre": "Diego"}))).unwrap();
+        let student2_id = student2["id"].as_str().unwrap().to_string();
+        let enrollment2 = dispatch(
+            &conn, "POST", &format!("/classes/{class_id}/enrollments"),
+            Some(json!({"studentId": student2_id, "planoX": 10.5, "planoY": 20.0})),
+        ).unwrap();
+        assert_eq!(enrollment2["planoX"], 10.5);
+
+        // Ni studentId ni newStudent -> 400; ambos a la vez -> 400.
+        let neither_err = dispatch(&conn, "POST", &format!("/classes/{class_id}/enrollments"), Some(json!({}))).unwrap_err();
+        assert_eq!(neither_err.status, 400);
+        let both_err = dispatch(
+            &conn, "POST", &format!("/classes/{class_id}/enrollments"),
+            Some(json!({"studentId": student2_id, "newStudent": {"nombre": "X"}})),
+        ).unwrap_err();
+        assert_eq!(both_err.status, 400);
+
+        let listed = dispatch(&conn, "GET", &format!("/classes/{class_id}/enrollments"), None).unwrap();
+        assert_eq!(listed.as_array().unwrap().len(), 2);
+
+        let enrollment1_id = enrollment1["id"].as_str().unwrap().to_string();
+        let updated = dispatch(&conn, "PATCH", &format!("/enrollments/{enrollment1_id}"), Some(json!({"haRepetidoCurso": true}))).unwrap();
+        assert_eq!(updated["haRepetidoCurso"], true);
+
+        // Borrar la clase desmatricula (CASCADE) sin borrar las personas.
+        dispatch(&conn, "DELETE", &format!("/classes/{class_id}"), None).unwrap();
+        let students_after = dispatch(&conn, "GET", "/students", None).unwrap();
+        assert_eq!(students_after.as_array().unwrap().len(), 2);
+        let enrollments_after_err = dispatch(&conn, "PATCH", &format!("/enrollments/{enrollment1_id}"), Some(json!({}))).unwrap_err();
+        assert_eq!(enrollments_after_err.status, 404);
     }
 }
