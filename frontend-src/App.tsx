@@ -393,9 +393,13 @@ const App = () => {
     // en web, Fase 7 bloque 2 en escritorio) — services/api.ts ya sabe
     // despachar al comando Rust api_request cuando isTauri(), así que estos
     // dos hooks funcionan igual en ambas plataformas sin ningún enabled
-    // condicional. El resto de hooks de más abajo siguen desactivados en
-    // escritorio (enabled: !isDesktop) hasta que su bloque correspondiente
-    // de la Fase 7 les dé un comando Rust real al que hablar.
+    // condicional. El resto de hooks de más abajo siguen con
+    // enabled: !isDesktop, pero desde el bloque 3 la razón real ya NO es
+    // "sin comando Rust todavía" (courses/keyCompetences/etc. ya lo tienen,
+    // con 11 tests que lo prueban) sino que sus ids dejarían de cuadrar con
+    // `classes.courseId` (que en escritorio sigue siendo blob hasta el
+    // bloque 4) si se flipeasen antes que `classes` — ver plan, Fase 7
+    // bloque 3, y el comentario junto a remoteCourses un poco más abajo.
     const isDesktop = isTauri();
     const remoteShortcuts = useShortcuts();
     const createShortcut = useCreateShortcut();

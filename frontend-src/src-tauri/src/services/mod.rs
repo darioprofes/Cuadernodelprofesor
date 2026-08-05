@@ -1,6 +1,13 @@
 pub mod shortcuts;
 pub mod preferences;
 pub mod evaluation_tools;
+pub mod students;
+pub mod courses;
+pub mod key_competences;
+pub mod specific_competences;
+pub mod evaluation_criteria;
+pub mod basic_knowledge;
+pub mod programming_units;
 
 use serde_json::Value;
 

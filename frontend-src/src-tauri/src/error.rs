@@ -29,3 +29,17 @@ impl From<rusqlite::Error> for ApiError {
         ApiError::internal(e)
     }
 }
+
+// Traduce una violación de FOREIGN KEY (fila referenciada desde otra tabla,
+// ON DELETE RESTRICT en el baseline) al mismo 409 que ya da el backend web
+// para (RestrictViolation, ForeignKeyViolation). Cualquier otro error de
+// sqlite en un DELETE es un fallo real (500) -- no debería darse, ninguna
+// tabla del baseline tiene más restricciones que puedan saltar al borrar.
+pub fn conflict_or_internal(e: rusqlite::Error, conflict_detail: &str) -> ApiError {
+    if let rusqlite::Error::SqliteFailure(sqlite_err, _) = &e {
+        if sqlite_err.code == rusqlite::ErrorCode::ConstraintViolation {
+            return ApiError { status: 409, detail: conflict_detail.to_string() };
+        }
+    }
+    ApiError::internal(e)
+}
