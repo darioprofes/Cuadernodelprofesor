@@ -71,6 +71,17 @@ pub fn new_uuid() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+// Conexión en memoria con el esquema ya migrado, para los tests de
+// routers/services de otros módulos -- evita levantar un AppHandle real de
+// Tauri (y con él una ventana) solo para probar SQL.
+#[cfg(test)]
+pub fn test_connection() -> Connection {
+    let mut conn = Connection::open_in_memory().expect("no se pudo abrir sqlite en memoria");
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    apply_migrations(&mut conn).expect("no se pudo aplicar el baseline en el test");
+    conn
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

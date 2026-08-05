@@ -389,18 +389,19 @@ const ViewLoadingFallback: React.FC = () => (
 const App = () => {
     const { appState, loading, error, updateState, importDatabase, exportDatabase, resetDatabase } = useDatabase();
 
-    // shortcuts/evaluationTools: migrados al backend granular nuevo (Fase 4),
-    // pero solo en web — en escritorio (Tauri) no hay comandos granulares
-    // todavía (Fase 8), así que siguen viviendo en el blob local de
-    // useDatabase() de arriba hasta entonces. Los hooks de react-query están
-    // desactivados en escritorio (enabled: !isDesktop) para no intentar
-    // llamadas de red que no tienen destino.
+    // shortcuts/evaluationTools: migrados al backend granular nuevo (Fase 4
+    // en web, Fase 7 bloque 2 en escritorio) — services/api.ts ya sabe
+    // despachar al comando Rust api_request cuando isTauri(), así que estos
+    // dos hooks funcionan igual en ambas plataformas sin ningún enabled
+    // condicional. El resto de hooks de más abajo siguen desactivados en
+    // escritorio (enabled: !isDesktop) hasta que su bloque correspondiente
+    // de la Fase 7 les dé un comando Rust real al que hablar.
     const isDesktop = isTauri();
-    const remoteShortcuts = useShortcuts({ enabled: !isDesktop });
+    const remoteShortcuts = useShortcuts();
     const createShortcut = useCreateShortcut();
     const updateShortcut = useUpdateShortcut();
     const deleteShortcut = useDeleteShortcut();
-    const remoteEvaluationTools = useEvaluationTools({ enabled: !isDesktop });
+    const remoteEvaluationTools = useEvaluationTools();
     const createEvaluationTool = useCreateEvaluationTool();
     const updateEvaluationTool = useUpdateEvaluationTool();
     const deleteEvaluationTool = useDeleteEvaluationTool();
@@ -476,6 +477,16 @@ const App = () => {
     const createAgendaNoteMutation = useCreateAgendaNote();
     const updateAgendaNoteMutation = useUpdateAgendaNote();
     const deleteAgendaNoteMutation = useDeleteAgendaNote();
+    // preferences SÍ tiene ya comando Rust real (bloque 2), pero a
+    // diferencia de shortcuts/evaluationTools su único consumidor
+    // (effectiveAcademicConfiguration, más abajo) mezcla gradeScale/
+    // defaultCalendarView con academicYearStart/holidays/evaluationPeriods
+    // — esos siguen siendo blob en escritorio hasta que academic_years
+    // migre (bloque 4). Leer gradeScale de remoto pero escribirlo en el
+    // blob (o viceversa) editaría un sitio y leería del otro sin que se
+    // reflejara — se deja tal cual (isDesktop sigue apagando esta query,
+    // igual que el resto de abajo) hasta que el bloque 4 pueda resolver
+    // academicConfiguration entera de una vez, sin esa mezcla a medias.
     const remotePreferences = usePreferences({ enabled: !isDesktop });
     const updatePreferencesMutation = useUpdatePreferences();
     const createAssignmentMutation = useCreateAssignment();
@@ -812,7 +823,6 @@ const App = () => {
         }
     }, [isDesktop, updateState, effectiveAcademicConfiguration, yearId, updateAcademicYearMutation, updatePreferencesMutation]);
     const setProgrammingUnitsCallback = useCallback((updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => updateState(prev => ({ ...prev, programmingUnits: updater(prev.programmingUnits) })), [updateState]);
-    const setEvaluationToolsCallback = useCallback((updater: React.SetStateAction<EvaluationTool[]>) => updateState(prev => ({ ...prev, evaluationTools: typeof updater === 'function' ? updater(prev.evaluationTools) : updater })), [updateState]);
     // setTasks/setMeetings/setAgendaNotes: en web, diffAndSyncList traduce
     // el resultado del updater (mismo patrón prev => [...prev, nuevo] que ya
     // usan HoyView/ReunionesView/CalendarView) a las llamadas granulares que
@@ -858,60 +868,33 @@ const App = () => {
             remove: id => deleteAgendaNoteMutation.mutateAsync({ id, yearId }),
         });
     }, [isDesktop, updateState, yearId, effectiveAgendaNotes, createAgendaNoteMutation, updateAgendaNoteMutation, deleteAgendaNoteMutation]);
-    // Compat de escritorio para shortcuts: idéntico patrón de updater que el
-    // resto de callbacks de arriba (setEvaluationToolsCallback, justo encima,
-    // cumple el mismo papel para evaluationTools), pero solo se usa mientras
-    // isDesktop — en web este campo del blob queda sin tocar (ver handlers
-    // granulares más abajo).
-    const setShortcutsCallback = useCallback((updater: React.SetStateAction<Shortcut[]>) => updateState(prev => ({ ...prev, shortcuts: typeof updater === 'function' ? updater(prev.shortcuts) : updater })), [updateState]);
-
+    // shortcuts/evaluationTools: sin relaciones con ninguna otra entidad (ver
+    // plan, Fase 7 bloque 2) — desde ahí, ambas plataformas hablan siempre
+    // con el backend granular (FastAPI en web, api_request en escritorio),
+    // nunca con el blob local.
     const handleCreateShortcut = useCallback((data: Omit<Shortcut, 'id'>) => {
-        if (isDesktop) {
-            setShortcutsCallback(prev => [...prev, { id: `sc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, ...data }]);
-        } else {
-            createShortcut.mutate(data);
-        }
-    }, [isDesktop, setShortcutsCallback, createShortcut]);
+        createShortcut.mutate(data);
+    }, [createShortcut]);
 
     const handleUpdateShortcut = useCallback((id: string, data: Omit<Shortcut, 'id'>) => {
-        if (isDesktop) {
-            setShortcutsCallback(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
-        } else {
-            updateShortcut.mutate({ id, data });
-        }
-    }, [isDesktop, setShortcutsCallback, updateShortcut]);
+        updateShortcut.mutate({ id, data });
+    }, [updateShortcut]);
 
     const handleDeleteShortcut = useCallback((id: string) => {
-        if (isDesktop) {
-            setShortcutsCallback(prev => prev.filter(s => s.id !== id));
-        } else {
-            deleteShortcut.mutate(id);
-        }
-    }, [isDesktop, setShortcutsCallback, deleteShortcut]);
+        deleteShortcut.mutate(id);
+    }, [deleteShortcut]);
 
     const handleCreateEvaluationTool = useCallback((data: Omit<EvaluationTool, 'id'>) => {
-        if (isDesktop) {
-            setEvaluationToolsCallback(prev => [...prev, { ...data, id: `tool-${Date.now()}` } as EvaluationTool]);
-        } else {
-            createEvaluationTool.mutate(data);
-        }
-    }, [isDesktop, setEvaluationToolsCallback, createEvaluationTool]);
+        createEvaluationTool.mutate(data);
+    }, [createEvaluationTool]);
 
     const handleUpdateEvaluationTool = useCallback((id: string, data: Omit<EvaluationTool, 'id'>) => {
-        if (isDesktop) {
-            setEvaluationToolsCallback(prev => prev.map(t => t.id === id ? ({ ...t, ...data } as EvaluationTool) : t));
-        } else {
-            updateEvaluationTool.mutate({ id, data });
-        }
-    }, [isDesktop, setEvaluationToolsCallback, updateEvaluationTool]);
+        updateEvaluationTool.mutate({ id, data });
+    }, [updateEvaluationTool]);
 
     const handleDeleteEvaluationTool = useCallback((id: string) => {
-        if (isDesktop) {
-            setEvaluationToolsCallback(prev => prev.filter(t => t.id !== id));
-        } else {
-            deleteEvaluationTool.mutate(id);
-        }
-    }, [isDesktop, setEvaluationToolsCallback, deleteEvaluationTool]);
+        deleteEvaluationTool.mutate(id);
+    }, [deleteEvaluationTool]);
 
     // keyCompetences/descriptors: a diferencia de shortcuts/evaluationTools
     // (Fase 4), CurriculumManager necesita poder encadenar estas llamadas
@@ -1005,8 +988,8 @@ const App = () => {
     const { classes, criteria, competences, courses, programmingUnits, basicKnowledge } = appState;
     // Fuente resuelta según plataforma (ver handlers granulares más arriba):
     // blob local en escritorio, backend nuevo en web.
-    const shortcuts = isDesktop ? appState.shortcuts : (remoteShortcuts.data ?? []);
-    const evaluationTools = isDesktop ? appState.evaluationTools : (remoteEvaluationTools.data ?? []);
+    const shortcuts = remoteShortcuts.data ?? [];
+    const evaluationTools = remoteEvaluationTools.data ?? [];
     const keyCompetences = isDesktop ? appState.keyCompetences : (remoteKeyCompetences.data ?? []);
     // Ver comentario junto a useCourses() más arriba: lista de materias
     // separada de `courses` (el curso del blob viejo), solo para

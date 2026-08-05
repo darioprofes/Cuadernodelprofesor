@@ -1,6 +1,9 @@
 use tauri::Manager;
 
 mod db;
+mod error;
+mod routers;
+mod services;
 
 // Nombre fijo del fichero SQLite en el directorio de datos de la app
 // (independiente por completo de la persistencia remota que usa la versión
@@ -24,6 +27,21 @@ fn save_db(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<(), String> {
   std::fs::write(dir.join(DB_FILE_NAME), bytes).map_err(|e| e.to_string())
 }
 
+// Único comando genérico para todo el modelo relacional nuevo (ver plan,
+// Fase 7, "Decisión de arquitectura") -- api.ts lo usa como transporte en
+// vez de fetch() cuando isTauri() es cierto, sin que ningún hook de
+// react-query tenga que saberlo.
+#[tauri::command]
+fn api_request(
+  state: tauri::State<db::DbState>,
+  method: String,
+  path: String,
+  body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, error::ApiError> {
+  let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  routers::dispatch(&conn, &method, &path, body)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -39,7 +57,7 @@ pub fn run() {
       app.manage(db::DbState(std::sync::Mutex::new(conn)));
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![load_db, save_db])
+    .invoke_handler(tauri::generate_handler![load_db, save_db, api_request])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
