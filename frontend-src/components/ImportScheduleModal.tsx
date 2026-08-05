@@ -4,22 +4,12 @@ import Modal from './Modal';
 import Button from './Button';
 import { ArrowUpTrayIcon } from './Icons';
 import ClassLabel from './ClassLabel';
-import type { ClassData, Course, AcademicConfiguration } from '../types';
+import type { ClassData, Course, AcademicConfiguration, FilaHorario } from '../types';
 import { HUE_PRESETS, buildDefaultCategories } from '../utils';
 import { useCreateCourse, useDeleteCourse } from '../hooks/useCourses';
 import { useCreateClass, useUpdateClass, useDeleteClass } from '../hooks/useApiClasses';
 import { useAcademicYearCourses, useAddAcademicYearCourse, useRemoveAcademicYearCourse, useEvaluationPeriods } from '../hooks/useAcademicYears';
 import { useCreateCategory } from '../hooks/useCategories';
-
-interface FilaHorario {
-    dia: number; // 0=Lunes ... 4=Viernes (formato del backend)
-    hora_inicio: string;
-    hora_fin: string;
-    grupo: string | null;
-    asignatura: string;
-    aula: string | null;
-    ensenanza: string | null; // nivel educativo (p.ej. "4ESOPDC", "1ºESO"), columna "Enseñanza" del PDF
-}
 
 interface ImportScheduleModalProps {
     isOpen: boolean;
@@ -46,7 +36,7 @@ const toMinutes = (hhmm: string): number => {
 // curso a mano ("4º ESO", "4º ESO (PDC)"...). Se normaliza para que ambos
 // caminos generen el mismo texto y no acaben duplicando el mismo nivel con
 // dos nombres distintos.
-const normalizarNivel = (raw: string): string => {
+export const normalizarNivel = (raw: string): string => {
     const limpio = raw.trim();
 
     const eso = limpio.match(/^([1-4])º?\s*ESO\s*(PDC)?$/i);
@@ -71,7 +61,7 @@ const normalizarNivel = (raw: string): string => {
 // que YA existían pero a los que esta importación no les toca ninguna
 // franja (ya no aparecen en el PDF actual): true los borra del todo
 // (alumnado y calificaciones incluidos), false los deja tal cual estaban.
-const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[], evaluationPeriods: AcademicConfiguration['evaluationPeriods'], borrarAcademicasSinUsar: boolean) => {
+export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[], evaluationPeriods: AcademicConfiguration['evaluationPeriods'], borrarAcademicasSinUsar: boolean) => {
     // La materia puede venir vacía (franja sin nada asignado en el PDF,
     // p.ej. el recreo): se importa igual, sin nombre por defecto.
     const filasValidas = filas.filter(f => f.hora_inicio && f.hora_fin);

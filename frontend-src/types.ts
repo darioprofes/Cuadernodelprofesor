@@ -249,6 +249,21 @@ export interface ClassData {
   mesaProfesorY?: number;
 }
 
+// Forma común de una fila de horario extraída de una fuente externa (PDF
+// oficial vía ImportScheduleModal.tsx, o plantilla Excel vía
+// scheduleWizard.ts) — ambos parseos producen esto, y buildImportPlan() en
+// ImportScheduleModal.tsx es el único que sabe convertirlo en materias/
+// clases/horario reales.
+export interface FilaHorario {
+    dia: number; // 0=Lunes ... 4=Viernes
+    hora_inicio: string;
+    hora_fin: string;
+    grupo: string | null;
+    asignatura: string;
+    aula: string | null;
+    ensenanza: string | null; // nivel educativo (p.ej. "4ESOPDC", "1º ESO - Biología y Geología")
+}
+
 export interface JournalEntry {
   id: string;
   date: string; // YYYY-MM-DD

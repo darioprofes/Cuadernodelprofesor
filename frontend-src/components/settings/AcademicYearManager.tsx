@@ -3,6 +3,7 @@ import { useAcademicYears, useCreateAcademicYear, useActivateAcademicYear } from
 import { CheckCircleIcon } from '../Icons';
 import Input from '../Input';
 import Button from '../Button';
+import StartOfYearWizardModal from '../StartOfYearWizardModal';
 
 // Primera pieza de UI del backend granular nuevo (ver plan, "Fase 5
 // fusionada", bloque 2): gestiona academic_years en Postgres, en paralelo
@@ -17,6 +18,7 @@ const AcademicYearManager: React.FC = () => {
     const [label, setLabel] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    const [isWizardOpen, setIsWizardOpen] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -30,7 +32,16 @@ const AcademicYearManager: React.FC = () => {
     return (
         <div className="space-y-8">
             <div>
-                <h3 className="text-xl font-bold text-slate-800 mb-4">Cursos Académicos</h3>
+                <div className="flex items-start justify-between gap-4 mb-4">
+                    <h3 className="text-xl font-bold text-slate-800">Cursos Académicos</h3>
+                    <button
+                        onClick={() => setIsWizardOpen(true)}
+                        className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm"
+                    >
+                        📥 Importar datos del curso (Excel)
+                    </button>
+                </div>
+                <StartOfYearWizardModal isOpen={isWizardOpen} onClose={() => setIsWizardOpen(false)} />
                 <p className="text-sm text-slate-600 mb-4">
                     Cada curso académico archiva sus propias clases, matrículas y notas por separado. Solo uno puede estar activo a la vez.
                 </p>
