@@ -11,6 +11,9 @@ pub mod programming_units;
 pub mod academic_years;
 pub mod classes;
 pub mod enrollments;
+pub mod categories;
+pub mod assignments;
+pub mod grades;
 
 use serde_json::Value;
 

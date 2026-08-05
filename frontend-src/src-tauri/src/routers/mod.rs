@@ -3,9 +3,9 @@ use serde_json::Value;
 
 use crate::error::ApiError;
 use crate::services::{
-    academic_years, basic_knowledge, classes, courses, evaluation_criteria, evaluation_tools,
-    enrollments, key_competences, preferences, programming_units, shortcuts, specific_competences,
-    students,
+    academic_years, assignments, basic_knowledge, categories, classes, courses,
+    evaluation_criteria, evaluation_tools, enrollments, grades, key_competences, preferences,
+    programming_units, shortcuts, specific_competences, students,
 };
 
 fn require_body(body: Option<Value>) -> Result<Value, ApiError> {
@@ -133,6 +133,22 @@ pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>
         }
         ("PATCH", ["enrollments", id]) => enrollments::update(conn, id, require_body(body)?),
         ("DELETE", ["enrollments", id]) => enrollments::delete(conn, id),
+
+        // ---- Bloque 5: cuaderno de notas ----
+        ("GET", ["classes", class_id, "categories"]) => categories::list(conn, class_id),
+        ("POST", ["classes", class_id, "categories"]) => categories::create(conn, class_id, require_body(body)?),
+        ("PATCH", ["categories", id]) => categories::update(conn, id, require_body(body)?),
+        ("DELETE", ["categories", id]) => categories::delete(conn, id),
+
+        ("GET", ["classes", class_id, "assignments"]) => assignments::list(conn, class_id),
+        ("POST", ["classes", class_id, "assignments"]) => assignments::create(conn, class_id, require_body(body)?),
+        ("GET", ["assignments", id]) => found(assignments::get_one(conn, id)?, "Tarea evaluable no encontrada."),
+        ("PATCH", ["assignments", id]) => assignments::update(conn, id, require_body(body)?),
+        ("DELETE", ["assignments", id]) => assignments::delete(conn, id),
+
+        ("GET", ["classes", class_id, "grades"]) => grades::list_for_class(conn, class_id),
+        ("PUT", ["assignments", assignment_id, "grades", enrollment_id]) => grades::put(conn, assignment_id, enrollment_id, require_body(body)?),
+        ("DELETE", ["assignments", assignment_id, "grades", enrollment_id]) => grades::delete(conn, assignment_id, enrollment_id),
 
         _ => Err(ApiError { status: 404, detail: format!("Ruta no encontrada: {method} {path}") }),
     }
@@ -491,5 +507,71 @@ mod tests {
         assert_eq!(students_after.as_array().unwrap().len(), 2);
         let enrollments_after_err = dispatch(&conn, "PATCH", &format!("/enrollments/{enrollment1_id}"), Some(json!({}))).unwrap_err();
         assert_eq!(enrollments_after_err.status, 404);
+    }
+
+    #[test]
+    fn gradebook_full_chain() {
+        let conn = db::test_connection();
+        let year = dispatch(&conn, "POST", "/academic-years", Some(json!({"label": "2026-2027", "startDate": "2026-09-01", "endDate": "2027-06-30"}))).unwrap();
+        let year_id = year["id"].as_str().unwrap().to_string();
+        let periods = dispatch(&conn, "GET", &format!("/academic-years/{year_id}/evaluation-periods"), None).unwrap();
+        let period_id = periods[0]["id"].as_str().unwrap().to_string();
+        let course = dispatch(&conn, "POST", "/courses", Some(json!({"level": "1 ESO", "subject": "Lengua"}))).unwrap();
+        let course_id = course["id"].as_str().unwrap().to_string();
+        let class = dispatch(&conn, "POST", &format!("/academic-years/{year_id}/classes"), Some(json!({"courseId": course_id, "grupo": "A"}))).unwrap();
+        let class_id = class["id"].as_str().unwrap().to_string();
+        let enrollment = dispatch(&conn, "POST", &format!("/classes/{class_id}/enrollments"), Some(json!({"newStudent": {"nombre": "Eva"}}))).unwrap();
+        let enrollment_id = enrollment["id"].as_str().unwrap().to_string();
+
+        let category = dispatch(
+            &conn, "POST", &format!("/classes/{class_id}/categories"),
+            Some(json!({"evaluationPeriodId": period_id, "name": "Pruebas", "weight": 100})),
+        ).unwrap();
+        let category_id = category["id"].as_str().unwrap().to_string();
+        assert_eq!(category["type"], "normal");
+
+        let assignment = dispatch(
+            &conn, "POST", &format!("/classes/{class_id}/assignments"),
+            Some(json!({
+                "categoryId": category_id, "evaluationPeriodId": period_id, "name": "Examen 1",
+                "evaluationMethod": "direct_grade",
+                "linkedCriteria": [{"criterionId": "c1", "ratio": 1.0, "selectedDescriptorIds": []}],
+            })),
+        ).unwrap();
+        let assignment_id = assignment["id"].as_str().unwrap().to_string();
+        assert_eq!(assignment["linkedCriteria"].as_array().unwrap().len(), 1);
+
+        let graded = dispatch(
+            &conn, "PUT", &format!("/assignments/{assignment_id}/grades/{enrollment_id}"),
+            Some(json!({"directScore": 7.5})),
+        ).unwrap();
+        assert_eq!(graded["directScore"], 7.5);
+
+        // Segundo PUT (misma PK compuesta) actualiza, no duplica.
+        let regraded = dispatch(
+            &conn, "PUT", &format!("/assignments/{assignment_id}/grades/{enrollment_id}"),
+            Some(json!({"directScore": 8.0})),
+        ).unwrap();
+        assert_eq!(regraded["directScore"], 8.0);
+
+        let class_grades = dispatch(&conn, "GET", &format!("/classes/{class_id}/grades"), None).unwrap();
+        assert_eq!(class_grades.as_array().unwrap().len(), 1);
+        assert_eq!(class_grades[0]["assignmentId"], assignment_id);
+
+        // Nota sobre pareja (tarea, matrícula) inexistente -> 404, no 500.
+        let missing_err = dispatch(
+            &conn, "PUT", &format!("/assignments/{assignment_id}/grades/no-existe"),
+            Some(json!({"directScore": 5})),
+        ).unwrap_err();
+        assert_eq!(missing_err.status, 404);
+
+        dispatch(&conn, "DELETE", &format!("/assignments/{assignment_id}/grades/{enrollment_id}"), None).unwrap();
+        let class_grades_after = dispatch(&conn, "GET", &format!("/classes/{class_id}/grades"), None).unwrap();
+        assert_eq!(class_grades_after.as_array().unwrap().len(), 0);
+
+        dispatch(&conn, "DELETE", &format!("/assignments/{assignment_id}"), None).unwrap();
+        dispatch(&conn, "DELETE", &format!("/categories/{category_id}"), None).unwrap();
+        let assignments_after = dispatch(&conn, "GET", &format!("/classes/{class_id}/assignments"), None).unwrap();
+        assert_eq!(assignments_after.as_array().unwrap().len(), 0);
     }
 }
