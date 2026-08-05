@@ -63,6 +63,24 @@ fn delete_student_photo(state: tauri::State<db::DbState>, student_id: String) ->
   services::photos::delete(&conn, &student_id)
 }
 
+// Copia de seguridad (bloque 8): mismo formato JSON genérico que
+// /backup/export|import en el backend web, sobre las 24 tablas del
+// baseline en vez de sobre Postgres. Comandos aparte (no en api_request)
+// porque import necesita una transacción real (&mut Connection), que el
+// router genérico -- pensado para operaciones sueltas de una sentencia --
+// no ofrece.
+#[tauri::command]
+fn backup_export(state: tauri::State<db::DbState>) -> Result<serde_json::Value, error::ApiError> {
+  let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::backup::export_all(&conn)
+}
+
+#[tauri::command]
+fn backup_import(state: tauri::State<db::DbState>, dump: serde_json::Value) -> Result<(), error::ApiError> {
+  let mut conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::backup::import_all(&mut conn, &dump)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -105,7 +123,9 @@ pub fn run() {
       save_db,
       api_request,
       set_student_photo,
-      delete_student_photo
+      delete_student_photo,
+      backup_export,
+      backup_import
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

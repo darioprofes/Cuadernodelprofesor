@@ -19,6 +19,7 @@ pub mod tasks;
 pub mod meetings;
 pub mod agenda_notes;
 pub mod photos;
+pub mod backup;
 
 use serde_json::Value;
 
