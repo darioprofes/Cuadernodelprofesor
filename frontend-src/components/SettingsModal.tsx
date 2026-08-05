@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import Modal from './Modal';
 import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon, AcademicCapIcon, ListBulletIcon } from './Icons';
-import type { ClassData, Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, JournalEntry, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
+import type { ClassData, Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
 import EvaluationToolManager from './EvaluationToolManager';
 import CurriculumManager from './CurriculumManager';
 import ProgrammingManager from './ProgrammingManager';
@@ -38,8 +38,6 @@ export interface SettingsModalProps {
     setSpecificCompetences: (updater: React.SetStateAction<SpecificCompetence[]>) => void;
     evaluationCriteria: EvaluationCriterion[];
     setEvaluationCriteria: (updater: React.SetStateAction<EvaluationCriterion[]>) => void;
-    journalEntries: JournalEntry[];
-    setJournalEntries: (updater: React.SetStateAction<JournalEntry[]>) => void;
     importDatabase: (buffer: ArrayBuffer) => Promise<void>;
     exportDatabase: () => Promise<Uint8Array | null>;
     resetDatabase: () => Promise<void>;

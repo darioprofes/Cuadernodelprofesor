@@ -5,7 +5,6 @@
 from fastapi import FastAPI
 
 from routers.health import router as health_router
-from routers.db import router as db_router
 from routers.horario import router as horario_router
 from routers.photos import router as photos_router
 from routers.preferences import router as preferences_router
@@ -35,16 +34,16 @@ from services.db import apply_migrations
 # Aplicación FastAPI
 # ==========================================================
 #
-# Backend deliberadamente mínimo: el frontend (fork de CuadernMestre) lleva
-# toda la lógica de dominio (clases, alumnado, calificaciones, currículo...)
-# serializada en un único blob SQLite. Aquí solo se guarda/lee ese blob tal
-# cual, y se ofrece un endpoint para parsear el PDF oficial de horario.
+# Backend relacional real sobre Postgres (Fase 6 completa la migración desde
+# el blob SQLite único que tenía al principio — ver api/app/migrations/ para
+# el historial). Escritorio (Tauri) es la única parte que sigue con un
+# fichero SQLite local propio, sin pasar por aquí, hasta la Fase 7.
 #
 
 app = FastAPI(
     title="Profe Planner API",
-    description="Backend mínimo: persistencia del blob de CuadernMestre + import de horario en PDF",
-    version="0.2.0"
+    description="Backend relacional (clases, alumnado, calificaciones, currículo, horario...) + import de horario en PDF",
+    version="0.3.0"
 )
 
 
@@ -68,7 +67,6 @@ def _startup_apply_migrations():
 # ==========================================================
 
 app.include_router(health_router)
-app.include_router(db_router)
 app.include_router(horario_router)
 app.include_router(photos_router)
 app.include_router(preferences_router)

@@ -307,3 +307,46 @@ export const hydrateClassData = (
         grades: hydrateGrades(apiGrades, enrollments, assignments, evaluationTools),
     };
 };
+
+// Fase 6: journalEntries/tasks/meetings/agendaNotes eran las últimas
+// entidades gobernadas por el blob en web — sus consumidores (HoyView,
+// ReunionesView, CalendarView...) siguen llamando a un setter estilo
+// React.SetStateAction (setTasks(prev => [...prev, nueva])), porque
+// reescribir cada uno para llamar directamente a create/update/delete
+// habría sido un cambio mucho más invasivo que necesario para esta fase.
+// En vez de eso, App.tsx envuelve el setter real: calcula next a partir de
+// current, y esta función traduce la diferencia a las llamadas granulares
+// que hacen falta. Comparación por JSON.stringify (no por referencia): el
+// propio patrón `prev => prev.map(x => x.id === id ? {...x, campo} : x)`
+// crea un objeto nuevo aunque el valor no cambie, así que iría a false
+// positivo constantemente si comparásemos por referencia — a esta escala
+// (decenas de filas, no miles) el coste de comparar por contenido es
+// irrelevante frente a evitar peticiones de red vacías.
+export async function diffAndSyncList<T extends { id: string }>(
+    current: T[],
+    next: T[],
+    ops: {
+        create: (item: Omit<T, 'id'>) => Promise<unknown>;
+        update: (id: string, patch: Omit<T, 'id'>) => Promise<unknown>;
+        remove: (id: string) => Promise<unknown>;
+    },
+): Promise<void> {
+    const currentById = new Map(current.map(item => [item.id, item]));
+    const nextIds = new Set(next.map(item => item.id));
+
+    for (const item of next) {
+        const { id, ...rest } = item;
+        const prevItem = currentById.get(id);
+        if (!prevItem) {
+            await ops.create(rest as Omit<T, 'id'>);
+        } else if (JSON.stringify(prevItem) !== JSON.stringify(item)) {
+            await ops.update(id, rest as Omit<T, 'id'>);
+        }
+    }
+
+    for (const item of current) {
+        if (!nextIds.has(item.id)) {
+            await ops.remove(item.id);
+        }
+    }
+}

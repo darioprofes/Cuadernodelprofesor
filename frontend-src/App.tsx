@@ -13,7 +13,7 @@ import {
     useCreateDescriptor, useUpdateDescriptor, useDeleteDescriptor,
 } from './hooks/useKeyCompetences';
 import { useCourses, useUpdateCourse } from './hooks/useCourses';
-import { useAcademicYears, useCurrentAcademicYear, useActivateAcademicYear, useEvaluationPeriods, useAcademicYearCourses } from './hooks/useAcademicYears';
+import { useAcademicYears, useCurrentAcademicYear, useActivateAcademicYear, useEvaluationPeriods, useAcademicYearCourses, useUpdateAcademicYear } from './hooks/useAcademicYears';
 import { useApiClasses } from './hooks/useApiClasses';
 import { useApiStudents } from './hooks/useApiStudents';
 import { useEnrollmentsForClasses } from './hooks/useEnrollments';
@@ -24,7 +24,12 @@ import { useEvaluationCriteria, useEvaluationCriteriaForCourses } from './hooks/
 import { useSpecificCompetences, useSpecificCompetencesForCourses } from './hooks/useSpecificCompetences';
 import { useBasicKnowledgeForCourses } from './hooks/useBasicKnowledge';
 import { useProgrammingUnitsForCourses } from './hooks/useProgrammingUnits';
-import { hydrateClassData } from './services/apiAdapters';
+import { useTasks, useCreateTask, useUpdateTask, useDeleteTask } from './hooks/useTasks';
+import { useMeetings, useCreateMeeting, useUpdateMeeting, useDeleteMeeting } from './hooks/useMeetings';
+import { useJournalEntries, useSaveJournalEntry } from './hooks/useJournalEntries';
+import { useAgendaNotes, useCreateAgendaNote, useUpdateAgendaNote, useDeleteAgendaNote } from './hooks/useAgendaNotes';
+import { usePreferences, useUpdatePreferences } from './hooks/usePreferences';
+import { hydrateClassData, diffAndSyncList } from './services/apiAdapters';
 import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, getInitialShortcuts } from './constants';
 import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, OperationalDescriptor, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
 import { runMigrations, CURRENT_SCHEMA_VERSION } from './services/migrations';
@@ -92,6 +97,26 @@ function useDatabase() {
     };
     
     useEffect(() => {
+        // Fase 6: en web ya no queda ni un campo que dependa del blob (el
+        // último hueco, journalEntries/tasks/meetings/agendaNotes/el resto
+        // de academicConfiguration, se cerró con los hooks nuevos — ver
+        // effectiveTasks/effectiveMeetings/etc. en App()). Así que en web
+        // este hook ni siquiera intenta hablar con sql.js/dbAdapter — el
+        // "appState" que da es un cascarón vacío que nadie llega a leer de
+        // verdad (todas las ramas isDesktop de más abajo lo esquivan).
+        // Sigue existiendo (no se borra el hook entero) porque escritorio
+        // todavía lo necesita tal cual hasta la Fase 7.
+        if (!isTauri()) {
+            setAppState({
+                schemaVersion: CURRENT_SCHEMA_VERSION,
+                classes: [], keyCompetences: [], competences: [], criteria: [],
+                journalEntries: [], courses: [], programmingUnits: [], basicKnowledge: [],
+                academicConfiguration: INITIAL_ACADEMIC_CONFIGURATION, evaluationTools: [],
+                tasks: [], meetings: [], agendaNotes: [], shortcuts: [],
+            });
+            setLoading(false);
+            return;
+        }
         const initialize = async () => {
             try {
                 const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl });
@@ -144,8 +169,9 @@ function useDatabase() {
     // FIX: Implemented debounced autosaving to prevent performance issues and data loss.
     // The app state is now persisted to the server 1.5 seconds after the last change.
     useEffect(() => {
-        // Do not save while loading or if state is not yet initialized.
-        if (loading || !appState) {
+        // En web no hay nada que autoguardar (dbRef.current nunca se rellena,
+        // ver el "if (!isTauri())" de la inicialización más arriba).
+        if (!isTauri() || loading || !appState) {
             return;
         }
 
@@ -188,6 +214,15 @@ function useDatabase() {
     }, []);
 
     const importDatabase = useCallback(async (buffer: ArrayBuffer) => {
+        // Fase 6: la copia de seguridad (export/import de un fichero SQLite
+        // completo) todavía no tiene equivalente sobre las tablas
+        // relacionales en web — pendiente como trabajo de seguimiento, no
+        // bloqueaba el resto de esta fase. Escritorio sigue funcionando
+        // igual que siempre.
+        if (!isTauri()) {
+            alert("Restaurar desde copia de seguridad (.db) no está disponible todavía en la versión web.");
+            return;
+        }
         setLoading(true);
         try {
             const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl });
@@ -227,6 +262,11 @@ function useDatabase() {
     // autoguardado más arriba), para poder restaurar sin depender de que
     // sigan existiendo en Postgres más adelante.
     const exportDatabase = useCallback(async (): Promise<Uint8Array | null> => {
+        // Ver comentario en importDatabase: mismo hueco pendiente en web.
+        if (!isTauri()) {
+            alert("Descargar copia de seguridad (.db) no está disponible todavía en la versión web.");
+            return null;
+        }
         if (!dbRef.current) return null;
         const db = dbRef.current;
         await dbAdapter.embedPhotosForExport(db);
@@ -238,7 +278,7 @@ function useDatabase() {
             "¡ADVERTENCIA MÁXIMA! Esta acción es irreversible y eliminará ABSOLUTAMENTE TODOS los datos de la aplicación: clases, alumnos, calificaciones, currículo, planificaciones, TODO. La aplicación quedará completamente en blanco, lista para que introduzcas tus propios datos desde cero. ¿Estás COMPLETAMENTE seguro de que quieres borrar todo?"
         );
 
-        if (!dbRef.current || !confirmed) {
+        if (!confirmed || (isTauri() && !dbRef.current)) {
             return;
         }
 
@@ -294,10 +334,12 @@ function useDatabase() {
                 agendaNotes: [],
                 shortcuts: getInitialShortcuts(),
             };
-            dbRef.current.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(blankState)]);
-            const binaryDb = dbRef.current.export();
-            versionRef.current = await dbAdapter.set(binaryDb, null);
-            await dbAdapter.resetPhotos();
+            if (isTauri() && dbRef.current) {
+                dbRef.current.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(blankState)]);
+                const binaryDb = dbRef.current.export();
+                versionRef.current = await dbAdapter.set(binaryDb, null);
+                await dbAdapter.resetPhotos();
+            }
             setAppState(blankState);
             alert("Todos los datos han sido borrados. La aplicación se recargará.");
             window.location.reload();
@@ -401,6 +443,27 @@ const App = () => {
     const assignmentQueries = useAssignmentsForClasses(remoteClassIds, { enabled: !isDesktop });
     const gradeQueries = useGradesForClasses(remoteClassIds, { enabled: !isDesktop });
     const remoteEvaluationPeriods = useEvaluationPeriods(yearId, { enabled: !isDesktop && !!yearId });
+    const updateAcademicYearMutation = useUpdateAcademicYear();
+    // Fase 6: journalEntries/tasks/meetings/agendaNotes + el resto de
+    // academicConfiguration (holidays/periods/gradeScale/defaultCalendarView)
+    // eran los últimos campos gobernados por el blob en web — el backend ya
+    // los tenía completos desde antes (ver plan), solo faltaban estos hooks.
+    const remoteTasks = useTasks(yearId, { enabled: !isDesktop && !!yearId });
+    const createTaskMutation = useCreateTask();
+    const updateTaskMutation = useUpdateTask();
+    const deleteTaskMutation = useDeleteTask();
+    const remoteMeetings = useMeetings(yearId, { enabled: !isDesktop && !!yearId });
+    const createMeetingMutation = useCreateMeeting();
+    const updateMeetingMutation = useUpdateMeeting();
+    const deleteMeetingMutation = useDeleteMeeting();
+    const remoteJournalEntries = useJournalEntries(yearId, { enabled: !isDesktop && !!yearId });
+    const saveJournalEntryMutation = useSaveJournalEntry();
+    const remoteAgendaNotes = useAgendaNotes(yearId, { enabled: !isDesktop && !!yearId });
+    const createAgendaNoteMutation = useCreateAgendaNote();
+    const updateAgendaNoteMutation = useUpdateAgendaNote();
+    const deleteAgendaNoteMutation = useDeleteAgendaNote();
+    const remotePreferences = usePreferences({ enabled: !isDesktop });
+    const updatePreferencesMutation = useUpdatePreferences();
     const createAssignmentMutation = useCreateAssignment();
     // Memoizado a propósito (bug real encontrado 2026-08-04): sin esto,
     // hydratedClasses era un array nuevo en CADA render de App.tsx, sin
@@ -468,18 +531,43 @@ const App = () => {
     // "Evaluación" en un useEffect con esta prop en las dependencias; sin
     // memoizar, cualquier re-render ajeno mientras el modal está abierto
     // pisaba silenciosamente la evaluación elegida a mano por el usuario.
-    // evaluationPeriods/evaluationPeriodWeights reales (ver bloque 6,
-    // AcademicConfigManager.tsx) — todo lo demás de academicConfiguration
-    // (fechas del curso, festivos, franjas horarias, escala de notas) sigue
-    // siendo del blob en ambas plataformas, fuera de alcance.
+    // evaluationPeriods/evaluationPeriodWeights reales desde bloque 6;
+    // holidays/periods (franjas horarias) reales desde academic_years
+    // (columnas JSONB reservadas para esto, ver plan) y gradeScale/
+    // defaultCalendarView reales desde /preferences — Fase 6 cierra el
+    // último hueco: en web ya no queda ni un campo de academicConfiguration
+    // sin migrar. layoutMode/defaultStartView no se migran a propósito
+    // (código muerto, nada los lee — ver App.tsx:529 antes de esta fase).
     const effectiveAcademicConfiguration: AcademicConfiguration = useMemo(() => (
         isDesktop ? (appState?.academicConfiguration as AcademicConfiguration) : {
             ...(appState?.academicConfiguration as AcademicConfiguration),
+            academicYearStart: currentYear.data?.startDate ?? '',
+            academicYearEnd: currentYear.data?.endDate ?? '',
+            holidays: currentYear.data?.holidays ?? [],
+            periods: currentYear.data?.periods ?? [],
             evaluationPeriods: (remoteEvaluationPeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate })),
             evaluationPeriodWeights: Object.fromEntries((remoteEvaluationPeriods.data ?? []).map(p => [p.id, p.weight])),
+            gradeScale: remotePreferences.data?.gradeScale,
+            defaultCalendarView: remotePreferences.data?.defaultCalendarView,
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.academicConfiguration, remoteEvaluationPeriods.data]);
+    ), [isDesktop, appState?.academicConfiguration, currentYear.data, remoteEvaluationPeriods.data, remotePreferences.data]);
+    const effectiveTasks: Task[] = useMemo(() => (
+        isDesktop ? (appState?.tasks ?? []) : (remoteTasks.data ?? [])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [isDesktop, appState?.tasks, remoteTasks.data]);
+    const effectiveMeetings: Meeting[] = useMemo(() => (
+        isDesktop ? (appState?.meetings ?? []) : (remoteMeetings.data ?? [])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [isDesktop, appState?.meetings, remoteMeetings.data]);
+    const effectiveJournalEntries: JournalEntry[] = useMemo(() => (
+        isDesktop ? (appState?.journalEntries ?? []) : (remoteJournalEntries.data ?? []).map(e => ({ ...e, notes: e.notes ?? '' }))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [isDesktop, appState?.journalEntries, remoteJournalEntries.data]);
+    const effectiveAgendaNotes: AgendaNote[] = useMemo(() => (
+        isDesktop ? (appState?.agendaNotes ?? []) : (remoteAgendaNotes.data ?? [])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    ), [isDesktop, appState?.agendaNotes, remoteAgendaNotes.data]);
 
     // --- UI State ---
     const [activeClassId, setActiveClassId] = useState<string>('');
@@ -669,28 +757,93 @@ const App = () => {
     }, [isDesktop, updateState, createAssignmentMutation]);
 
     const handleUpdateJournalEntry = useCallback((entry: JournalEntry) => {
-        updateState(prev => {
-            const existing = prev.journalEntries.find(e => e.id === entry.id);
-            if (existing) {
-                return { ...prev, journalEntries: prev.journalEntries.map(e => e.id === entry.id ? entry : e) };
-            }
-            return { ...prev, journalEntries: [...prev.journalEntries, entry] };
-        });
-    }, [updateState]);
+        if (isDesktop) {
+            updateState(prev => {
+                const existing = prev.journalEntries.find(e => e.id === entry.id);
+                if (existing) {
+                    return { ...prev, journalEntries: prev.journalEntries.map(e => e.id === entry.id ? entry : e) };
+                }
+                return { ...prev, journalEntries: [...prev.journalEntries, entry] };
+            });
+            return;
+        }
+        // POST hace upsert por (classId, date, periodIndex) en el propio
+        // backend — no hace falta distinguir "es nueva" de "ya existía".
+        if (!yearId) return;
+        saveJournalEntryMutation.mutate({ yearId, data: { classId: entry.classId, date: entry.date, periodIndex: entry.periodIndex, notes: entry.notes } });
+    }, [isDesktop, updateState, yearId, saveJournalEntryMutation]);
 
     const setClassesCallback = useCallback((updater: React.SetStateAction<ClassData[]>) => updateState(prev => ({ ...prev, classes: typeof updater === 'function' ? updater(prev.classes) : updater })), [updateState]);
     const setCoursesCallback = useCallback((updater: React.SetStateAction<Course[]>) => updateState(prev => ({ ...prev, courses: typeof updater === 'function' ? updater(prev.courses) : updater })), [updateState]);
     const setKeyCompetencesCallback = useCallback((updater: React.SetStateAction<KeyCompetence[]>) => updateState(prev => ({ ...prev, keyCompetences: typeof updater === 'function' ? updater(prev.keyCompetences) : updater })), [updateState]);
     const setSpecificCompetencesCallback = useCallback((updater: React.SetStateAction<SpecificCompetence[]>) => updateState(prev => ({ ...prev, competences: typeof updater === 'function' ? updater(prev.competences) : updater })), [updateState]);
     const setEvaluationCriteriaCallback = useCallback((updater: React.SetStateAction<EvaluationCriterion[]>) => updateState(prev => ({ ...prev, criteria: typeof updater === 'function' ? updater(prev.criteria) : updater })), [updateState]);
-    const setJournalEntriesCallback = useCallback((updater: React.SetStateAction<JournalEntry[]>) => updateState(prev => ({ ...prev, journalEntries: typeof updater === 'function' ? updater(prev.journalEntries) : updater })), [updateState]);
     const setBasicKnowledgeCallback = useCallback((updater: React.SetStateAction<BasicKnowledge[]>) => updateState(prev => ({ ...prev, basicKnowledge: typeof updater === 'function' ? updater(prev.basicKnowledge) : updater })), [updateState]);
-    const setAcademicConfigurationCallback = useCallback((updater: React.SetStateAction<AcademicConfiguration>) => updateState(prev => ({ ...prev, academicConfiguration: typeof updater === 'function' ? updater(prev.academicConfiguration) : updater })), [updateState]);
+    // Fase 6: en web, compara el resultado del updater contra el valor
+    // efectivo actual y manda solo los campos que de verdad cambiaron —
+    // academicYearStart/End quedan fuera (ver comentario junto a
+    // effectiveAcademicConfiguration: AcademicConfigManager.tsx los escribe
+    // aparte, directo contra academic_years, sin pasar por aquí).
+    const setAcademicConfigurationCallback = useCallback((updater: React.SetStateAction<AcademicConfiguration>) => {
+        if (isDesktop) {
+            updateState(prev => ({ ...prev, academicConfiguration: typeof updater === 'function' ? updater(prev.academicConfiguration) : updater }));
+            return;
+        }
+        const next = typeof updater === 'function' ? updater(effectiveAcademicConfiguration) : updater;
+        if (yearId && (next.holidays !== effectiveAcademicConfiguration.holidays || next.periods !== effectiveAcademicConfiguration.periods)) {
+            updateAcademicYearMutation.mutate({ id: yearId, data: { holidays: next.holidays, periods: next.periods } });
+        }
+        if (next.gradeScale !== effectiveAcademicConfiguration.gradeScale || next.defaultCalendarView !== effectiveAcademicConfiguration.defaultCalendarView) {
+            updatePreferencesMutation.mutate({ gradeScale: next.gradeScale, defaultCalendarView: next.defaultCalendarView });
+        }
+    }, [isDesktop, updateState, effectiveAcademicConfiguration, yearId, updateAcademicYearMutation, updatePreferencesMutation]);
     const setProgrammingUnitsCallback = useCallback((updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => updateState(prev => ({ ...prev, programmingUnits: updater(prev.programmingUnits) })), [updateState]);
     const setEvaluationToolsCallback = useCallback((updater: React.SetStateAction<EvaluationTool[]>) => updateState(prev => ({ ...prev, evaluationTools: typeof updater === 'function' ? updater(prev.evaluationTools) : updater })), [updateState]);
-    const setTasksCallback = useCallback((updater: React.SetStateAction<Task[]>) => updateState(prev => ({ ...prev, tasks: typeof updater === 'function' ? updater(prev.tasks) : updater })), [updateState]);
-    const setMeetingsCallback = useCallback((updater: React.SetStateAction<Meeting[]>) => updateState(prev => ({ ...prev, meetings: typeof updater === 'function' ? updater(prev.meetings) : updater })), [updateState]);
-    const setAgendaNotesCallback = useCallback((updater: React.SetStateAction<AgendaNote[]>) => updateState(prev => ({ ...prev, agendaNotes: typeof updater === 'function' ? updater(prev.agendaNotes) : updater })), [updateState]);
+    // setTasks/setMeetings/setAgendaNotes: en web, diffAndSyncList traduce
+    // el resultado del updater (mismo patrón prev => [...prev, nuevo] que ya
+    // usan HoyView/ReunionesView/CalendarView) a las llamadas granulares que
+    // hacen falta — ver el comentario largo junto a diffAndSyncList en
+    // services/apiAdapters.ts para el porqué de este envoltorio en vez de
+    // reescribir cada consumidor.
+    const setTasksCallback = useCallback((updater: React.SetStateAction<Task[]>) => {
+        if (isDesktop) {
+            updateState(prev => ({ ...prev, tasks: typeof updater === 'function' ? updater(prev.tasks) : updater }));
+            return;
+        }
+        if (!yearId) return;
+        const next = typeof updater === 'function' ? updater(effectiveTasks) : updater;
+        diffAndSyncList(effectiveTasks, next, {
+            create: data => createTaskMutation.mutateAsync({ yearId, data }),
+            update: (id, data) => updateTaskMutation.mutateAsync({ id, yearId, data }),
+            remove: id => deleteTaskMutation.mutateAsync({ id, yearId }),
+        });
+    }, [isDesktop, updateState, yearId, effectiveTasks, createTaskMutation, updateTaskMutation, deleteTaskMutation]);
+    const setMeetingsCallback = useCallback((updater: React.SetStateAction<Meeting[]>) => {
+        if (isDesktop) {
+            updateState(prev => ({ ...prev, meetings: typeof updater === 'function' ? updater(prev.meetings) : updater }));
+            return;
+        }
+        if (!yearId) return;
+        const next = typeof updater === 'function' ? updater(effectiveMeetings) : updater;
+        diffAndSyncList(effectiveMeetings, next, {
+            create: data => createMeetingMutation.mutateAsync({ yearId, data }),
+            update: (id, data) => updateMeetingMutation.mutateAsync({ id, yearId, data }),
+            remove: id => deleteMeetingMutation.mutateAsync({ id, yearId }),
+        });
+    }, [isDesktop, updateState, yearId, effectiveMeetings, createMeetingMutation, updateMeetingMutation, deleteMeetingMutation]);
+    const setAgendaNotesCallback = useCallback((updater: React.SetStateAction<AgendaNote[]>) => {
+        if (isDesktop) {
+            updateState(prev => ({ ...prev, agendaNotes: typeof updater === 'function' ? updater(prev.agendaNotes) : updater }));
+            return;
+        }
+        if (!yearId) return;
+        const next = typeof updater === 'function' ? updater(effectiveAgendaNotes) : updater;
+        diffAndSyncList(effectiveAgendaNotes, next, {
+            create: data => createAgendaNoteMutation.mutateAsync({ yearId, data }),
+            update: (id, data) => updateAgendaNoteMutation.mutateAsync({ id, yearId, data }),
+            remove: id => deleteAgendaNoteMutation.mutateAsync({ id, yearId }),
+        });
+    }, [isDesktop, updateState, yearId, effectiveAgendaNotes, createAgendaNoteMutation, updateAgendaNoteMutation, deleteAgendaNoteMutation]);
     // Compat de escritorio para shortcuts: idéntico patrón de updater que el
     // resto de callbacks de arriba (setEvaluationToolsCallback, justo encima,
     // cumple el mismo papel para evaluationTools), pero solo se usa mientras
@@ -835,7 +988,7 @@ const App = () => {
         return <div className="flex items-center justify-center min-h-screen bg-slate-100 text-slate-600">Inicializando...</div>;
     }
 
-    const { classes, criteria, competences, journalEntries, courses, programmingUnits, basicKnowledge, academicConfiguration, tasks, meetings, agendaNotes } = appState;
+    const { classes, criteria, competences, courses, programmingUnits, basicKnowledge } = appState;
     // Fuente resuelta según plataforma (ver handlers granulares más arriba):
     // blob local en escritorio, backend nuevo en web.
     const shortcuts = isDesktop ? appState.shortcuts : (remoteShortcuts.data ?? []);
@@ -869,7 +1022,7 @@ const App = () => {
         if (activeView === 'journal') {
             return <ClassJournal
                 classes={hydratedClasses}
-                entries={journalEntries}
+                entries={effectiveJournalEntries}
                 onSave={handleUpdateJournalEntry}
                 academicConfiguration={effectiveAcademicConfiguration}
                 units={allProgrammingUnits}
@@ -883,9 +1036,9 @@ const App = () => {
                 classes={hydratedClasses}
                 courses={curriculumCourses}
                 academicConfiguration={effectiveAcademicConfiguration}
-                tasks={tasks}
+                tasks={effectiveTasks}
                 setTasks={setTasksCallback}
-                meetings={meetings}
+                meetings={effectiveMeetings}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
             />;
@@ -903,9 +1056,9 @@ const App = () => {
 
         if (activeView === 'clases') {
             return <ClasesView
-                classes={classes}
+                classes={hydratedClasses}
                 courses={curriculumCourses}
-                academicConfiguration={academicConfiguration}
+                academicConfiguration={effectiveAcademicConfiguration}
                 criteria={allCriteria}
                 specificCompetences={allCompetences}
                 keyCompetences={keyCompetences}
@@ -917,7 +1070,7 @@ const App = () => {
 
         if (activeView === 'meetings') {
             return <ReunionesView
-                meetings={meetings}
+                meetings={effectiveMeetings}
                 setMeetings={setMeetingsCallback}
                 openMeetingId={meetingToOpenId}
                 onOpened={() => setMeetingToOpenId(null)}
@@ -1011,8 +1164,8 @@ const App = () => {
                                 setUnits={setProgrammingUnitsCallback}
                                 criteria={criteria}
                                 basicKnowledge={basicKnowledge}
-                                classes={classes}
-                                academicConfiguration={academicConfiguration}
+                                classes={hydratedClasses}
+                                academicConfiguration={effectiveAcademicConfiguration}
                             />
                         )}
                     </React.Suspense>
@@ -1078,15 +1231,15 @@ const App = () => {
                     courses={curriculumCourses}
                     academicConfiguration={effectiveAcademicConfiguration}
                     classes={hydratedClasses}
-                    journalEntries={journalEntries}
+                    journalEntries={effectiveJournalEntries}
                     onUpdateClass={handleUpdateClass}
                     criteria={effectiveCriteria}
                     specificCompetences={effectiveCompetences}
                     keyCompetences={keyCompetences}
                     onSaveJournalEntry={handleUpdateJournalEntry}
-                    agendaNotes={agendaNotes}
+                    agendaNotes={effectiveAgendaNotes}
                     setAgendaNotes={setAgendaNotesCallback}
-                    meetings={meetings}
+                    meetings={effectiveMeetings}
                     setMeetings={setMeetingsCallback}
                     setActiveView={setActiveView}
                     setActiveClassId={setActiveClassId}
@@ -1188,10 +1341,9 @@ const App = () => {
                         setSpecificCompetences={setSpecificCompetencesCallback}
                         evaluationCriteria={allCriteria}
                         setEvaluationCriteria={setEvaluationCriteriaCallback}
-                        journalEntries={journalEntries} setJournalEntries={setJournalEntriesCallback}
                         basicKnowledge={allBasicKnowledge}
                         setBasicKnowledge={setBasicKnowledgeCallback}
-                        academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfigurationCallback}
+                        academicConfiguration={effectiveAcademicConfiguration} setAcademicConfiguration={setAcademicConfigurationCallback}
                         programmingUnits={allProgrammingUnits}
                         setProgrammingUnits={setProgrammingUnitsCallback}
                         evaluationTools={evaluationTools}
@@ -1215,7 +1367,7 @@ const App = () => {
                 evaluationCriteria={allCriteria}
                 programmingUnits={allProgrammingUnits}
                 basicKnowledge={allBasicKnowledge}
-                academicConfiguration={academicConfiguration}
+                academicConfiguration={effectiveAcademicConfiguration}
             />
 
             <Modal isOpen={isFavoritosOpen} onClose={() => setIsFavoritosOpen(false)} title="Favoritos" size="md" accent="sand">
@@ -1279,7 +1431,7 @@ const App = () => {
                     classes={hydratedClasses}
                     courses={curriculumCourses}
                     academicConfiguration={effectiveAcademicConfiguration}
-                    entries={journalEntries}
+                    entries={effectiveJournalEntries}
                     onSave={handleUpdateJournalEntry}
                 />
             )}

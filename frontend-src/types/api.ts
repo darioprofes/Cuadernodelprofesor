@@ -143,14 +143,24 @@ export interface EvaluationPeriodInput {
 
 export interface EvaluationPeriodPatch extends Partial<EvaluationPeriodInput> {}
 
+export interface AcademicYearHoliday {
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+}
+
 export interface AcademicYear {
     id: string;
     label: string;
     startDate: string;
     endDate: string;
     isCurrent: boolean;
-    holidays: unknown[];
-    periods: unknown[];
+    holidays: AcademicYearHoliday[];
+    // Franjas horarias (p.ej. "8:00-8:55"), no tienen id propio — el índice
+    // en el array ES el periodIndex que usa todo lo demás (horario, notas
+    // del diario...), igual que en el AcademicConfiguration.periods viejo.
+    periods: string[];
 }
 
 export interface AcademicYearInput {
@@ -163,8 +173,8 @@ export interface AcademicYearPatch {
     label?: string;
     startDate?: string;
     endDate?: string;
-    holidays?: unknown[];
-    periods?: unknown[];
+    holidays?: AcademicYearHoliday[];
+    periods?: string[];
 }
 
 // Declara "imparto esta materia (course) este curso académico" — ver Fase 8
@@ -372,4 +382,105 @@ export interface GradeInput {
     directScore?: number;
     recoveryScore?: number;
     toolResults?: Record<string, unknown>;
+}
+
+// Fase 6: journalEntries/tasks/meetings/agendaNotes eran las últimas
+// entidades que en web seguían gobernadas por el blob (autoguardado vía
+// PUT /db) — backend ya las tenía completas desde antes, solo faltaban
+// estos hooks.
+export interface JournalEntry {
+    id: string;
+    academicYearId: string;
+    classId: string;
+    date: string;
+    periodIndex: number;
+    notes?: string;
+}
+
+export interface JournalEntryInput {
+    classId: string;
+    date: string;
+    periodIndex: number;
+    notes?: string;
+}
+
+// Sin PATCH de classId/date/periodIndex a propósito: cambiar cualquiera de
+// los tres es conceptualmente "otra anotación" (esa es la clave de upsert
+// del backend, ver services/journal_entries.py), no una edición de esta.
+export interface JournalEntryPatch {
+    notes?: string;
+}
+
+export interface Task {
+    id: string;
+    academicYearId: string;
+    texto: string;
+    hecho: boolean;
+    fechaInicio?: string;
+    fechaFin?: string;
+}
+
+export interface TaskInput {
+    texto: string;
+    hecho?: boolean;
+    fechaInicio?: string;
+    fechaFin?: string;
+}
+
+export interface TaskPatch extends Partial<TaskInput> {}
+
+export interface Meeting {
+    id: string;
+    academicYearId: string;
+    fecha: string;
+    hora?: string;
+    tipo: 'tutoria' | 'departamento' | 'familia' | 'r_tutores';
+    conQuien?: string;
+    motivo?: string;
+    acuerdos?: string;
+    seguimiento?: string;
+}
+
+export interface MeetingInput {
+    fecha: string;
+    hora?: string;
+    tipo: Meeting['tipo'];
+    conQuien?: string;
+    motivo?: string;
+    acuerdos?: string;
+    seguimiento?: string;
+}
+
+export interface MeetingPatch extends Partial<MeetingInput> {}
+
+export interface AgendaNote {
+    id: string;
+    academicYearId: string;
+    fecha: string;
+    texto: string;
+}
+
+export interface AgendaNoteInput {
+    fecha: string;
+    texto: string;
+}
+
+export interface AgendaNotePatch extends Partial<AgendaNoteInput> {}
+
+// layoutMode/defaultStartView del blob viejo no tienen equivalente aquí a
+// propósito — están muertos en el frontend (nada los lee, ver
+// App.tsx:529 "ignora academicConfiguration.defaultStartView"), no hacía
+// falta darles un hueco nuevo solo por existir en el tipo antiguo.
+// GradeScaleRule reutilizado de ../types (no redefinido aquí): mismo campo,
+// y así el union literal de "color" no se desincroniza entre los dos sitios.
+import type { GradeScaleRule } from '../types';
+
+export interface Preferences {
+    defaultCalendarView?: 'month' | 'week' | 'day';
+    gradeScale: GradeScaleRule[];
+}
+
+export interface PreferencesInput {
+    defaultCalendarView?: 'month' | 'week' | 'day';
+    gradeScale?: GradeScaleRule[];
 }

@@ -12,7 +12,7 @@ _COLUMNS = """
     telefono_urgencias, tutor1, tutor2, domicilio_direccion, domicilio_localidad,
     domicilio_codigo_postal, domicilio_telefono, alergias, enfermedades_relevantes,
     medicacion_habitual, intolerancias_alimentarias, observaciones_sanitarias,
-    autorizacion_imagen, autorizacion_salidas, created_at, updated_at
+    autorizacion_imagen, autorizacion_salidas, foto_content_type, created_at, updated_at
 """
 
 # Columnas JSONB de esta tabla: necesitan Json(...) al escribir, psycopg no
@@ -55,6 +55,10 @@ class StudentPatch(StudentInput):
 
 class Student(StudentInput):
     id: uuid.UUID
+    # Los bytes de la foto no viajan aquí (ver routers/photos.py) — solo si
+    # hay una, para que el frontend decida si pintar <img src="/api/photos/
+    # {id}"> o el icono genérico, sin tener que pedir la foto para saberlo.
+    foto_content_type: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
