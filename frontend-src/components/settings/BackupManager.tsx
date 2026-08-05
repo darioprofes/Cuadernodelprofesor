@@ -1,5 +1,4 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
 import { ChevronDownIcon } from '../Icons';
 import { runHealthCheck, type HealthCheckIssue } from '../../services/healthCheck';
 import Card from '../Card';
@@ -55,23 +54,21 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    // En escritorio la copia es un fichero SQLite (.db); en web (Fase 6) es
-    // un volcado JSON de todas las tablas (services/backup.py) — mismo
-    // botón, mismo flujo de descarga/subida, distinto contenido por dentro.
-    const isDesktop = isTauri();
-    const backupExtension = isDesktop ? 'db' : 'json';
-    const backupMimeType = isDesktop ? 'application/x-sqlite3' : 'application/json';
+    // Mismo formato en ambas plataformas desde la Fase 7 (bloque 8): un
+    // volcado JSON de todas las tablas (services/backup.py en web,
+    // services/backup.rs en escritorio) — mismo botón, mismo flujo de
+    // descarga/subida, mismo contenido por dentro.
+    const backupExtension = 'json';
+    const backupMimeType = 'application/json';
 
     const handleExportClick = async () => {
         const data = await exportDatabase();
-        if (data) {
-            const blob = new Blob([data], { type: backupMimeType });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `cuaderno_backup_${new Date().toISOString().split('T')[0]}.${backupExtension}`;
-            a.click();
-        }
+        const blob = new Blob([data], { type: backupMimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cuaderno_backup_${new Date().toISOString().split('T')[0]}.${backupExtension}`;
+        a.click();
     };
 
     return (
@@ -87,7 +84,7 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
                 <Card>
                     <h4 className="font-bold text-slate-800 mb-2">Restaurar Copia</h4>
                     <p className="text-sm text-slate-600 mb-4">Sube un archivo .{backupExtension} previamente exportado para restaurar tus datos.</p>
-                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept={isDesktop ? '.db,.sqlite' : '.json'} className="hidden" />
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
                     <Button variant="success" onClick={handleImportClick} className="w-full">Subir Archivo (.{backupExtension})</Button>
                 </Card>
 

@@ -1,10 +1,6 @@
 
 // FIX: Corrected the React import statement.
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import initSqlJs, { type Database } from 'sql.js';
-import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { isTauri } from '@tauri-apps/api/core';
-import { dbAdapter, VersionConflictError } from './services/dbAdapter';
 import { api } from './services/api';
 import { useShortcuts, useCreateShortcut, useUpdateShortcut, useDeleteShortcut } from './hooks/useShortcuts';
 import { useEvaluationTools, useCreateEvaluationTool, useUpdateEvaluationTool, useDeleteEvaluationTool } from './hooks/useEvaluationTools';
@@ -30,9 +26,8 @@ import { useJournalEntries, useSaveJournalEntry } from './hooks/useJournalEntrie
 import { useAgendaNotes, useCreateAgendaNote, useUpdateAgendaNote, useDeleteAgendaNote } from './hooks/useAgendaNotes';
 import { usePreferences, useUpdatePreferences } from './hooks/usePreferences';
 import { hydrateClassData, diffAndSyncList } from './services/apiAdapters';
-import { INITIAL_CLASS_DATA, INITIAL_COMPETENCES, INITIAL_CRITERIA, INITIAL_KEY_COMPETENCES, INITIAL_JOURNAL_ENTRIES, INITIAL_COURSES, INITIAL_PROGRAMMING_UNITS, INITIAL_BASIC_KNOWLEDGE, INITIAL_ACADEMIC_CONFIGURATION, INITIAL_EVALUATION_TOOLS, INITIAL_TASKS, INITIAL_MEETINGS, INITIAL_AGENDA_NOTES, getInitialShortcuts } from './constants';
-import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, OperationalDescriptor, JournalEntry, Course, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View, AppState } from './types';
-import { runMigrations, CURRENT_SCHEMA_VERSION } from './services/migrations';
+import { INITIAL_ACADEMIC_CONFIGURATION, getInitialShortcuts } from './constants';
+import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, OperationalDescriptor, JournalEntry, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View } from './types';
 import ShortcutsBar from './components/ShortcutsBar';
 import Select from './components/Select';
 import IconButton from './components/IconButton';
@@ -69,303 +64,65 @@ import ClassLabel from './components/ClassLabel';
 import { formatClassLabel, getClassName, compararCodigo, getSiglas, getMateria } from './utils';
 import { backgroundPatternStyle } from './theme/backgroundPattern';
 
-// Custom hook for SQLite database management
-function useDatabase() {
-    const dbRef = useRef<Database | null>(null);
-    const [appState, setAppState] = useState<AppState | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    // Versión del blob que sabemos vigente en el servidor; null en escritorio
-    // (sin control de versión, ver services/dbAdapter.ts) y hasta que exista
-    // al menos una fila en web (primer PUT). Se manda de vuelta en cada
-    // autoguardado para detectar sobrescrituras concurrentes.
-    const versionRef = useRef<number | null>(null);
+// Copia de seguridad genérica sobre las tablas relacionales (ver
+// services/backup.py en web y services/backup.rs en escritorio) — api.ts
+// enruta '/backup/export'|'/backup/import' al comando Rust dedicado en
+// escritorio y al endpoint REST real en web, así que este código no
+// necesita saber en qué plataforma corre.
+async function importDatabase(buffer: ArrayBuffer): Promise<void> {
+    try {
+        const dump = JSON.parse(new TextDecoder().decode(buffer));
+        await api.post('/backup/import', dump);
+        alert("Copia de seguridad restaurada con éxito. La aplicación se recargará.");
+        window.location.reload();
+    } catch (e) {
+        console.error(e);
+        alert(`Error al importar la copia de seguridad: ${e instanceof Error ? e.message : String(e)}`);
+    }
+}
 
-    const loadDataFromDb = (db: Database) => {
-        try {
-            const res = db.exec("SELECT data FROM app_data WHERE key = 'main'");
-            if (res.length > 0 && res[0].values.length > 0) {
-                // data es TEXT en el esquema de app_data (siempre JSON.stringify
-                // al guardar), sql.js solo lo tipa como SqlValue en general.
-                const loadedState = JSON.parse(res[0].values[0][0] as string);
-                return runMigrations(loadedState);
-            }
-        } catch (e) {
-            console.error("Could not read from DB, maybe it's new?", e);
-        }
-        return null;
-    };
-    
-    useEffect(() => {
-        // Fase 6: en web ya no queda ni un campo que dependa del blob (el
-        // último hueco, journalEntries/tasks/meetings/agendaNotes/el resto
-        // de academicConfiguration, se cerró con los hooks nuevos — ver
-        // effectiveTasks/effectiveMeetings/etc. en App()). Así que en web
-        // este hook ni siquiera intenta hablar con sql.js/dbAdapter — el
-        // "appState" que da es un cascarón vacío que nadie llega a leer de
-        // verdad (todas las ramas isDesktop de más abajo lo esquivan).
-        // Sigue existiendo (no se borra el hook entero) porque escritorio
-        // todavía lo necesita tal cual hasta la Fase 7.
-        if (!isTauri()) {
-            setAppState({
-                schemaVersion: CURRENT_SCHEMA_VERSION,
-                classes: [], keyCompetences: [], competences: [], criteria: [],
-                journalEntries: [], courses: [], programmingUnits: [], basicKnowledge: [],
-                academicConfiguration: INITIAL_ACADEMIC_CONFIGURATION, evaluationTools: [],
-                tasks: [], meetings: [], agendaNotes: [], shortcuts: [],
-            });
-            setLoading(false);
-            return;
-        }
-        const initialize = async () => {
-            try {
-                const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl });
-                const savedDb = await dbAdapter.get();
-                let db;
-                if (savedDb) {
-                    db = new SQL.Database(savedDb.data);
-                    versionRef.current = savedDb.version;
-                } else {
-                    db = new SQL.Database();
-                    db.exec("CREATE TABLE app_data (key TEXT PRIMARY KEY, data TEXT)");
-                    const initialState: AppState = {
-                        schemaVersion: CURRENT_SCHEMA_VERSION,
-                        classes: INITIAL_CLASS_DATA,
-                        keyCompetences: INITIAL_KEY_COMPETENCES,
-                        competences: INITIAL_COMPETENCES,
-                        criteria: INITIAL_CRITERIA,
-                        journalEntries: INITIAL_JOURNAL_ENTRIES,
-                        courses: INITIAL_COURSES,
-                        programmingUnits: INITIAL_PROGRAMMING_UNITS,
-                        basicKnowledge: INITIAL_BASIC_KNOWLEDGE,
-                        academicConfiguration: INITIAL_ACADEMIC_CONFIGURATION,
-                        evaluationTools: INITIAL_EVALUATION_TOOLS,
-                        tasks: INITIAL_TASKS,
-                        meetings: INITIAL_MEETINGS,
-                        agendaNotes: INITIAL_AGENDA_NOTES,
-                        shortcuts: getInitialShortcuts(),
-                    };
-                    const stateToStore = { ...initialState, classes: dbAdapter.stripPhotosForStorage(initialState.classes) };
-                    db.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(stateToStore)]);
-                    const binaryDb = db.export();
-                    versionRef.current = await dbAdapter.set(binaryDb, null);
-                }
-                dbRef.current = db;
-                const data = loadDataFromDb(db);
-                if (data) {
-                    data.classes = await dbAdapter.hydratePhotosOnLoad(data.classes);
-                }
-                setAppState(data);
-            } catch (err) {
-                console.error("Database initialization failed:", err);
-                setError("No se pudo cargar la base de datos.");
-            } finally {
-                setLoading(false);
-            }
-        };
-        initialize();
-    }, []);
-    
-    // FIX: Implemented debounced autosaving to prevent performance issues and data loss.
-    // The app state is now persisted to the server 1.5 seconds after the last change.
-    useEffect(() => {
-        // En web no hay nada que autoguardar (dbRef.current nunca se rellena,
-        // ver el "if (!isTauri())" de la inicialización más arriba).
-        if (!isTauri() || loading || !appState) {
-            return;
-        }
+async function exportDatabase(): Promise<Uint8Array> {
+    const dump = await api.get('/backup/export');
+    return new TextEncoder().encode(JSON.stringify(dump, null, 2));
+}
 
-        const handler = setTimeout(() => {
-            const persistState = async () => {
-                if (!dbRef.current) return;
-                try {
-                    const db = dbRef.current;
-                    const stateToStore = { ...appState, classes: dbAdapter.stripPhotosForStorage(appState.classes) };
-                    db.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(stateToStore)]);
-                    const binaryDb = db.export();
-                    versionRef.current = await dbAdapter.set(binaryDb, versionRef.current);
-                    await dbAdapter.syncPhotosAfterSave(appState.classes);
-                } catch (e) {
-                    console.error("Failed to autosave database:", e);
-                    if (e instanceof VersionConflictError) {
-                        // No reintentar con la misma versión desfasada: volvería a
-                        // fallar y podría machacar lo que se guardó desde el otro
-                        // sitio en cuanto el conflicto se resuelva sin darse cuenta.
-                        setError(e.message);
-                    } else {
-                        setError("Error al guardar los datos automáticamente.");
-                    }
-                }
-            };
-            persistState();
-        }, 1500); // 1.5-second debounce timer
+async function resetDatabase(): Promise<void> {
+    const confirmed = window.confirm(
+        "¡ADVERTENCIA MÁXIMA! Esta acción es irreversible y eliminará ABSOLUTAMENTE TODOS los datos de la aplicación: clases, alumnos, calificaciones, currículo, planificaciones, TODO. La aplicación quedará completamente en blanco, lista para que introduzcas tus propios datos desde cero. ¿Estás COMPLETAMENTE seguro de que quieres borrar todo?"
+    );
+    if (!confirmed) {
+        return;
+    }
 
-        return () => {
-            clearTimeout(handler);
-        };
-    }, [appState, loading]); // This effect triggers on every state change.
-
-    // Renamed from updateStateAndPersist. This now only updates React's state.
-    const updateState = useCallback((updater: (prevState: AppState) => AppState) => {
-        setAppState(prevState => {
-            if (!prevState) return null;
-            return updater(prevState);
-        });
-    }, []);
-
-    const importDatabase = useCallback(async (buffer: ArrayBuffer) => {
-        // Fase 6: en web ya no hay un fichero SQLite que importar — el
-        // "archivo" es JSON (un volcado de todas las tablas, ver
-        // services/backup.py), pero BackupManager.tsx sigue subiendo un
-        // ArrayBuffer sin más (mismo <input type="file">), así que aquí
-        // solo hace falta decodificarlo como texto en vez de como SQLite.
-        if (!isTauri()) {
-            setLoading(true);
-            try {
-                const dump = JSON.parse(new TextDecoder().decode(buffer));
-                await api.post('/backup/import', dump);
-                alert("Copia de seguridad restaurada con éxito. La aplicación se recargará.");
-                window.location.reload();
-            } catch (e) {
-                console.error(e);
-                alert(`Error al importar la copia de seguridad: ${e instanceof Error ? e.message : String(e)}`);
-            } finally {
-                setLoading(false);
-            }
-            return;
-        }
-        setLoading(true);
-        try {
-            const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl });
-            const db = new SQL.Database(new Uint8Array(buffer));
-            dbRef.current = db;
-            const data = loadDataFromDb(db);
-            if (data) {
-                // El .db importado puede traer fotos embebidas (si viene de
-                // exportDatabase, que las incluye para que la copia sea
-                // autocontenida) — se tratan como la verdad definitiva de la
-                // restauración.
-                await dbAdapter.syncPhotosForImport(data.classes);
-                setAppState(data);
-                const stateToStore = { ...data, classes: dbAdapter.stripPhotosForStorage(data.classes) };
-                dbRef.current.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(stateToStore)]);
-                const binaryDb = db.export(); // Get binary data from the new DB
-                // Importar es una restauración explícita y deliberada: se
-                // acepta pase lo que pase en el almacén (expectedVersion null),
-                // no tiene sentido bloquearla por un conflicto de versión.
-                versionRef.current = await dbAdapter.set(binaryDb, null);
-                alert("Base de datos importada con éxito.");
-            } else {
-                throw new Error("El archivo de base de datos no es válido o está vacío.");
-            }
-        } catch (e) {
-            console.error(e);
-            alert(`Error al importar la base de datos: ${e instanceof Error ? e.message : String(e)}`);
-            // Optionally, reload the old state if import fails
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    // Async porque la copia de seguridad manual debe ser autocontenida: se
-    // embeben las fotos actuales del servidor en la fila 'main' del propio
-    // fichero .db exportado (que normalmente se guarda sin ellas, ver el
-    // autoguardado más arriba), para poder restaurar sin depender de que
-    // sigan existiendo en Postgres más adelante.
-    const exportDatabase = useCallback(async (): Promise<Uint8Array | null> => {
-        // Ver comentario en importDatabase: en web el "archivo" es el JSON
-        // de /backup/export codificado como bytes UTF-8, no un SQLite —
-        // BackupManager.tsx solo sabe convertir lo que le llega en un Blob
-        // y descargarlo, no le importa qué haya dentro.
-        if (!isTauri()) {
-            const dump = await api.get('/backup/export');
-            return new TextEncoder().encode(JSON.stringify(dump, null, 2));
-        }
-        if (!dbRef.current) return null;
-        const db = dbRef.current;
-        await dbAdapter.embedPhotosForExport(db);
-        return db.export();
-    }, []);
-
-    const resetDatabase = useCallback(async () => {
-        const confirmed = window.confirm(
-            "¡ADVERTENCIA MÁXIMA! Esta acción es irreversible y eliminará ABSOLUTAMENTE TODOS los datos de la aplicación: clases, alumnos, calificaciones, currículo, planificaciones, TODO. La aplicación quedará completamente en blanco, lista para que introduzcas tus propios datos desde cero. ¿Estás COMPLETAMENTE seguro de que quieres borrar todo?"
-        );
-
-        if (!confirmed || (isTauri() && !dbRef.current)) {
-            return;
-        }
-
-        setLoading(true);
-        try {
-            // En web, classes/students/courses/currículo/evaluationTools ya
-            // no viven en el blob (Fase 5 fusionada) — hay que borrarlos
-            // también en el backend nuevo, si no el reset deja de cumplir
-            // lo que promete el diálogo de arriba. Orden: academic_years
-            // primero (su DELETE ya borra classes explícitamente antes que
-            // el propio año — ver comentario en delete_academic_year — así
-            // que al llegar aquí no quedan classes/enrollments/categories/
-            // assignments/grades/journalEntries/tasks/meetings/agendaNotes
-            // colgando); luego courses (cascada su currículo) y
-            // keyCompetences (cascada sus descriptores) en cualquier orden
-            // entre sí; students al final, ya sin matrículas que los
-            // bloqueen (RESTRICT).
-            if (!isTauri()) {
-                const [years, courses, keyComps, students, tools, oldShortcuts] = await Promise.all([
-                    api.get<{ id: string }[]>('/academic-years'),
-                    api.get<{ id: string }[]>('/courses'),
-                    api.get<{ id: string }[]>('/key-competences'),
-                    api.get<{ id: string }[]>('/students'),
-                    api.get<{ id: string }[]>('/evaluation-tools'),
-                    api.get<{ id: string }[]>('/shortcuts'),
-                ]);
-                for (const y of years) await api.delete(`/academic-years/${y.id}`);
-                await Promise.all(courses.map(c => api.delete(`/courses/${c.id}`)));
-                await Promise.all(keyComps.map(k => api.delete(`/key-competences/${k.id}`)));
-                await Promise.all(students.map(s => api.delete(`/students/${s.id}`)));
-                await Promise.all(tools.map(t => api.delete(`/evaluation-tools/${t.id}`)));
-                await Promise.all(oldShortcuts.map(s => api.delete(`/shortcuts/${s.id}`)));
-                await Promise.all(getInitialShortcuts().map(({ id: _id, ...s }) => api.post('/shortcuts', s)));
-            }
-
-            // Reutiliza la misma configuración académica (evaluaciones, festivos,
-            // franjas horarias) que se usa al crear la base de datos por primera
-            // vez, para no dejar el curso sin evaluaciones tras un restablecimiento.
-            const blankState: AppState = {
-                schemaVersion: CURRENT_SCHEMA_VERSION,
-                classes: [],
-                keyCompetences: [],
-                competences: [],
-                criteria: [],
-                journalEntries: [],
-                courses: [],
-                programmingUnits: [],
-                basicKnowledge: [],
-                academicConfiguration: INITIAL_ACADEMIC_CONFIGURATION,
-                evaluationTools: [],
-                tasks: [],
-                meetings: [],
-                agendaNotes: [],
-                shortcuts: getInitialShortcuts(),
-            };
-            if (isTauri() && dbRef.current) {
-                dbRef.current.exec("INSERT OR REPLACE INTO app_data (key, data) VALUES ('main', ?)", [JSON.stringify(blankState)]);
-                const binaryDb = dbRef.current.export();
-                versionRef.current = await dbAdapter.set(binaryDb, null);
-                await dbAdapter.resetPhotos();
-            }
-            setAppState(blankState);
-            alert("Todos los datos han sido borrados. La aplicación se recargará.");
-            window.location.reload();
-        } catch (e) {
-            console.error("Failed to reset database:", e);
-            setError("Error al restablecer la base de datos.");
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    return { appState, loading, error, updateState, importDatabase, exportDatabase, resetDatabase };
+    try {
+        // Orden: academic_years primero (su DELETE ya borra classes
+        // explícitamente antes que el propio año — ver delete_academic_year —
+        // así que al llegar aquí no quedan classes/enrollments/categories/
+        // assignments/grades/journalEntries/tasks/meetings/agendaNotes
+        // colgando); luego courses (cascada su currículo) y keyCompetences
+        // (cascada sus descriptores) en cualquier orden entre sí; students al
+        // final, ya sin matrículas que los bloqueen (RESTRICT).
+        const [years, courses, keyComps, students, tools, oldShortcuts] = await Promise.all([
+            api.get<{ id: string }[]>('/academic-years'),
+            api.get<{ id: string }[]>('/courses'),
+            api.get<{ id: string }[]>('/key-competences'),
+            api.get<{ id: string }[]>('/students'),
+            api.get<{ id: string }[]>('/evaluation-tools'),
+            api.get<{ id: string }[]>('/shortcuts'),
+        ]);
+        for (const y of years) await api.delete(`/academic-years/${y.id}`);
+        await Promise.all(courses.map(c => api.delete(`/courses/${c.id}`)));
+        await Promise.all(keyComps.map(k => api.delete(`/key-competences/${k.id}`)));
+        await Promise.all(students.map(s => api.delete(`/students/${s.id}`)));
+        await Promise.all(tools.map(t => api.delete(`/evaluation-tools/${t.id}`)));
+        await Promise.all(oldShortcuts.map(s => api.delete(`/shortcuts/${s.id}`)));
+        await Promise.all(getInitialShortcuts().map(({ id: _id, ...s }) => api.post('/shortcuts', s)));
+        alert("Todos los datos han sido borrados. La aplicación se recargará.");
+        window.location.reload();
+    } catch (e) {
+        console.error("Failed to reset database:", e);
+        alert("Error al restablecer la base de datos.");
+    }
 }
 
 // Únicas vistas que de verdad usan la clase seleccionada globalmente (el
@@ -387,17 +144,13 @@ const ViewLoadingFallback: React.FC = () => (
 );
 
 const App = () => {
-    const { appState, loading, error, updateState, importDatabase, exportDatabase, resetDatabase } = useDatabase();
-
     // Todos los hooks de más abajo (shortcuts, currículo, curso académico,
     // clases/alumnado, cuaderno de notas, diario/tareas/reuniones/agenda)
     // hablan siempre con el backend granular, sin ningún enabled
     // condicional ni rama isDesktop propia aquí: services/api.ts (único
     // sitio que conoce isTauri()) ya sabe despachar al comando Rust
     // api_request en escritorio o a fetch() en web. Ver plan, Fase 7,
-    // bloques 2-6. Lo único que sigue distinguiendo plataforma en este
-    // componente es useDatabase() (más arriba), que se retira entera en el
-    // bloque 8 junto con el blob que todavía sirve.
+    // bloques 2-6.
     const remoteShortcuts = useShortcuts();
     const createShortcut = useCreateShortcut();
     const updateShortcut = useUpdateShortcut();
@@ -433,19 +186,13 @@ const App = () => {
     const allBasicKnowledgeQueries = useBasicKnowledgeForCourses(remoteCourseIds);
     const allProgrammingUnitsQueries = useProgrammingUnitsForCourses(remoteCourseIds);
 
-    // Hidratación completa de TODAS las clases del curso actual, para web
-    // (ver plan, bloque 6): GradebookTable/CalendarView/los 4 informes de
-    // clase siguen esperando una ClassData completa (misma forma que el
-    // blob, con alumnado+categorías+tareas+notas embebidos) — se reconstruye
-    // aquí una vez, centralizada, en vez de que cada consumidor la pida por
-    // separado (ver services/apiAdapters.ts para el porqué de cada pieza,
-    // sobre todo grades/criterionScores). `appState?.classes` con fallback a
-    // [] porque estos hooks se declaran antes del `if (!appState)` de más
-    // abajo (Rules of Hooks) — el valor real no importa hasta que appState
-    // exista, momento en el que ya está resuelto de verdad.
-    // academic_years/classes/students+enrollments (Fase 7 bloque 4) ya
-    // tienen comando Rust real en escritorio -- solo categories/assignments/
-    // grades (bloque 5, todavía sin construir) siguen desactivadas ahí abajo.
+    // Hidratación completa de TODAS las clases del curso actual: GradebookTable/
+    // CalendarView/los 4 informes de clase siguen esperando una ClassData
+    // completa (misma forma que el blob viejo, con alumnado+categorías+
+    // tareas+notas embebidos) — se reconstruye aquí una vez, centralizada, en
+    // vez de que cada consumidor la pida por separado (ver
+    // services/apiAdapters.ts para el porqué de cada pieza, sobre todo
+    // grades/criterionScores).
     const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
     // Cabecera de 3 contextos (Fase 8): lista completa de años para el
@@ -520,11 +267,9 @@ const App = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     ]);
 
-    // Mismo motivo que hydratedClasses arriba, y misma necesidad de vivir
-    // antes de los "return" condicionales de más abajo (si no, violan las
-    // Rules of Hooks en cuanto appState pasa de null a un valor real): sin
-    // esto, cada uno era un array nuevo en cada render de App.tsx, y al
-    // pasarse como prop a vistas que los usan en dependencias de
+    // Mismo motivo que hydratedClasses arriba: sin esto, cada uno era un
+    // array nuevo en cada render de App.tsx, y al pasarse como prop a vistas
+    // que los usan en dependencias de
     // useMemo/useCallback (p.ej. ClassJournal: units→getPlannedContent→
     // scheduledClasses) desataba la misma cascada de reseteo de estado local
     // ante cualquier re-render ajeno — causa raíz del bug real "no puedo
@@ -554,15 +299,15 @@ const App = () => {
     // "Evaluación" en un useEffect con esta prop en las dependencias; sin
     // memoizar, cualquier re-render ajeno mientras el modal está abierto
     // pisaba silenciosamente la evaluación elegida a mano por el usuario.
-    // evaluationPeriods/evaluationPeriodWeights reales desde bloque 6;
+    // evaluationPeriods/evaluationPeriodWeights reales desde academic_years;
     // holidays/periods (franjas horarias) reales desde academic_years
     // (columnas JSONB reservadas para esto, ver plan) y gradeScale/
-    // defaultCalendarView reales desde /preferences — Fase 6 cierra el
-    // último hueco: en web ya no queda ni un campo de academicConfiguration
-    // sin migrar. layoutMode/defaultStartView no se migran a propósito
-    // (código muerto, nada los lee — ver App.tsx:529 antes de esta fase).
+    // defaultCalendarView reales desde /preferences — ningún campo depende ya
+    // del blob. INITIAL_ACADEMIC_CONFIGURATION solo aporta layoutMode/
+    // defaultStartView (código muerto, nada los lee — ver App.tsx:529 antes
+    // de esta fase) como base del spread.
     const effectiveAcademicConfiguration: AcademicConfiguration = useMemo(() => ({
-        ...(appState?.academicConfiguration as AcademicConfiguration),
+        ...INITIAL_ACADEMIC_CONFIGURATION,
         academicYearStart: currentYear.data?.startDate ?? '',
         academicYearEnd: currentYear.data?.endDate ?? '',
         holidays: currentYear.data?.holidays ?? [],
@@ -571,8 +316,7 @@ const App = () => {
         evaluationPeriodWeights: Object.fromEntries((remoteEvaluationPeriods.data ?? []).map(p => [p.id, p.weight])),
         gradeScale: remotePreferences.data?.gradeScale,
         defaultCalendarView: remotePreferences.data?.defaultCalendarView,
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [appState?.academicConfiguration, currentYear.data, remoteEvaluationPeriods.data, remotePreferences.data]);
+    }), [currentYear.data, remoteEvaluationPeriods.data, remotePreferences.data]);
     const effectiveTasks: Task[] = useMemo(() => (
         remoteTasks.data ?? []
     ), [remoteTasks.data]);
@@ -629,24 +373,28 @@ const App = () => {
 
     // --- Derived State & Callbacks ---
     useEffect(() => {
-        if (appState && !initialized) {
-            // La app siempre arranca en "Hoy" (no hay ajuste en la UI para
-            // cambiarlo; ignora academicConfiguration.defaultStartView, que
-            // en bases de datos ya existentes puede seguir siendo 'calendar').
-            setActiveView('hoy');
+        // Espera a que año y clases hayan asentado (éxito o error) antes de
+        // decidir la clase inicial — de lo contrario, en la primera pasada
+        // hydratedClasses todavía está vacío por carga en curso, no porque
+        // no haya clases de verdad.
+        if (initialized || currentYear.isLoading || remoteClasses.isLoading) return;
 
-            if (appState.classes.length > 0) {
-                const academicCourses = new Set((appState.courses || []).filter(c => c.type !== 'other').map(c => c.id));
-                const firstAcademicClass = appState.classes.find(c => academicCourses.has(c.courseId));
-                setActiveClassId(firstAcademicClass?.id || appState.classes[0].id);
-            }
-            setInitialized(true);
+        // La app siempre arranca en "Hoy" (no hay ajuste en la UI para
+        // cambiarlo; ignora academicConfiguration.defaultStartView, que
+        // en bases de datos ya existentes puede seguir siendo 'calendar').
+        setActiveView('hoy');
+
+        if (hydratedClasses.length > 0) {
+            const academicCourseIds = new Set((remoteCourses.data ?? []).filter(c => c.type !== 'other').map(c => c.id));
+            const firstAcademicClass = hydratedClasses.find(c => academicCourseIds.has(c.courseId));
+            setActiveClassId(firstAcademicClass?.id ?? hydratedClasses[0].id);
         }
+        setInitialized(true);
         // setActiveView is intentionally excluded: this effect must run exactly
         // once (guarded by !initialized), and at that point activeView/isJournalDirty
         // (its own deps) are still their initial values, so there's no stale closure.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [appState, initialized]);
+    }, [initialized, currentYear.isLoading, remoteClasses.isLoading, hydratedClasses, remoteCourses.data]);
 
     const activeClass = useMemo(() => (
         hydratedClasses.find(c => c.id === activeClassId)
@@ -696,13 +444,6 @@ const App = () => {
     const remoteActiveCriteria = useEvaluationCriteria(activeCourseId, { enabled: !!activeCourseId });
     const remoteActiveCompetences = useSpecificCompetences(activeCourseId, { enabled: !!activeCourseId });
 
-    const handleUpdateClass = useCallback((updatedClass: ClassData) => {
-        updateState(prev => ({
-            ...prev,
-            classes: prev.classes.map(c => c.id === updatedClass.id ? updatedClass : c),
-        }));
-    }, [updateState]);
-
     // Guarda la tarea evaluable creada desde Favoritos (mismo mecanismo que
     // usa CalendarView para el "+" de un día en la Agenda).
     const handleSaveFavoritoAssignment = async (newAssignment: Omit<Assignment, 'id'>, classId: string) => {
@@ -751,7 +492,6 @@ const App = () => {
             updatePreferencesMutation.mutate({ gradeScale: next.gradeScale, defaultCalendarView: next.defaultCalendarView });
         }
     }, [effectiveAcademicConfiguration, yearId, updateAcademicYearMutation, updatePreferencesMutation]);
-    const setProgrammingUnitsCallback = useCallback((updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => updateState(prev => ({ ...prev, programmingUnits: updater(prev.programmingUnits) })), [updateState]);
     // setTasks/setMeetings/setAgendaNotes: diffAndSyncList traduce el
     // resultado del updater (mismo patrón prev => [...prev, nuevo] que ya
     // usan HoyView/ReunionesView/CalendarView) a las llamadas granulares que
@@ -854,20 +594,14 @@ const App = () => {
     }, [updateCourseMutation]);
 
     // --- Render Logic ---
-    if (loading) {
+    if (currentYear.isLoading) {
         return <div className="flex items-center justify-center min-h-screen bg-slate-100 text-slate-600">Cargando base de datos...</div>;
     }
 
-    if (error) {
-        return <div className="flex items-center justify-center min-h-screen bg-red-50 text-red-700">Error: {error}</div>;
+    if (currentYear.isError) {
+        return <div className="flex items-center justify-center min-h-screen bg-red-50 text-red-700">Error: no se pudo conectar con el servidor.</div>;
     }
 
-    if (!appState) {
-        return <div className="flex items-center justify-center min-h-screen bg-slate-100 text-slate-600">Inicializando...</div>;
-    }
-
-    // Fuente resuelta según plataforma (ver handlers granulares más arriba):
-    // blob local en escritorio, backend nuevo en web.
     const shortcuts = remoteShortcuts.data ?? [];
     const evaluationTools = remoteEvaluationTools.data ?? [];
     const keyCompetences = remoteKeyCompetences.data ?? [];
@@ -1080,7 +814,6 @@ const App = () => {
                     programmingUnits={allProgrammingUnits}
                     academicConfiguration={effectiveAcademicConfiguration}
                     setAcademicConfiguration={setAcademicConfigurationCallback}
-                    onUpdateClass={handleUpdateClass}
                     evaluationTools={evaluationTools}
                     setActiveClassId={setActiveClassId} // Pass setter for internal tab navigation
                     onCopyAssignment={handleCopyAssignment}
@@ -1088,7 +821,6 @@ const App = () => {
             case 'calendar':
                 return <CalendarView
                     units={allProgrammingUnits}
-                    setUnits={setProgrammingUnitsCallback}
                     courses={curriculumCourses}
                     academicConfiguration={effectiveAcademicConfiguration}
                     classes={hydratedClasses}

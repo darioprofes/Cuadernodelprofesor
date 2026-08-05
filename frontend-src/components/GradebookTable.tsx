@@ -1,8 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, ArrowUpIcon, ArrowDownIcon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
 import Badge from './Badge';
@@ -19,7 +18,7 @@ import BulkGradeImportModal from './BulkGradeImportModal';
 import StudentSummaryModal from './StudentSummaryModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ClassLabel from './ClassLabel';
-import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getNombreOrden } from '../utils';
+import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto } from '../utils';
 import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
 import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '../hooks/useAssignments';
 import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
@@ -36,7 +35,6 @@ interface GradebookTableProps {
   programmingUnits: ProgrammingUnit[];
   academicConfiguration: AcademicConfiguration;
   setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
-  onUpdateClass: (updatedClass: ClassData) => void;
   evaluationTools: EvaluationTool[];
   setActiveClassId?: (id: string) => void; // Optional setter to change active class from tabs
   onCopyAssignment: (sourceAssignment: Assignment, targetClassId: string, targetPeriodId: string, targetCategoryId: string) => void;
@@ -54,9 +52,8 @@ const toYYYYMMDD = (date: Date): string => {
 };
 
 const GradebookTable: React.FC<GradebookTableProps> = (props) => {
-  const { classData, allClasses, allCourses, criteria, specificCompetences, keyCompetences, programmingUnits, academicConfiguration, onUpdateClass, evaluationTools, onCopyAssignment } = props;
+  const { classData, allClasses, allCourses, criteria, specificCompetences, keyCompetences, programmingUnits, academicConfiguration, evaluationTools, onCopyAssignment } = props;
   const { evaluationPeriods } = academicConfiguration;
-  const isDesktop = isTauri();
   const createCategoryMutation = useCreateCategory();
   const updateCategoryMutation = useUpdateCategory();
   const deleteCategoryMutation = useDeleteCategory();
@@ -361,36 +358,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     }
   };
   
-  // Sin columna de orden manual en categories/assignments del backend nuevo
-  // (mismo límite ya aceptado para el alumnado en el bloque 5) — reordenar
-  // solo tiene sentido en escritorio; los botones se ocultan en web más
-  // abajo, en vez de fingir que funcionan sin persistir nada.
-  const handleReorderCategory = (catId: string, dir: -1 | 1) => {
-    const cats = [...classData.categories];
-    const periodCats = cats.filter(c => c.evaluationPeriodId === activePeriodId);
-    const idx = periodCats.findIndex(c => c.id === catId);
-    const swapIdx = idx + dir;
-    if (swapIdx < 0 || swapIdx >= periodCats.length) return;
-    const globalIdx = cats.indexOf(periodCats[idx]);
-    const globalSwapIdx = cats.indexOf(periodCats[swapIdx]);
-    [cats[globalIdx], cats[globalSwapIdx]] = [cats[globalSwapIdx], cats[globalIdx]];
-    onUpdateClass({ ...classData, categories: cats });
-  };
-
-  const handleReorderAssignment = (assignId: string, dir: -1 | 1) => {
-    const assigns = [...classData.assignments];
-    const catId = assigns.find(a => a.id === assignId)?.categoryId;
-    if (!catId) return;
-    const catAssigns = assigns.filter(a => a.categoryId === catId && a.evaluationPeriodId === activePeriodId);
-    const idx = catAssigns.findIndex(a => a.id === assignId);
-    const swapIdx = idx + dir;
-    if (swapIdx < 0 || swapIdx >= catAssigns.length) return;
-    const globalIdx = assigns.indexOf(catAssigns[idx]);
-    const globalSwapIdx = assigns.indexOf(catAssigns[swapIdx]);
-    [assigns[globalIdx], assigns[globalSwapIdx]] = [assigns[globalSwapIdx], assigns[globalIdx]];
-    onUpdateClass({ ...classData, assignments: assigns });
-  };
-
   const categoriesForPeriod = useMemo(() => classData.categories.filter(c => c.evaluationPeriodId === activePeriodId), [classData.categories, activePeriodId]);
   const assignmentsForPeriod = useMemo(() => classData.assignments.filter(a => a.evaluationPeriodId === activePeriodId), [classData.assignments, activePeriodId]);
 
@@ -542,22 +509,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
               <th scope="col" className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] ${activePeriodId !== 'final' ? 'border-b-0 align-bottom' : 'align-middle'}`}>
                   <div className="flex items-center justify-between gap-1">
                       <span>Alumn@</span>
-                      {isDesktop && (
-                          <button
-                              type="button"
-                              title="Ordenar por apellido"
-                              onClick={() => {
-                                  const sorted = [...classData.students].sort((a, b) =>
-                                      getNombreOrden(a).localeCompare(getNombreOrden(b), 'es', { sensitivity: 'base' })
-                                  );
-                                  onUpdateClass({ ...classData, students: sorted });
-                              }}
-                              className="text-slate-400 hover:text-slate-700 p-0.5 rounded"
-                          >
-                              <ArrowUpIcon className="w-3 h-3 -rotate-90" />
-                              <ArrowDownIcon className="w-3 h-3 -rotate-90" />
-                          </button>
-                      )}
                   </div>
               </th>
               {activePeriodId === 'final' ? (
@@ -579,10 +530,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             <button onClick={() => { setActiveCategory(cat); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }} className="p-1 text-blue-600 hover:bg-blue-100 rounded-md text-xs">Añadir {cat.name.toLowerCase()}</button>
                             <IconButton label="Editar categoría" size="sm" onClick={() => {setCategoryToEdit(cat); setIsCategoryModalOpen(true);}}><PencilIcon className="w-3 h-3"/></IconButton>
                             <IconButton label="Eliminar categoría" tone="danger" size="sm" onClick={() => handleDeleteCategory(cat.id)}><TrashIcon className="w-3 h-3"/></IconButton>
-                            {isDesktop && <>
-                                <IconButton label="Mover izquierda" size="sm" onClick={() => handleReorderCategory(cat.id, -1)}><ArrowUpIcon className="w-3 h-3 -rotate-90"/></IconButton>
-                                <IconButton label="Mover derecha" size="sm" onClick={() => handleReorderCategory(cat.id, 1)}><ArrowDownIcon className="w-3 h-3 -rotate-90"/></IconButton>
-                            </>}
                         </div>
                       </th>
                     )
@@ -622,10 +569,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                                 <IconButton label="Eliminar tarea" tone="danger" size="sm" onClick={() => handleDeleteAssignment(a.id)}><TrashIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Copiar tarea a otra clase" tone="primary" size="sm" onClick={() => setAssignmentToCopy(a)}><DocumentDuplicateIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Importar notas en lote" tone="primary" size="sm" onClick={() => {setAssignmentForImport(a); setIsBulkImportModalOpen(true);}}><ArrowUpTrayIcon className="w-3 h-3"/></IconButton>
-                                {isDesktop && <>
-                                    <IconButton label="Mover izquierda" size="sm" onClick={() => handleReorderAssignment(a.id, -1)}><ArrowUpIcon className="w-3 h-3 -rotate-90"/></IconButton>
-                                    <IconButton label="Mover derecha" size="sm" onClick={() => handleReorderAssignment(a.id, 1)}><ArrowDownIcon className="w-3 h-3 -rotate-90"/></IconButton>
-                                </>}
                               </div>
                             </th>
                         )),

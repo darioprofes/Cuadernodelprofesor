@@ -4,6 +4,7 @@ import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, Journal
 import { useCreateAssignment } from '../hooks/useAssignments';
 import { useUpdateClass } from '../hooks/useApiClasses';
 import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
+import { useUpdateProgrammingUnit } from '../hooks/useProgrammingUnits';
 import SessionActionModal from './SessionActionModal';
 import CalendarTaskModal from './CalendarTaskModal';
 import CalendarNoteModal from './CalendarNoteModal';
@@ -23,7 +24,6 @@ interface CalendarViewProps {
     classes: ClassData[];
     journalEntries: JournalEntry[];
     criteria: EvaluationCriterion[];
-    setUnits: (updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => void;
     specificCompetences: SpecificCompetence[];
     keyCompetences: KeyCompetence[];
     onSaveJournalEntry: (entry: JournalEntry) => void;
@@ -36,9 +36,10 @@ interface CalendarViewProps {
     onOpenMeeting: (meetingId: string) => void;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, academicConfiguration, classes, journalEntries, criteria, specificCompetences, keyCompetences, onSaveJournalEntry, agendaNotes, setAgendaNotes, meetings, setMeetings, setActiveView, setActiveClassId, onOpenMeeting }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicConfiguration, classes, journalEntries, criteria, specificCompetences, keyCompetences, onSaveJournalEntry, agendaNotes, setAgendaNotes, meetings, setMeetings, setActiveView, setActiveClassId, onOpenMeeting }) => {
     const createAssignmentMutation = useCreateAssignment();
     const updateClassMutation = useUpdateClass();
+    const updateProgrammingUnitMutation = useUpdateProgrammingUnit();
     const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -199,22 +200,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, setUnits, courses, a
     };
 
     const handleInsertAndDisplaceSession = (unitId: string, sessionNumber: number, newDescription: string) => {
-        setUnits(prevUnits => prevUnits.map(unit => {
-            if (unit.id === unitId) {
-                const newSessionDetail: SessionDetail = { description: newDescription };
-                const sessionIndexToInsertAfter = sessionNumber - 1;
+        const unit = units.find(u => u.id === unitId);
+        if (!unit) return;
 
-                const updatedSessionDetails = [...unit.sessionDetails];
-                updatedSessionDetails.splice(sessionIndexToInsertAfter + 1, 0, newSessionDetail);
+        const newSessionDetail: SessionDetail = { description: newDescription };
+        const sessionIndexToInsertAfter = sessionNumber - 1;
+        const updatedSessionDetails = [...unit.sessionDetails];
+        updatedSessionDetails.splice(sessionIndexToInsertAfter + 1, 0, newSessionDetail);
 
-                return {
-                    ...unit,
-                    sessions: unit.sessions + 1,
-                    sessionDetails: updatedSessionDetails,
-                };
-            }
-            return unit;
-        }));
+        updateProgrammingUnitMutation.mutate({
+            id: unit.id,
+            courseId: unit.courseId,
+            data: { sessions: unit.sessions + 1, sessionDetails: updatedSessionDetails },
+        });
         setIsActionModalOpen(false);
     };
 

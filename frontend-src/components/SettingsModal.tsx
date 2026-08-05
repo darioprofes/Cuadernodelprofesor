@@ -36,7 +36,7 @@ export interface SettingsModalProps {
     specificCompetences: SpecificCompetence[];
     evaluationCriteria: EvaluationCriterion[];
     importDatabase: (buffer: ArrayBuffer) => Promise<void>;
-    exportDatabase: () => Promise<Uint8Array | null>;
+    exportDatabase: () => Promise<Uint8Array>;
     resetDatabase: () => Promise<void>;
     basicKnowledge: BasicKnowledge[];
     academicConfiguration: AcademicConfiguration;

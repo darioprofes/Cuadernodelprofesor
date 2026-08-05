@@ -352,25 +352,3 @@ export type View =
   | 'curriculum'
   | 'planner';
 
-// Estado completo de la app, serializado dentro del blob SQLite (ver
-// App.tsx::useDatabase). `schemaVersion` gobierna qué migraciones de
-// services/migrations.ts hay que aplicar al cargar un blob guardado con una
-// versión anterior de la app — ausente = versión 0 (blobs guardados antes de
-// que existiera este campo).
-export interface AppState {
-  schemaVersion: number;
-  classes: ClassData[];
-  keyCompetences: KeyCompetence[];
-  competences: SpecificCompetence[];
-  criteria: EvaluationCriterion[];
-  journalEntries: JournalEntry[];
-  courses: Course[];
-  programmingUnits: ProgrammingUnit[];
-  basicKnowledge: BasicKnowledge[];
-  academicConfiguration: AcademicConfiguration;
-  evaluationTools: EvaluationTool[];
-  tasks: Task[];
-  meetings: Meeting[];
-  agendaNotes: AgendaNote[];
-  shortcuts: Shortcut[];
-}

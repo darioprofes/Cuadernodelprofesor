@@ -36,6 +36,16 @@ async function requestDesktop<T>(path: string, options: RequestInit): Promise<T>
     const body = typeof options.body === 'string' ? JSON.parse(options.body) : undefined;
 
     try {
+        // La copia de seguridad no pasa por api_request en escritorio: import
+        // necesita una transacción real (&mut Connection), que ese router
+        // genérico -- pensado para operaciones sueltas -- no ofrece (ver
+        // comentario en src-tauri/src/lib.rs junto a backup_export/backup_import).
+        if (path === '/backup/export' && method === 'GET') {
+            return (await invoke<unknown>('backup_export')) as T;
+        }
+        if (path === '/backup/import' && method === 'POST') {
+            return (await invoke<unknown>('backup_import', { dump: body })) as T;
+        }
         const result = await invoke<unknown>('api_request', { method, path, body });
         return result as T;
     } catch (err) {
