@@ -3,11 +3,10 @@ use rusqlite::{params, Connection};
 use crate::error::ApiError;
 
 // A diferencia del resto del backend (JSON vía api_request), las fotos
-// viajan como bytes crudos -- por comandos Tauri dedicados (igual que
-// load_db/save_db ya hacían) para subir/borrar, y por el protocolo
-// studentphoto:// (ver lib.rs) para servirlas a un <img>, evitando el
-// mismo problema de inflar cada respuesta JSON que ya se evitó en web con
-// BYTEA + GET /photos/{id} aparte.
+// viajan como bytes crudos -- por comandos Tauri dedicados para subir/
+// borrar, y por el protocolo studentphoto:// (ver lib.rs) para servirlas a
+// un <img>, evitando el mismo problema de inflar cada respuesta JSON que ya
+// se evitó en web con BYTEA + GET /photos/{id} aparte.
 
 pub fn get(conn: &Connection, student_id: &str) -> Result<Option<(Vec<u8>, String)>, ApiError> {
     let result = conn.query_row(

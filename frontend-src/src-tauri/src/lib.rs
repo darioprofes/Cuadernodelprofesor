@@ -5,28 +5,6 @@ mod error;
 mod routers;
 mod services;
 
-// Nombre fijo del fichero SQLite en el directorio de datos de la app
-// (independiente por completo de la persistencia remota que usa la versión
-// web, ver frontend-src/services/localDb.ts).
-const DB_FILE_NAME: &str = "profeplanner.db";
-
-#[tauri::command]
-fn load_db(app: tauri::AppHandle) -> Result<Option<Vec<u8>>, String> {
-  let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-  let path = dir.join(DB_FILE_NAME);
-  if !path.exists() {
-    return Ok(None);
-  }
-  std::fs::read(&path).map(Some).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn save_db(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<(), String> {
-  let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-  std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-  std::fs::write(dir.join(DB_FILE_NAME), bytes).map_err(|e| e.to_string())
-}
-
 // Único comando genérico para todo el modelo relacional nuevo (ver plan,
 // Fase 7, "Decisión de arquitectura") -- api.ts lo usa como transporte en
 // vez de fetch() cuando isTauri() es cierto, sin que ningún hook de
@@ -43,9 +21,9 @@ fn api_request(
 }
 
 // Las fotos no pasan por api_request (JSON no es sitio para bytes crudos,
-// ver services/photos.rs) -- comandos dedicados para subir/borrar, mismo
-// patrón que load_db/save_db ya usaban. Servirlas de vuelta a un <img> es
-// cosa del protocolo studentphoto:// (ver más abajo), no de un comando.
+// ver services/photos.rs) -- comandos dedicados para subir/borrar. Servirlas
+// de vuelta a un <img> es cosa del protocolo studentphoto:// (ver más
+// abajo), no de un comando.
 #[tauri::command]
 fn set_student_photo(
   state: tauri::State<db::DbState>,
@@ -119,8 +97,6 @@ pub fn run() {
       }
     })
     .invoke_handler(tauri::generate_handler![
-      load_db,
-      save_db,
       api_request,
       set_student_photo,
       delete_student_photo,

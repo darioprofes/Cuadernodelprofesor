@@ -2,10 +2,6 @@ use rusqlite::Connection;
 use std::sync::Mutex;
 use tauri::Manager;
 
-// Nombre del fichero SQLite relacional nuevo (Fase 7) -- deliberadamente
-// distinto de profeplanner.db (el blob de sql.js del sistema viejo, ver
-// lib.rs::load_db/save_db) para que ambos puedan coexistir mientras dure
-// la migración por bloques sin pisarse.
 const DB_FILE_NAME: &str = "profeplanner.sqlite3";
 
 pub struct DbState(pub Mutex<Connection>);
