@@ -3,9 +3,9 @@ use serde_json::Value;
 
 use crate::error::ApiError;
 use crate::services::{
-    academic_years, assignments, basic_knowledge, categories, classes, courses,
-    evaluation_criteria, evaluation_tools, enrollments, grades, key_competences, preferences,
-    programming_units, shortcuts, specific_competences, students,
+    academic_years, agenda_notes, assignments, basic_knowledge, categories, classes, courses,
+    evaluation_criteria, evaluation_tools, enrollments, grades, journal_entries, key_competences,
+    meetings, preferences, programming_units, shortcuts, specific_competences, students, tasks,
 };
 
 fn require_body(body: Option<Value>) -> Result<Value, ApiError> {
@@ -149,6 +149,27 @@ pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>
         ("GET", ["classes", class_id, "grades"]) => grades::list_for_class(conn, class_id),
         ("PUT", ["assignments", assignment_id, "grades", enrollment_id]) => grades::put(conn, assignment_id, enrollment_id, require_body(body)?),
         ("DELETE", ["assignments", assignment_id, "grades", enrollment_id]) => grades::delete(conn, assignment_id, enrollment_id),
+
+        // ---- Bloque 6: diario/tareas/reuniones/agenda ----
+        ("GET", ["academic-years", year_id, "journal-entries"]) => journal_entries::list(conn, year_id),
+        ("POST", ["academic-years", year_id, "journal-entries"]) => journal_entries::create(conn, year_id, require_body(body)?),
+        ("PATCH", ["journal-entries", id]) => journal_entries::update(conn, id, require_body(body)?),
+        ("DELETE", ["journal-entries", id]) => journal_entries::delete(conn, id),
+
+        ("GET", ["academic-years", year_id, "tasks"]) => tasks::list(conn, year_id),
+        ("POST", ["academic-years", year_id, "tasks"]) => tasks::create(conn, year_id, require_body(body)?),
+        ("PATCH", ["tasks", id]) => tasks::update(conn, id, require_body(body)?),
+        ("DELETE", ["tasks", id]) => tasks::delete(conn, id),
+
+        ("GET", ["academic-years", year_id, "meetings"]) => meetings::list(conn, year_id),
+        ("POST", ["academic-years", year_id, "meetings"]) => meetings::create(conn, year_id, require_body(body)?),
+        ("PATCH", ["meetings", id]) => meetings::update(conn, id, require_body(body)?),
+        ("DELETE", ["meetings", id]) => meetings::delete(conn, id),
+
+        ("GET", ["academic-years", year_id, "agenda-notes"]) => agenda_notes::list(conn, year_id),
+        ("POST", ["academic-years", year_id, "agenda-notes"]) => agenda_notes::create(conn, year_id, require_body(body)?),
+        ("PATCH", ["agenda-notes", id]) => agenda_notes::update(conn, id, require_body(body)?),
+        ("DELETE", ["agenda-notes", id]) => agenda_notes::delete(conn, id),
 
         _ => Err(ApiError { status: 404, detail: format!("Ruta no encontrada: {method} {path}") }),
     }
@@ -573,5 +594,65 @@ mod tests {
         dispatch(&conn, "DELETE", &format!("/categories/{category_id}"), None).unwrap();
         let assignments_after = dispatch(&conn, "GET", &format!("/classes/{class_id}/assignments"), None).unwrap();
         assert_eq!(assignments_after.as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn journal_tasks_meetings_agenda_round_trip() {
+        let conn = db::test_connection();
+        let year = dispatch(&conn, "POST", "/academic-years", Some(json!({"label": "2026-2027", "startDate": "2026-09-01", "endDate": "2027-06-30"}))).unwrap();
+        let year_id = year["id"].as_str().unwrap().to_string();
+        let course = dispatch(&conn, "POST", "/courses", Some(json!({"level": "1 ESO", "subject": "Música"}))).unwrap();
+        let course_id = course["id"].as_str().unwrap().to_string();
+        let class = dispatch(&conn, "POST", &format!("/academic-years/{year_id}/classes"), Some(json!({"courseId": course_id, "grupo": "A"}))).unwrap();
+        let class_id = class["id"].as_str().unwrap().to_string();
+
+        // journal_entries: el POST hace upsert por (classId, date, periodIndex).
+        let entry = dispatch(
+            &conn, "POST", &format!("/academic-years/{year_id}/journal-entries"),
+            Some(json!({"classId": class_id, "date": "2026-09-15", "periodIndex": 0, "notes": "Introducción"})),
+        ).unwrap();
+        assert_eq!(entry["notes"], "Introducción");
+        let entry_upserted = dispatch(
+            &conn, "POST", &format!("/academic-years/{year_id}/journal-entries"),
+            Some(json!({"classId": class_id, "date": "2026-09-15", "periodIndex": 0, "notes": "Corregido"})),
+        ).unwrap();
+        assert_eq!(entry_upserted["id"], entry["id"]); // mismo slot, no duplica
+        assert_eq!(entry_upserted["notes"], "Corregido");
+        let entries = dispatch(&conn, "GET", &format!("/academic-years/{year_id}/journal-entries"), None).unwrap();
+        assert_eq!(entries.as_array().unwrap().len(), 1);
+
+        // tasks
+        let task = dispatch(&conn, "POST", &format!("/academic-years/{year_id}/tasks"), Some(json!({"texto": "Corregir exámenes"}))).unwrap();
+        let task_id = task["id"].as_str().unwrap().to_string();
+        assert_eq!(task["hecho"], false);
+        let task_done = dispatch(&conn, "PATCH", &format!("/tasks/{task_id}"), Some(json!({"hecho": true}))).unwrap();
+        assert_eq!(task_done["hecho"], true);
+        assert_eq!(task_done["texto"], "Corregir exámenes"); // conservado tras el patch parcial
+        dispatch(&conn, "DELETE", &format!("/tasks/{task_id}"), None).unwrap();
+        let tasks_after = dispatch(&conn, "GET", &format!("/academic-years/{year_id}/tasks"), None).unwrap();
+        assert_eq!(tasks_after.as_array().unwrap().len(), 0);
+
+        // meetings
+        let meeting = dispatch(&conn, "POST", &format!("/academic-years/{year_id}/meetings"), Some(json!({"fecha": "2026-10-01", "tipo": "tutoria"}))).unwrap();
+        let meeting_id = meeting["id"].as_str().unwrap().to_string();
+        let meeting_updated = dispatch(&conn, "PATCH", &format!("/meetings/{meeting_id}"), Some(json!({"motivo": "Seguimiento"}))).unwrap();
+        assert_eq!(meeting_updated["motivo"], "Seguimiento");
+        assert_eq!(meeting_updated["tipo"], "tutoria");
+        dispatch(&conn, "DELETE", &format!("/meetings/{meeting_id}"), None).unwrap();
+
+        // agenda_notes
+        let note = dispatch(&conn, "POST", &format!("/academic-years/{year_id}/agenda-notes"), Some(json!({"fecha": "2026-10-02", "texto": "Recordar material"}))).unwrap();
+        let note_id = note["id"].as_str().unwrap().to_string();
+        let note_updated = dispatch(&conn, "PATCH", &format!("/agenda-notes/{note_id}"), Some(json!({"texto": "Recordar material y libros"}))).unwrap();
+        assert_eq!(note_updated["texto"], "Recordar material y libros");
+        dispatch(&conn, "DELETE", &format!("/agenda-notes/{note_id}"), None).unwrap();
+        let notes_after = dispatch(&conn, "GET", &format!("/academic-years/{year_id}/agenda-notes"), None).unwrap();
+        assert_eq!(notes_after.as_array().unwrap().len(), 0);
+
+        // 404 en un id inexistente para cada entidad
+        assert_eq!(dispatch(&conn, "PATCH", "/tasks/no-existe", Some(json!({}))).unwrap_err().status, 404);
+        assert_eq!(dispatch(&conn, "PATCH", "/meetings/no-existe", Some(json!({}))).unwrap_err().status, 404);
+        assert_eq!(dispatch(&conn, "PATCH", "/agenda-notes/no-existe", Some(json!({}))).unwrap_err().status, 404);
+        assert_eq!(dispatch(&conn, "PATCH", "/journal-entries/no-existe", Some(json!({}))).unwrap_err().status, 404);
     }
 }

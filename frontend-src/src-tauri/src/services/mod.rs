@@ -14,6 +14,10 @@ pub mod enrollments;
 pub mod categories;
 pub mod assignments;
 pub mod grades;
+pub mod journal_entries;
+pub mod tasks;
+pub mod meetings;
+pub mod agenda_notes;
 
 use serde_json::Value;
 
