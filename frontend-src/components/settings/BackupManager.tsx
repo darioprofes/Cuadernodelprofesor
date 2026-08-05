@@ -62,13 +62,25 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
     const backupMimeType = 'application/json';
 
     const handleExportClick = async () => {
-        const data = await exportDatabase();
-        const blob = new Blob([data], { type: backupMimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `cuaderno_backup_${new Date().toISOString().split('T')[0]}.${backupExtension}`;
-        a.click();
+        try {
+            const data = await exportDatabase();
+            const blob = new Blob([data], { type: backupMimeType });
+            const url = URL.createObjectURL(blob);
+            const filename = `cuaderno_backup_${new Date().toISOString().split('T')[0]}.${backupExtension}`;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+            // Sin esto, la descarga sucede sin ningún indicio visible (el
+            // navegador/WebView no muestra nada por sí solo) — el usuario no
+            // sabe si ha ido bien hasta que revisa a mano su carpeta de
+            // Descargas.
+            alert(`Copia de seguridad descargada con éxito: "${filename}", en tu carpeta de Descargas.`);
+        } catch (e) {
+            console.error(e);
+            alert(`Error al generar la copia de seguridad: ${e instanceof Error ? e.message : String(e)}`);
+        }
     };
 
     return (
