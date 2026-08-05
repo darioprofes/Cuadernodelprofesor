@@ -389,18 +389,15 @@ const ViewLoadingFallback: React.FC = () => (
 const App = () => {
     const { appState, loading, error, updateState, importDatabase, exportDatabase, resetDatabase } = useDatabase();
 
-    // shortcuts/evaluationTools: migrados al backend granular nuevo (Fase 4
-    // en web, Fase 7 bloque 2 en escritorio) — services/api.ts ya sabe
-    // despachar al comando Rust api_request cuando isTauri(), así que estos
-    // dos hooks funcionan igual en ambas plataformas sin ningún enabled
-    // condicional. El resto de hooks de más abajo siguen con
-    // enabled: !isDesktop, pero desde el bloque 3 la razón real ya NO es
-    // "sin comando Rust todavía" (courses/keyCompetences/etc. ya lo tienen,
-    // con 11 tests que lo prueban) sino que sus ids dejarían de cuadrar con
-    // `classes.courseId` (que en escritorio sigue siendo blob hasta el
-    // bloque 4) si se flipeasen antes que `classes` — ver plan, Fase 7
-    // bloque 3, y el comentario junto a remoteCourses un poco más abajo.
-    const isDesktop = isTauri();
+    // Todos los hooks de más abajo (shortcuts, currículo, curso académico,
+    // clases/alumnado, cuaderno de notas, diario/tareas/reuniones/agenda)
+    // hablan siempre con el backend granular, sin ningún enabled
+    // condicional ni rama isDesktop propia aquí: services/api.ts (único
+    // sitio que conoce isTauri()) ya sabe despachar al comando Rust
+    // api_request en escritorio o a fetch() en web. Ver plan, Fase 7,
+    // bloques 2-6. Lo único que sigue distinguiendo plataforma en este
+    // componente es useDatabase() (más arriba), que se retira entera en el
+    // bloque 8 junto con el blob que todavía sirve.
     const remoteShortcuts = useShortcuts();
     const createShortcut = useCreateShortcut();
     const updateShortcut = useUpdateShortcut();
@@ -468,21 +465,20 @@ const App = () => {
     const gradeQueries = useGradesForClasses(remoteClassIds);
     const remoteEvaluationPeriods = useEvaluationPeriods(yearId, { enabled: !!yearId });
     const updateAcademicYearMutation = useUpdateAcademicYear();
-    // Fase 6: journalEntries/tasks/meetings/agendaNotes + el resto de
-    // academicConfiguration (holidays/periods/gradeScale/defaultCalendarView)
-    // eran los últimos campos gobernados por el blob en web — el backend ya
-    // los tenía completos desde antes (ver plan), solo faltaban estos hooks.
-    const remoteTasks = useTasks(yearId, { enabled: !isDesktop && !!yearId });
+    // journalEntries/tasks/meetings/agendaNotes: bloque 6, ya con comando
+    // Rust real -- con esto queda cerrada toda la Fase 7 salvo fotos
+    // (bloque 7) y la baja del blob viejo (bloque 8).
+    const remoteTasks = useTasks(yearId, { enabled: !!yearId });
     const createTaskMutation = useCreateTask();
     const updateTaskMutation = useUpdateTask();
     const deleteTaskMutation = useDeleteTask();
-    const remoteMeetings = useMeetings(yearId, { enabled: !isDesktop && !!yearId });
+    const remoteMeetings = useMeetings(yearId, { enabled: !!yearId });
     const createMeetingMutation = useCreateMeeting();
     const updateMeetingMutation = useUpdateMeeting();
     const deleteMeetingMutation = useDeleteMeeting();
-    const remoteJournalEntries = useJournalEntries(yearId, { enabled: !isDesktop && !!yearId });
+    const remoteJournalEntries = useJournalEntries(yearId, { enabled: !!yearId });
     const saveJournalEntryMutation = useSaveJournalEntry();
-    const remoteAgendaNotes = useAgendaNotes(yearId, { enabled: !isDesktop && !!yearId });
+    const remoteAgendaNotes = useAgendaNotes(yearId, { enabled: !!yearId });
     const createAgendaNoteMutation = useCreateAgendaNote();
     const updateAgendaNoteMutation = useUpdateAgendaNote();
     const deleteAgendaNoteMutation = useDeleteAgendaNote();
@@ -578,21 +574,17 @@ const App = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [appState?.academicConfiguration, currentYear.data, remoteEvaluationPeriods.data, remotePreferences.data]);
     const effectiveTasks: Task[] = useMemo(() => (
-        isDesktop ? (appState?.tasks ?? []) : (remoteTasks.data ?? [])
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.tasks, remoteTasks.data]);
+        remoteTasks.data ?? []
+    ), [remoteTasks.data]);
     const effectiveMeetings: Meeting[] = useMemo(() => (
-        isDesktop ? (appState?.meetings ?? []) : (remoteMeetings.data ?? [])
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.meetings, remoteMeetings.data]);
+        remoteMeetings.data ?? []
+    ), [remoteMeetings.data]);
     const effectiveJournalEntries: JournalEntry[] = useMemo(() => (
-        isDesktop ? (appState?.journalEntries ?? []) : (remoteJournalEntries.data ?? []).map(e => ({ ...e, notes: e.notes ?? '' }))
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.journalEntries, remoteJournalEntries.data]);
+        (remoteJournalEntries.data ?? []).map(e => ({ ...e, notes: e.notes ?? '' }))
+    ), [remoteJournalEntries.data]);
     const effectiveAgendaNotes: AgendaNote[] = useMemo(() => (
-        isDesktop ? (appState?.agendaNotes ?? []) : (remoteAgendaNotes.data ?? [])
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    ), [isDesktop, appState?.agendaNotes, remoteAgendaNotes.data]);
+        remoteAgendaNotes.data ?? []
+    ), [remoteAgendaNotes.data]);
 
     // --- UI State ---
     const [activeClassId, setActiveClassId] = useState<string>('');
@@ -739,21 +731,11 @@ const App = () => {
     }, [createAssignmentMutation]);
 
     const handleUpdateJournalEntry = useCallback((entry: JournalEntry) => {
-        if (isDesktop) {
-            updateState(prev => {
-                const existing = prev.journalEntries.find(e => e.id === entry.id);
-                if (existing) {
-                    return { ...prev, journalEntries: prev.journalEntries.map(e => e.id === entry.id ? entry : e) };
-                }
-                return { ...prev, journalEntries: [...prev.journalEntries, entry] };
-            });
-            return;
-        }
         // POST hace upsert por (classId, date, periodIndex) en el propio
         // backend — no hace falta distinguir "es nueva" de "ya existía".
         if (!yearId) return;
         saveJournalEntryMutation.mutate({ yearId, data: { classId: entry.classId, date: entry.date, periodIndex: entry.periodIndex, notes: entry.notes } });
-    }, [isDesktop, updateState, yearId, saveJournalEntryMutation]);
+    }, [yearId, saveJournalEntryMutation]);
 
     // Fase 6: en web, compara el resultado del updater contra el valor
     // efectivo actual y manda solo los campos que de verdad cambiaron —
@@ -770,17 +752,13 @@ const App = () => {
         }
     }, [effectiveAcademicConfiguration, yearId, updateAcademicYearMutation, updatePreferencesMutation]);
     const setProgrammingUnitsCallback = useCallback((updater: (prev: ProgrammingUnit[]) => ProgrammingUnit[]) => updateState(prev => ({ ...prev, programmingUnits: updater(prev.programmingUnits) })), [updateState]);
-    // setTasks/setMeetings/setAgendaNotes: en web, diffAndSyncList traduce
-    // el resultado del updater (mismo patrón prev => [...prev, nuevo] que ya
+    // setTasks/setMeetings/setAgendaNotes: diffAndSyncList traduce el
+    // resultado del updater (mismo patrón prev => [...prev, nuevo] que ya
     // usan HoyView/ReunionesView/CalendarView) a las llamadas granulares que
     // hacen falta — ver el comentario largo junto a diffAndSyncList en
     // services/apiAdapters.ts para el porqué de este envoltorio en vez de
     // reescribir cada consumidor.
     const setTasksCallback = useCallback((updater: React.SetStateAction<Task[]>) => {
-        if (isDesktop) {
-            updateState(prev => ({ ...prev, tasks: typeof updater === 'function' ? updater(prev.tasks) : updater }));
-            return;
-        }
         if (!yearId) return;
         const next = typeof updater === 'function' ? updater(effectiveTasks) : updater;
         diffAndSyncList(effectiveTasks, next, {
@@ -788,12 +766,8 @@ const App = () => {
             update: (id, data) => updateTaskMutation.mutateAsync({ id, yearId, data }),
             remove: id => deleteTaskMutation.mutateAsync({ id, yearId }),
         });
-    }, [isDesktop, updateState, yearId, effectiveTasks, createTaskMutation, updateTaskMutation, deleteTaskMutation]);
+    }, [yearId, effectiveTasks, createTaskMutation, updateTaskMutation, deleteTaskMutation]);
     const setMeetingsCallback = useCallback((updater: React.SetStateAction<Meeting[]>) => {
-        if (isDesktop) {
-            updateState(prev => ({ ...prev, meetings: typeof updater === 'function' ? updater(prev.meetings) : updater }));
-            return;
-        }
         if (!yearId) return;
         const next = typeof updater === 'function' ? updater(effectiveMeetings) : updater;
         diffAndSyncList(effectiveMeetings, next, {
@@ -801,12 +775,8 @@ const App = () => {
             update: (id, data) => updateMeetingMutation.mutateAsync({ id, yearId, data }),
             remove: id => deleteMeetingMutation.mutateAsync({ id, yearId }),
         });
-    }, [isDesktop, updateState, yearId, effectiveMeetings, createMeetingMutation, updateMeetingMutation, deleteMeetingMutation]);
+    }, [yearId, effectiveMeetings, createMeetingMutation, updateMeetingMutation, deleteMeetingMutation]);
     const setAgendaNotesCallback = useCallback((updater: React.SetStateAction<AgendaNote[]>) => {
-        if (isDesktop) {
-            updateState(prev => ({ ...prev, agendaNotes: typeof updater === 'function' ? updater(prev.agendaNotes) : updater }));
-            return;
-        }
         if (!yearId) return;
         const next = typeof updater === 'function' ? updater(effectiveAgendaNotes) : updater;
         diffAndSyncList(effectiveAgendaNotes, next, {
@@ -814,7 +784,7 @@ const App = () => {
             update: (id, data) => updateAgendaNoteMutation.mutateAsync({ id, yearId, data }),
             remove: id => deleteAgendaNoteMutation.mutateAsync({ id, yearId }),
         });
-    }, [isDesktop, updateState, yearId, effectiveAgendaNotes, createAgendaNoteMutation, updateAgendaNoteMutation, deleteAgendaNoteMutation]);
+    }, [yearId, effectiveAgendaNotes, createAgendaNoteMutation, updateAgendaNoteMutation, deleteAgendaNoteMutation]);
     // shortcuts/evaluationTools: sin relaciones con ninguna otra entidad (ver
     // plan, Fase 7 bloque 2) — desde ahí, ambas plataformas hablan siempre
     // con el backend granular (FastAPI en web, api_request en escritorio),
