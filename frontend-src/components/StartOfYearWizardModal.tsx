@@ -90,8 +90,17 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
     };
 
     const handleDownloadTemplate = async () => {
-        const blob = await generateTemplate();
-        downloadBlob(blob, 'plantilla_inicio_de_curso.xlsx');
+        try {
+            const blob = await generateTemplate();
+            const filename = 'plantilla_inicio_de_curso.xlsx';
+            downloadBlob(blob, filename);
+            // Sin esto, la descarga sucede sin ningún indicio visible — mismo
+            // motivo que ya se corrigió en BackupManager.tsx::handleExportClick.
+            alert(`Plantilla descargada con éxito: "${filename}", en tu carpeta de Descargas.`);
+        } catch (e) {
+            console.error(e);
+            alert(`Error al generar la plantilla: ${e instanceof Error ? e.message : String(e)}`);
+        }
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
