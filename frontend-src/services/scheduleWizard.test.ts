@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateTemplate, parseWorkbook } from './scheduleWizard';
+import { generateTemplate, parseWorkbook, defaultEvaluationPeriods } from './scheduleWizard';
 import type { FilaHorario } from '../types';
 
 const ALUMNADO_CABECERA = ['Nivel', 'Materia', 'Grupo', 'Nombre', 'Primer Apellido', 'Segundo Apellido', 'Fecha Nacimiento', 'DNI', 'ACNEAE'];
@@ -60,20 +60,60 @@ function addAlumnadoSheet(wb: import('exceljs').Workbook, opts?: { cabecera?: st
     return sheet;
 }
 
+interface DatosCursoAcademico {
+    label?: string;
+    startDate?: string;
+    endDate?: string;
+    holidays?: [string, string, string][]; // [nombre, inicio, fin]
+    evaluationPeriods?: [string, string, string, string?][]; // [nombre, inicio, fin, peso?]
+}
+
+const CURSO_ACADEMICO_POR_DEFECTO: DatosCursoAcademico = { label: '2026-2027', startDate: '2026-09-09', endDate: '2027-06-23' };
+
+// Layout real de "Curso Académico" (ver scheduleWizard.ts): B1/B2/B3 =
+// nombre/inicio/fin, festivos en filas 7-26, periodos de evaluación en
+// filas 30-39 — se hardcodean aquí las mismas filas que usa
+// parseCursoAcademicoSheet, no se exportan como constantes solo para esto.
+function addCursoAcademicoSheet(wb: import('exceljs').Workbook, datos: DatosCursoAcademico = {}) {
+    const sheet = wb.addWorksheet('Curso Académico');
+    if (datos.label !== undefined) sheet.getCell(1, 2).value = datos.label;
+    if (datos.startDate !== undefined) sheet.getCell(2, 2).value = datos.startDate;
+    if (datos.endDate !== undefined) sheet.getCell(3, 2).value = datos.endDate;
+    (datos.holidays ?? []).forEach(([nombre, inicio, fin], i) => {
+        const r = 7 + i;
+        sheet.getCell(r, 1).value = nombre;
+        sheet.getCell(r, 2).value = inicio;
+        sheet.getCell(r, 3).value = fin;
+    });
+    (datos.evaluationPeriods ?? []).forEach(([nombre, inicio, fin, peso], i) => {
+        const r = 30 + i;
+        sheet.getCell(r, 1).value = nombre;
+        sheet.getCell(r, 2).value = inicio;
+        sheet.getCell(r, 3).value = fin;
+        if (peso !== undefined) sheet.getCell(r, 4).value = peso;
+    });
+    return sheet;
+}
+
 // Construye un workbook mínimo con exceljs directamente (sin pasar por
 // generateTemplate) para probar parseWorkbook con datos de control propios.
-// Salvo que se omita explícitamente, ambas hojas se crean (vacías, solo
-// cabecera, si el test no les da contenido) para que un test centrado en
-// una hoja no arrastre el error de "falta la otra".
+// Salvo que se omita explícitamente, las tres hojas se crean (Curso
+// Académico con nombre/fechas válidos por defecto; Horario/Alumnado vacías
+// si el test no les da contenido) para que un test centrado en una hoja no
+// arrastre el error de "falta la otra"/"falta el curso académico".
 async function buildWorkbook(opts: {
     horario?: FilaHorarioTest[];
     horarioSubcolsOrden?: readonly string[];
     alumnado?: { cabecera?: string[]; filas: (string | undefined)[][] };
+    cursoAcademico?: DatosCursoAcademico;
     omitirHojas?: string[];
 }): Promise<ArrayBuffer> {
     const { Workbook } = await import('exceljs');
     const wb = new Workbook();
 
+    if (!opts.omitirHojas?.includes('Curso Académico')) {
+        addCursoAcademicoSheet(wb, opts.cursoAcademico ?? CURSO_ACADEMICO_POR_DEFECTO);
+    }
     if (!opts.omitirHojas?.includes('Horario')) {
         addHorarioSheet(wb, opts.horario ?? [], opts.horarioSubcolsOrden ?? SUBCOLS_ORDEN_NORMAL);
     }
@@ -276,23 +316,130 @@ describe('scheduleWizard', () => {
 
     describe('hojas ausentes', () => {
         it('reporta un error por cada hoja que falte, sin lanzar excepción', async () => {
-            const buffer = await buildWorkbook({ omitirHojas: ['Horario', 'Alumnado'] });
-            const { filas, alumnado, errores } = await parseWorkbook(buffer);
+            const buffer = await buildWorkbook({ omitirHojas: ['Curso Académico', 'Horario', 'Alumnado'] });
+            const { cursoAcademico, filas, alumnado, errores } = await parseWorkbook(buffer);
+            expect(cursoAcademico).toBeNull();
             expect(filas).toEqual([]);
             expect(alumnado).toEqual([]);
-            expect(errores).toHaveLength(2);
+            expect(errores).toHaveLength(3);
+            expect(errores.some(e => e.includes('Curso Académico'))).toBe(true);
             expect(errores.some(e => e.includes('Horario'))).toBe(true);
             expect(errores.some(e => e.includes('Alumnado'))).toBe(true);
         });
     });
 
+    describe('parseWorkbook — hoja Curso Académico', () => {
+        it('parsea nombre/fechas válidos junto con festivos y periodos de evaluación', async () => {
+            const buffer = await buildWorkbook({
+                cursoAcademico: {
+                    label: '2026-2027',
+                    startDate: '2026-09-09',
+                    endDate: '2027-06-23',
+                    holidays: [['Navidad', '2026-12-23', '2027-01-08']],
+                    evaluationPeriods: [
+                        ['1ª Evaluación', '2026-09-09', '2026-12-01', '1'],
+                        ['2ª Evaluación', '2026-12-02', '2027-03-01'], // sin peso -> por defecto 1
+                    ],
+                },
+            });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(errores).toEqual([]);
+            expect(cursoAcademico).toEqual({
+                label: '2026-2027',
+                startDate: '2026-09-09',
+                endDate: '2027-06-23',
+                holidays: [{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08' }],
+                evaluationPeriods: [
+                    { nombre: '1ª Evaluación', fechaInicio: '2026-09-09', fechaFin: '2026-12-01', peso: 1 },
+                    { nombre: '2ª Evaluación', fechaInicio: '2026-12-02', fechaFin: '2027-03-01', peso: 1 },
+                ],
+            });
+        });
+
+        it('devuelve null y bloquea si falta el nombre del curso', async () => {
+            const buffer = await buildWorkbook({ cursoAcademico: { startDate: '2026-09-09', endDate: '2027-06-23' } });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(cursoAcademico).toBeNull();
+            expect(errores.some(e => e.includes('falta el nombre del curso'))).toBe(true);
+        });
+
+        it('devuelve null y bloquea si una fecha no tiene forma AAAA-MM-DD', async () => {
+            const buffer = await buildWorkbook({ cursoAcademico: { label: '2026-2027', startDate: '09/09/2026', endDate: '2027-06-23' } });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(cursoAcademico).toBeNull();
+            expect(errores.some(e => /fecha de inicio inválida/.test(e))).toBe(true);
+        });
+
+        it('devuelve null y bloquea si la fecha de fin no es posterior a la de inicio', async () => {
+            const buffer = await buildWorkbook({ cursoAcademico: { label: '2026-2027', startDate: '2027-06-23', endDate: '2026-09-09' } });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(cursoAcademico).toBeNull();
+            expect(errores.some(e => /fecha de fin debe ser posterior/.test(e))).toBe(true);
+        });
+
+        it('rechaza una fecha de calendario inexistente (31 de abril)', async () => {
+            const buffer = await buildWorkbook({ cursoAcademico: { label: '2026-2027', startDate: '2026-04-31', endDate: '2027-06-23' } });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(cursoAcademico).toBeNull();
+            expect(errores.some(e => /fecha de inicio inválida/.test(e))).toBe(true);
+        });
+
+        it('ignora filas de festivos/periodos totalmente vacías, sin error', async () => {
+            const buffer = await buildWorkbook({ cursoAcademico: CURSO_ACADEMICO_POR_DEFECTO });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(errores).toEqual([]);
+            expect(cursoAcademico?.holidays).toEqual([]);
+            expect(cursoAcademico?.evaluationPeriods).toEqual([]);
+        });
+
+        it('reporta como error una fila de festivo parcialmente rellena, sin abortar el resto', async () => {
+            const buffer = await buildWorkbook({
+                cursoAcademico: {
+                    ...CURSO_ACADEMICO_POR_DEFECTO,
+                    holidays: [['Festivo sin fechas', '', ''], ['Navidad', '2026-12-23', '2027-01-08']],
+                },
+            });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(errores).toHaveLength(1);
+            expect(errores[0]).toMatch(/Festivos/);
+            expect(cursoAcademico?.holidays).toEqual([{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08' }]);
+        });
+    });
+
+    describe('defaultEvaluationPeriods', () => {
+        it('reparte el curso en tercios por días naturales, igual que el backend', () => {
+            const periodos = defaultEvaluationPeriods('2026-09-09', '2027-06-23');
+            expect(periodos).toHaveLength(3);
+            expect(periodos[0].fechaInicio).toBe('2026-09-09');
+            expect(periodos[2].fechaFin).toBe('2027-06-23');
+            // Cada periodo empieza justo al día siguiente de que acabe el anterior.
+            expect(periodos[1].fechaInicio > periodos[0].fechaFin).toBe(true);
+            expect(periodos[2].fechaInicio > periodos[1].fechaFin).toBe(true);
+            periodos.forEach(p => expect(p.peso).toBe(1));
+        });
+
+        it('división entera de días (caso borde de redondeo) no deja huecos ni solapes', () => {
+            // 10 días totales -> tercio = 3 (floor(10/3)) -> p1: 3 días, p2: 3 días, p3: se lleva el resto (4 días)
+            const periodos = defaultEvaluationPeriods('2026-01-01', '2026-01-11');
+            expect(periodos[0]).toEqual({ nombre: '1ª Evaluación', fechaInicio: '2026-01-01', fechaFin: '2026-01-04', peso: 1 });
+            expect(periodos[1]).toEqual({ nombre: '2ª Evaluación', fechaInicio: '2026-01-05', fechaFin: '2026-01-07', peso: 1 });
+            expect(periodos[2]).toEqual({ nombre: '3ª Evaluación', fechaInicio: '2026-01-08', fechaFin: '2026-01-11', peso: 1 });
+        });
+    });
+
     describe('generateTemplate — round-trip con parseWorkbook', () => {
         it('la plantilla generada se vuelve a parsear sin errores y con la fila de ejemplo esperada', async () => {
-            const blob = await generateTemplate();
+            const blob = await generateTemplate({ label: '2026-2027', startDate: '2026-09-09', endDate: '2027-06-23' });
             const buffer = await blob.arrayBuffer();
-            const { filas, alumnado, errores } = await parseWorkbook(buffer);
+            const { cursoAcademico, filas, alumnado, errores } = await parseWorkbook(buffer);
 
             expect(errores).toEqual([]);
+            expect(cursoAcademico?.label).toBe('2026-2027');
+            expect(cursoAcademico?.startDate).toBe('2026-09-09');
+            expect(cursoAcademico?.endDate).toBe('2027-06-23');
+            // Los 3 periodos por defecto vienen ya prellenados en la plantilla.
+            expect(cursoAcademico?.evaluationPeriods).toEqual(defaultEvaluationPeriods('2026-09-09', '2027-06-23'));
+            expect(cursoAcademico?.holidays).toEqual([]);
 
             // Fila de ejemplo académica (Lunes) + la de "Guardia" (Martes, sin grupo).
             expect(filas).toContainEqual<FilaHorario>({

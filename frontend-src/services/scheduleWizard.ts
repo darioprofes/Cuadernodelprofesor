@@ -31,16 +31,60 @@ export interface FilaAlumnado {
     acneae: string[];
 }
 
+export interface FilaFestivo {
+    nombre: string;
+    fechaInicio: string;
+    fechaFin: string;
+}
+
+export interface FilaPeriodoEvaluacion {
+    nombre: string;
+    fechaInicio: string;
+    fechaFin: string;
+    peso: number;
+}
+
+// Info de la hoja "Curso Académico" — v3: el asistente pasa de "rellenar el
+// curso activo" a "crear un curso académico nuevo" (ver
+// asistente-inicio-curso.md, sección v3), así que este bloque es el
+// contrato que StartOfYearWizardModal usa para llamar a
+// POST /academic-years antes que nada.
+export interface CursoAcademicoInfo {
+    label: string;
+    startDate: string;
+    endDate: string;
+    holidays: FilaFestivo[];
+    evaluationPeriods: FilaPeriodoEvaluacion[];
+}
+
 export interface ParsedWorkbook {
+    cursoAcademico: CursoAcademicoInfo | null;
     filas: FilaHorario[];
     alumnado: FilaAlumnado[];
     errores: string[];
 }
 
 const HOJA_INSTRUCCIONES = 'Instrucciones';
+const HOJA_CURSO = 'Curso Académico';
 const HOJA_CONFIGURACION = 'Configuración';
 const HOJA_HORARIO = 'Horario';
 const HOJA_ALUMNADO = 'Alumnado';
+
+// Layout de la hoja "Curso Académico": bloque clave/valor (filas 1-3) +
+// dos tablas apiladas verticalmente (Festivos, luego Periodos de
+// evaluación) — más simple de construir/parsear que ponerlas una al lado
+// de otra, y esta hoja es corta así que no hace falta ahorrar espacio.
+const CURSO_FILA_NOMBRE = 1;
+const CURSO_FILA_INICIO = 2;
+const CURSO_FILA_FIN = 3;
+const FESTIVOS_FILA_TITULO = 5;
+const FESTIVOS_FILA_CABECERA = 6;
+const FESTIVOS_FILA_INICIO = 7;
+const FESTIVOS_FILAS = 20; // filas de datos 7..26
+const EVALUACIONES_FILA_TITULO = 28;
+const EVALUACIONES_FILA_CABECERA = 29;
+const EVALUACIONES_FILA_INICIO = 30;
+const EVALUACIONES_FILAS = 10; // filas de datos 30..39
 
 const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
@@ -104,6 +148,74 @@ const celdaTexto = (valor: unknown): string => {
     return String(valor).trim();
 };
 
+const MS_POR_DIA = 86400000;
+
+// Aritmética de fechas en UTC puro (sin componente de hora ni huso
+// horario): estas fechas son solo "días de calendario", igual que las
+// columnas DATE del backend — usar Date.UTC/getUTC* en todo momento evita
+// que un huso horario negativo desplace el día al convertir ida y vuelta
+// (mismo cuidado que ya tuvo parsearHora con las horas).
+const fechaISOaUTC = (iso: string): number => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return Date.UTC(y, m - 1, d);
+};
+
+const utcAFechaISO = (ms: number): string => {
+    const d = new Date(ms);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dia = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${dia}`;
+};
+
+const FECHA_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+// Valida forma Y que sea una fecha de calendario real (rechaza "2026-02-30"
+// comprobando que Date.UTC no la "corrija" a otro día al reconstruirla).
+const parsearFechaISO = (texto: string): string | null => {
+    const m = FECHA_RE.exec(texto.trim());
+    if (!m) return null;
+    const [, yStr, moStr, dStr] = m;
+    const y = Number(yStr), mo = Number(moStr), d = Number(dStr);
+    const ms = Date.UTC(y, mo - 1, d);
+    const comprobacion = new Date(ms);
+    if (comprobacion.getUTCFullYear() !== y || comprobacion.getUTCMonth() !== mo - 1 || comprobacion.getUTCDate() !== d) return null;
+    return `${yStr}-${moStr}-${dStr}`;
+};
+
+// Mismo reparto que _default_evaluation_periods en
+// api/app/services/academic_years.py (tercios por días naturales, división
+// entera) — portado aquí para que la plantilla pueda prellenar los 3
+// periodos de evaluación por defecto sin esperar a que exista el curso
+// académico en el backend todavía.
+export const defaultEvaluationPeriods = (startDate: string, endDate: string): FilaPeriodoEvaluacion[] => {
+    const inicioMs = fechaISOaUTC(startDate);
+    const finMs = fechaISOaUTC(endDate);
+    const totalDias = Math.round((finMs - inicioMs) / MS_POR_DIA);
+    const tercio = Math.floor(totalDias / 3);
+    const p1FinMs = inicioMs + tercio * MS_POR_DIA;
+    const p2FinMs = inicioMs + 2 * tercio * MS_POR_DIA;
+    return [
+        { nombre: '1ª Evaluación', fechaInicio: utcAFechaISO(inicioMs), fechaFin: utcAFechaISO(p1FinMs), peso: 1 },
+        { nombre: '2ª Evaluación', fechaInicio: utcAFechaISO(p1FinMs + MS_POR_DIA), fechaFin: utcAFechaISO(p2FinMs), peso: 1 },
+        { nombre: '3ª Evaluación', fechaInicio: utcAFechaISO(p2FinMs + MS_POR_DIA), fechaFin: utcAFechaISO(finMs), peso: 1 },
+    ];
+};
+
+// Aviso de formato (no bloqueante) para una celda de fecha en texto libre —
+// mismo criterio tolerante que ya usa la celda Hora de la hoja Horario.
+const setDateHint = (cell: import('exceljs').Cell) => {
+    cell.dataValidation = {
+        type: 'custom',
+        allowBlank: true,
+        formulae: [`ISNUMBER(SEARCH("-",${cell.address}))`],
+        showErrorMessage: true,
+        errorStyle: 'warning',
+        errorTitle: 'Formato de fecha',
+        error: 'Se esperaba el formato AAAA-MM-DD. Puedes continuar igualmente.',
+    };
+};
+
 // Rango de una columna de Configuración, para usar como fuente de un
 // desplegable en otra hoja (formulae de dataValidation no lleva "=").
 const configRange = (col: number): string => {
@@ -129,19 +241,89 @@ const colInicioDia = (diaIndex: number): number => 2 + diaIndex * COLS_POR_DIA;
 // Generación de la plantilla
 // ==========================================================
 
-export async function generateTemplate(): Promise<Blob> {
+export interface PrefillCursoAcademico {
+    label?: string;
+    startDate?: string;
+    endDate?: string;
+}
+
+export async function generateTemplate(prefill?: PrefillCursoAcademico): Promise<Blob> {
     const { Workbook } = await import('exceljs');
     const wb = new Workbook();
     wb.creator = 'Cuaderno Docente';
     wb.created = new Date();
 
     buildInstruccionesSheet(wb);
+    buildCursoAcademicoSheet(wb, prefill);
     buildConfiguracionSheet(wb);
     buildHorarioSheet(wb);
     buildAlumnadoSheet(wb);
 
     const buffer = await wb.xlsx.writeBuffer();
     return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+// La hoja "Curso Académico" declara el curso NUEVO que este asistente va a
+// crear y activar — nunca modifica el curso ya activo (decisión explícita,
+// ver asistente-inicio-curso.md v3). `prefill` viene del mini-formulario
+// que se muestra antes de descargar; si trae fechas, ya se prellenan los 3
+// periodos de evaluación por defecto (editables) para no obligar a
+// calcularlos a mano.
+function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: PrefillCursoAcademico) {
+    const sheet = wb.addWorksheet(HOJA_CURSO);
+    sheet.getColumn(1).width = 32;
+    sheet.getColumn(2).width = 20;
+    sheet.getColumn(3).width = 20;
+    sheet.getColumn(4).width = 10;
+
+    const setEtiqueta = (fila: number, etiqueta: string, valor?: string) => {
+        const etiquetaCell = sheet.getCell(fila, 1);
+        etiquetaCell.value = etiqueta;
+        etiquetaCell.font = { bold: true };
+        if (valor) sheet.getCell(fila, 2).value = valor;
+    };
+    setEtiqueta(CURSO_FILA_NOMBRE, 'Nombre del curso', prefill?.label);
+    setEtiqueta(CURSO_FILA_INICIO, 'Fecha de inicio (AAAA-MM-DD)', prefill?.startDate);
+    setEtiqueta(CURSO_FILA_FIN, 'Fecha de fin (AAAA-MM-DD)', prefill?.endDate);
+    setDateHint(sheet.getCell(CURSO_FILA_INICIO, 2));
+    setDateHint(sheet.getCell(CURSO_FILA_FIN, 2));
+
+    const tituloSeccion = (fila: number, colFin: number, texto: string) => {
+        sheet.mergeCells(fila, 1, fila, colFin);
+        const cell = sheet.getCell(fila, 1);
+        cell.value = texto;
+        cell.font = { bold: true, size: 12 };
+    };
+    const cabeceraTabla = (fila: number, columnas: string[]) => {
+        columnas.forEach((h, i) => {
+            const cell = sheet.getCell(fila, i + 1);
+            cell.value = h;
+            estilizarCabecera(cell);
+        });
+    };
+
+    tituloSeccion(FESTIVOS_FILA_TITULO, 3, 'Festivos y días no lectivos');
+    cabeceraTabla(FESTIVOS_FILA_CABECERA, ['Nombre', 'Fecha inicio (AAAA-MM-DD)', 'Fecha fin (AAAA-MM-DD)']);
+    for (let r = FESTIVOS_FILA_INICIO; r < FESTIVOS_FILA_INICIO + FESTIVOS_FILAS; r++) {
+        setDateHint(sheet.getCell(r, 2));
+        setDateHint(sheet.getCell(r, 3));
+    }
+
+    tituloSeccion(EVALUACIONES_FILA_TITULO, 4, 'Periodos de evaluación');
+    cabeceraTabla(EVALUACIONES_FILA_CABECERA, ['Nombre', 'Fecha inicio (AAAA-MM-DD)', 'Fecha fin (AAAA-MM-DD)', 'Peso']);
+    for (let r = EVALUACIONES_FILA_INICIO; r < EVALUACIONES_FILA_INICIO + EVALUACIONES_FILAS; r++) {
+        setDateHint(sheet.getCell(r, 2));
+        setDateHint(sheet.getCell(r, 3));
+    }
+    if (prefill?.startDate && prefill?.endDate) {
+        defaultEvaluationPeriods(prefill.startDate, prefill.endDate).forEach((p, i) => {
+            const r = EVALUACIONES_FILA_INICIO + i;
+            sheet.getCell(r, 1).value = p.nombre;
+            sheet.getCell(r, 2).value = p.fechaInicio;
+            sheet.getCell(r, 3).value = p.fechaFin;
+            sheet.getCell(r, 4).value = p.peso;
+        });
+    }
 }
 
 function buildInstruccionesSheet(wb: import('exceljs').Workbook) {
@@ -151,7 +333,12 @@ function buildInstruccionesSheet(wb: import('exceljs').Workbook) {
     const parrafos = [
         'Asistente de inicio de curso',
         '',
-        'Rellena las hojas de este libro EN ORDEN — "Configuración" primero, para que los desplegables de las demás hojas tengan algo que ofrecer — y súbelo desde Ajustes → Curso Académico → "Importar datos del curso". Antes de aplicar nada, la app te enseña un resumen de lo que va a crear para que lo confirmes.',
+        'Rellena las hojas de este libro EN ORDEN — "Curso Académico" y "Configuración" primero, para que el resto de hojas tengan lo que necesitan — y súbelo desde Ajustes → Curso Académico → "Iniciar nuevo curso académico". Antes de aplicar nada, la app te enseña un resumen de lo que va a crear para que lo confirmes.',
+        '',
+        'Hoja "Curso Académico":',
+        '- Nombre del curso (p.ej. "2026-2027") y fechas de inicio/fin (AAAA-MM-DD): este asistente SIEMPRE crea un curso académico nuevo y lo activa — nunca modifica el que tengas activo ahora mismo.',
+        '- Festivos y días no lectivos: opcional, uno por fila.',
+        '- Periodos de evaluación: si ya pusiste las fechas de inicio/fin de arriba, aquí tienes 3 periodos calculados a partes iguales — puedes editarlos o añadir/quitar filas. "Peso" sirve para ponderar la nota final entre evaluaciones (1 por defecto, igual para todas).',
         '',
         'Hoja "Configuración":',
         '- 4 listas simples, una por columna: Niveles que impartes, Materias/actividades que impartes (incluye guardias, reuniones... no solo materias con alumnado), Grupos a los que das clase, Aulas habituales.',
@@ -167,6 +354,7 @@ function buildInstruccionesSheet(wb: import('exceljs').Workbook) {
         '- Una fila por alumno/a.',
         '- Nivel/Materia/Grupo (con el mismo desplegable) deben coincidir con una clase de la hoja "Horario" — si no coinciden con ninguna, esa fila da error y no se importa.',
         '- "Fecha Nacimiento" (AAAA-MM-DD), "DNI" y "ACNEAE" son opcionales. El resto de la ficha (tutores, domicilio, datos sanitarios...) se rellena después desde la propia app.',
+        '- Truco: para copiar Nivel/Grupo en varias filas seguidas (varios alumnos del mismo grupo), arrastra el tirador de relleno con la tecla Ctrl pulsada — si no, Excel puede incrementar el número en vez de copiarlo tal cual.',
         '',
         'No borres ninguna fila de cabecera. Esta hoja de instrucciones no se procesa al importar.',
     ];
@@ -295,9 +483,34 @@ function buildHorarioSheet(wb: import('exceljs').Workbook) {
     sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, lunesInicio + 3).value = 'A16';
     const martesInicio = colInicioDia(1);
     sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, martesInicio + 1).value = 'Guardia';
+
+    // Borde grueso al principio de cada bloque de día (y al final del
+    // último) — sin esto cuesta ver a simple vista dónde empieza cada día,
+    // ya que las 4 subcolumnas de Lunes/Martes/... no tienen ninguna
+    // separación visual propia más allá de la cabecera combinada de la
+    // fila 1.
+    DIAS_SEMANA.forEach((_, d) => {
+        const colInicio = colInicioDia(d);
+        for (let r = 1; r <= filaFinDatos; r++) {
+            const cell = sheet.getCell(r, colInicio);
+            cell.border = { ...cell.border, left: { style: 'thick' } };
+        }
+    });
+    for (let r = 1; r <= filaFinDatos; r++) {
+        const cell = sheet.getCell(r, ultimaColumna);
+        cell.border = { ...cell.border, right: { style: 'thick' } };
+    }
 }
 
 const FILAS_ALUMNADO = 60;
+
+// Excel incrementa por defecto el número de un texto (p.ej. "1º ESO" ->
+// "2º ESO") al arrastrar el tirador de relleno desde una sola celda — es
+// comportamiento nativo del cliente Excel (AutoFill), no algo que se pueda
+// desactivar desde el .xlsx generado; lo único real es documentarlo (nota
+// de celda + Instrucciones), útil aquí porque es habitual copiar Nivel/
+// Grupo en varias filas seguidas al dar de alta un grupo entero.
+const NOTA_AUTOINCREMENTO = 'Si arrastras el tirador de relleno (la crucecita de la esquina) para copiar este valor en varias filas seguidas, mantén pulsada la tecla Ctrl mientras arrastras. Si no, Excel puede incrementar el número que contiene (p.ej. "1º ESO" pasaría a "2º ESO") en vez de repetir el mismo valor.';
 
 function buildAlumnadoSheet(wb: import('exceljs').Workbook) {
     const sheet = wb.addWorksheet(HOJA_ALUMNADO);
@@ -308,6 +521,7 @@ function buildAlumnadoSheet(wb: import('exceljs').Workbook) {
         headerCell.value = c;
         estilizarCabecera(headerCell);
         sheet.getColumn(col).width = 20;
+        if (c === 'Nivel' || c === 'Grupo') headerCell.note = NOTA_AUTOINCREMENTO;
     });
     sheet.getRow(1).height = 20;
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
@@ -335,16 +549,78 @@ export async function parseWorkbook(buffer: ArrayBuffer): Promise<ParsedWorkbook
 
     const errores: string[] = [];
 
+    const hojaCurso = wb.getWorksheet(HOJA_CURSO);
     const hojaHorario = wb.getWorksheet(HOJA_HORARIO);
     const hojaAlumnado = wb.getWorksheet(HOJA_ALUMNADO);
 
+    if (!hojaCurso) errores.push(`No se encuentra la hoja "${HOJA_CURSO}".`);
     if (!hojaHorario) errores.push(`No se encuentra la hoja "${HOJA_HORARIO}".`);
     if (!hojaAlumnado) errores.push(`No se encuentra la hoja "${HOJA_ALUMNADO}".`);
 
+    const cursoAcademico = hojaCurso ? parseCursoAcademicoSheet(hojaCurso, errores) : null;
     const filas = hojaHorario ? parseHorarioSheet(hojaHorario, errores) : [];
     const alumnado = hojaAlumnado ? parseAlumnadoSheet(hojaAlumnado, errores) : [];
 
-    return { filas, alumnado, errores };
+    return { cursoAcademico, filas, alumnado, errores };
+}
+
+// Devuelve `null` (bloqueante) si falta o es inválido cualquiera de
+// Nombre/Fecha inicio/Fecha fin — sin esos 3 datos no hay curso académico
+// que crear, así que StartOfYearWizardModal no deja confirmar nada.
+// Festivos/periodos de evaluación son tolerantes: una fila mal rellena da
+// error y se descarta, sin abortar el resto (mismo criterio que
+// parseAlumnadoSheet).
+function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: string[]): CursoAcademicoInfo | null {
+    const label = celdaTexto(sheet.getCell(CURSO_FILA_NOMBRE, 2).value);
+    const startDateTexto = celdaTexto(sheet.getCell(CURSO_FILA_INICIO, 2).value);
+    const endDateTexto = celdaTexto(sheet.getCell(CURSO_FILA_FIN, 2).value);
+    const startDate = startDateTexto ? parsearFechaISO(startDateTexto) : null;
+    const endDate = endDateTexto ? parsearFechaISO(endDateTexto) : null;
+
+    if (!label) errores.push(`Hoja "${HOJA_CURSO}": falta el nombre del curso (celda B1).`);
+    if (!startDateTexto) errores.push(`Hoja "${HOJA_CURSO}": falta la fecha de inicio (celda B2).`);
+    else if (!startDate) errores.push(`Hoja "${HOJA_CURSO}": fecha de inicio inválida: "${startDateTexto}" (usa AAAA-MM-DD).`);
+    if (!endDateTexto) errores.push(`Hoja "${HOJA_CURSO}": falta la fecha de fin (celda B3).`);
+    else if (!endDate) errores.push(`Hoja "${HOJA_CURSO}": fecha de fin inválida: "${endDateTexto}" (usa AAAA-MM-DD).`);
+    if (startDate && endDate && endDate <= startDate) {
+        errores.push(`Hoja "${HOJA_CURSO}": la fecha de fin debe ser posterior a la de inicio.`);
+    }
+
+    if (!label || !startDate || !endDate || endDate <= startDate) return null;
+
+    const holidays: FilaFestivo[] = [];
+    for (let r = FESTIVOS_FILA_INICIO; r < FESTIVOS_FILA_INICIO + FESTIVOS_FILAS; r++) {
+        const nombre = celdaTexto(sheet.getCell(r, 1).value);
+        const inicioTexto = celdaTexto(sheet.getCell(r, 2).value);
+        const finTexto = celdaTexto(sheet.getCell(r, 3).value);
+        if (!nombre && !inicioTexto && !finTexto) continue; // fila vacía
+        const inicio = parsearFechaISO(inicioTexto);
+        const fin = parsearFechaISO(finTexto);
+        if (!nombre || !inicio || !fin) {
+            errores.push(`Fila ${r} (${HOJA_CURSO} — Festivos): faltan datos o la fecha no tiene forma AAAA-MM-DD.`);
+            continue;
+        }
+        holidays.push({ nombre, fechaInicio: inicio, fechaFin: fin });
+    }
+
+    const evaluationPeriods: FilaPeriodoEvaluacion[] = [];
+    for (let r = EVALUACIONES_FILA_INICIO; r < EVALUACIONES_FILA_INICIO + EVALUACIONES_FILAS; r++) {
+        const nombre = celdaTexto(sheet.getCell(r, 1).value);
+        const inicioTexto = celdaTexto(sheet.getCell(r, 2).value);
+        const finTexto = celdaTexto(sheet.getCell(r, 3).value);
+        const pesoTexto = celdaTexto(sheet.getCell(r, 4).value);
+        if (!nombre && !inicioTexto && !finTexto) continue; // fila vacía
+        const inicio = parsearFechaISO(inicioTexto);
+        const fin = parsearFechaISO(finTexto);
+        if (!nombre || !inicio || !fin) {
+            errores.push(`Fila ${r} (${HOJA_CURSO} — Periodos de evaluación): faltan datos o la fecha no tiene forma AAAA-MM-DD.`);
+            continue;
+        }
+        const pesoNum = parseFloat(pesoTexto.replace(',', '.'));
+        evaluationPeriods.push({ nombre, fechaInicio: inicio, fechaFin: fin, peso: Number.isFinite(pesoNum) && pesoNum > 0 ? pesoNum : 1 });
+    }
+
+    return { label, startDate, endDate, holidays, evaluationPeriods };
 }
 
 interface BloqueDia {

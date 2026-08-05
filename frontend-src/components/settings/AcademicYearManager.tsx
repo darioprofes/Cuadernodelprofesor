@@ -38,7 +38,7 @@ const AcademicYearManager: React.FC = () => {
                         onClick={() => setIsWizardOpen(true)}
                         className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm"
                     >
-                        📥 Importar datos del curso (Excel)
+                        🚀 Iniciar nuevo curso académico (Excel)
                     </button>
                 </div>
                 <StartOfYearWizardModal isOpen={isWizardOpen} onClose={() => setIsWizardOpen(false)} />
