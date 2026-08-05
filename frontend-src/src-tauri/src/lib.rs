@@ -42,6 +42,27 @@ fn api_request(
   routers::dispatch(&conn, &method, &path, body)
 }
 
+// Las fotos no pasan por api_request (JSON no es sitio para bytes crudos,
+// ver services/photos.rs) -- comandos dedicados para subir/borrar, mismo
+// patrón que load_db/save_db ya usaban. Servirlas de vuelta a un <img> es
+// cosa del protocolo studentphoto:// (ver más abajo), no de un comando.
+#[tauri::command]
+fn set_student_photo(
+  state: tauri::State<db::DbState>,
+  student_id: String,
+  bytes: Vec<u8>,
+  content_type: String,
+) -> Result<(), error::ApiError> {
+  let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::photos::set(&conn, &student_id, bytes, &content_type)
+}
+
+#[tauri::command]
+fn delete_student_photo(state: tauri::State<db::DbState>, student_id: String) -> Result<(), error::ApiError> {
+  let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::photos::delete(&conn, &student_id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -57,7 +78,35 @@ pub fn run() {
       app.manage(db::DbState(std::sync::Mutex::new(conn)));
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![load_db, save_db, api_request])
+    // Protocolo custom (no el "asset:" nativo de Tauri, pensado para
+    // ficheros en disco, no bytes calculados al vuelo desde una consulta)
+    // -- el frontend usa <img src="studentphoto://{id}"> tal cual,
+    // StudentPhotoAvatar.tsx no distingue de una URL cualquiera. En
+    // Windows (única plataforma de distribución de esta app, ver
+    // CLAUDE.md) Tauri expone esto como http://studentphoto.localhost/{id}.
+    .register_uri_scheme_protocol("studentphoto", |ctx, request| {
+      let student_id = request.uri().path().trim_start_matches('/');
+      let state = ctx.app_handle().state::<db::DbState>();
+      let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+      match services::photos::get(&conn, student_id) {
+        Ok(Some((bytes, content_type))) => tauri::http::Response::builder()
+          .status(200)
+          .header("Content-Type", content_type)
+          .body(bytes)
+          .unwrap(),
+        _ => tauri::http::Response::builder()
+          .status(404)
+          .body(Vec::new())
+          .unwrap(),
+      }
+    })
+    .invoke_handler(tauri::generate_handler![
+      load_db,
+      save_db,
+      api_request,
+      set_student_photo,
+      delete_student_photo
+    ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
