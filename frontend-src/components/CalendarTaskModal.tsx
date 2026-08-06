@@ -40,7 +40,14 @@ const toYYYYMMDD = (date: Date): string => {
 };
 
 const CalendarTaskModal: React.FC<CalendarTaskModalProps> = (props) => {
-    const { isOpen, onClose, onSave, selectedDate, classes, courses, criteria, specificCompetences, keyCompetences, academicConfiguration } = props;
+    const { isOpen, onClose, onSave, selectedDate, classes: allClasses, courses, criteria, specificCompetences, keyCompetences, academicConfiguration } = props;
+
+    // Solo clases académicas: "otras ocupaciones" (Guardia, Recreo...) no
+    // tienen alumnado que evaluar, no tiene sentido crearles una tarea.
+    const classes = useMemo(
+        () => allClasses.filter(c => courses.find(course => course.id === c.courseId)?.type !== 'other'),
+        [allClasses, courses]
+    );
 
     const [selectedClassId, setSelectedClassId] = useState<string>(classes[0]?.id || '');
     const [taskDate, setTaskDate] = useState<string>(() => toYYYYMMDD(selectedDate));
