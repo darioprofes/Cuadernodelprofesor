@@ -406,11 +406,19 @@ describe('scheduleWizard', () => {
             expect(errores.some(e => e.includes('falta el nombre del curso'))).toBe(true);
         });
 
-        it('devuelve null y bloquea si una fecha no tiene forma AAAA-MM-DD', async () => {
-            const buffer = await buildWorkbook({ cursoAcademico: { label: '2026-2027', startDate: '09/09/2026', endDate: '2027-06-23' } });
+        it('devuelve null y bloquea si una fecha no tiene forma DD/MM/AAAA ni AAAA-MM-DD', async () => {
+            const buffer = await buildWorkbook({ cursoAcademico: { label: '2026-2027', startDate: 'no-es-una-fecha', endDate: '2027-06-23' } });
             const { cursoAcademico, errores } = await parseWorkbook(buffer);
             expect(cursoAcademico).toBeNull();
             expect(errores.some(e => /fecha de inicio inválida/.test(e))).toBe(true);
+        });
+
+        it('acepta el texto libre en formato DD/MM/AAAA (el que ve el profesor en la plantilla)', async () => {
+            const buffer = await buildWorkbook({ cursoAcademico: { label: '2026-2027', startDate: '09/09/2026', endDate: '23/06/2027' } });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(errores).toEqual([]);
+            expect(cursoAcademico?.startDate).toBe('2026-09-09');
+            expect(cursoAcademico?.endDate).toBe('2027-06-23');
         });
 
         it('devuelve null y bloquea si la fecha de fin no es posterior a la de inicio', async () => {

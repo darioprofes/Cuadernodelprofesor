@@ -189,19 +189,31 @@ const utcAFechaISO = (ms: number): string => {
     return `${y}-${m}-${dia}`;
 };
 
-const FECHA_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const FECHA_ISO_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const FECHA_DDMMYYYY_RE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 
-// Valida forma Y que sea una fecha de calendario real (rechaza "2026-02-30"
+// Valida forma Y que sea una fecha de calendario real (rechaza "31/02/2026"
 // comprobando que Date.UTC no la "corrija" a otro día al reconstruirla).
-const parsearFechaISO = (texto: string): string | null => {
-    const m = FECHA_RE.exec(texto.trim());
-    if (!m) return null;
-    const [, yStr, moStr, dStr] = m;
-    const y = Number(yStr), mo = Number(moStr), d = Number(dStr);
+// Acepta DD/MM/AAAA (formato español, el que ve el profesor en la
+// plantilla — `FORMATO_FECHA`) y también AAAA-MM-DD por compatibilidad
+// (texto pegado desde fuera, o generado a mano) — sin ambigüedad entre
+// los dos, se distinguen por el separador ("/" vs "-"). Siempre devuelve
+// en AAAA-MM-DD, el formato interno de esta app.
+const parsearFechaTexto = (texto: string): string | null => {
+    const limpio = texto.trim();
+    let y: number, mo: number, d: number;
+    const mDMY = FECHA_DDMMYYYY_RE.exec(limpio);
+    if (mDMY) {
+        d = Number(mDMY[1]); mo = Number(mDMY[2]); y = Number(mDMY[3]);
+    } else {
+        const mISO = FECHA_ISO_RE.exec(limpio);
+        if (!mISO) return null;
+        y = Number(mISO[1]); mo = Number(mISO[2]); d = Number(mISO[3]);
+    }
     const ms = Date.UTC(y, mo - 1, d);
     const comprobacion = new Date(ms);
     if (comprobacion.getUTCFullYear() !== y || comprobacion.getUTCMonth() !== mo - 1 || comprobacion.getUTCDate() !== d) return null;
-    return `${yStr}-${moStr}-${dStr}`;
+    return utcAFechaISO(ms);
 };
 
 const fechaISOaDate = (iso: string): Date => new Date(fechaISOaUTC(iso));
@@ -217,15 +229,15 @@ const fechaISOaDate = (iso: string): Date => new Date(fechaISOaUTC(iso));
 // con getUTC*, igual criterio que el resto de fechas de este fichero,
 // para no depender del huso horario de la máquina. Se mantiene además el
 // parseo de texto por si acaso (pegar como texto, o abrir con un programa
-// que no respete el numFmt) — en ese caso sigue esperando AAAA-MM-DD, el
-// formato interno de esta app (no el que ve el profesor en Excel).
+// que no respete el numFmt) — acepta DD/MM/AAAA (lo que ve el profesor en
+// la plantilla) y también AAAA-MM-DD, ver `parsearFechaTexto`.
 const leerCeldaFecha = (valor: unknown): { texto: string; fecha: string | null } => {
     if (valor instanceof Date) {
         const iso = utcAFechaISO(valor.getTime());
         return { texto: iso, fecha: iso };
     }
     const texto = celdaTexto(valor);
-    return { texto, fecha: texto ? parsearFechaISO(texto) : null };
+    return { texto, fecha: texto ? parsearFechaTexto(texto) : null };
 };
 
 // Mismo reparto que _default_evaluation_periods en
@@ -252,7 +264,7 @@ const FORMATO_FECHA = 'dd/mm/yyyy'; // formato español, pedido explícito del u
 // Deja la celda lista para admitir una fecha real: solo `numFmt` explícito
 // (para que Excel no le aplique su propio formato corto por defecto al
 // reconocer una fecha tecleada, y para que se muestre siempre en
-// AAAA-MM-DD). Sin validación de aviso: la primera versión comprobaba
+// DD/MM/AAAA). Sin validación de aviso: la primera versión comprobaba
 // `SEARCH("-", celda)`, pensada para texto libre — pero para un valor que
 // Excel YA reconoció como fecha real (justo lo que se busca con el
 // numFmt), SEARCH/FIND con un argumento numérico lo convierte a texto con
@@ -771,9 +783,9 @@ function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: s
 
     if (!label) errores.push(`Hoja "${HOJA_CURSO}": falta el nombre del curso (celda B${CURSO_FILA_NOMBRE}).`);
     if (!startDateTexto) errores.push(`Hoja "${HOJA_CURSO}": falta la fecha de inicio (celda B${CURSO_FILA_INICIO}).`);
-    else if (!startDate) errores.push(`Hoja "${HOJA_CURSO}": fecha de inicio inválida: "${startDateTexto}" (usa AAAA-MM-DD).`);
+    else if (!startDate) errores.push(`Hoja "${HOJA_CURSO}": fecha de inicio inválida: "${startDateTexto}" (usa DD/MM/AAAA).`);
     if (!endDateTexto) errores.push(`Hoja "${HOJA_CURSO}": falta la fecha de fin (celda B${CURSO_FILA_FIN}).`);
-    else if (!endDate) errores.push(`Hoja "${HOJA_CURSO}": fecha de fin inválida: "${endDateTexto}" (usa AAAA-MM-DD).`);
+    else if (!endDate) errores.push(`Hoja "${HOJA_CURSO}": fecha de fin inválida: "${endDateTexto}" (usa DD/MM/AAAA).`);
     if (startDate && endDate && endDate <= startDate) {
         errores.push(`Hoja "${HOJA_CURSO}": la fecha de fin debe ser posterior a la de inicio.`);
     }
@@ -787,7 +799,7 @@ function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: s
         const { texto: finTexto, fecha: fin } = leerCeldaFecha(sheet.getCell(r, 3).value);
         if (!nombre && !inicioTexto && !finTexto) continue; // fila vacía
         if (!nombre || !inicio || !fin) {
-            errores.push(`Fila ${r} (${HOJA_CURSO} — Festivos): faltan datos o la fecha no tiene forma AAAA-MM-DD.`);
+            errores.push(`Fila ${r} (${HOJA_CURSO} — Festivos): faltan datos o la fecha no tiene forma DD/MM/AAAA.`);
             continue;
         }
         holidays.push({ nombre, fechaInicio: inicio, fechaFin: fin });
@@ -801,7 +813,7 @@ function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: s
         const pesoTexto = celdaTexto(sheet.getCell(r, 4).value);
         if (!nombre && !inicioTexto && !finTexto) continue; // fila vacía
         if (!nombre || !inicio || !fin) {
-            errores.push(`Fila ${r} (${HOJA_CURSO} — Periodos de evaluación): faltan datos o la fecha no tiene forma AAAA-MM-DD.`);
+            errores.push(`Fila ${r} (${HOJA_CURSO} — Periodos de evaluación): faltan datos o la fecha no tiene forma DD/MM/AAAA.`);
             continue;
         }
         const pesoNum = parseFloat(pesoTexto.replace(',', '.'));
