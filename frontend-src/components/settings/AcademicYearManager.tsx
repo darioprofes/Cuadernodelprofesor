@@ -1,24 +1,31 @@
 import React, { useState } from 'react';
-import { useAcademicYears, useCreateAcademicYear, useActivateAcademicYear } from '../../hooks/useAcademicYears';
-import { CheckCircleIcon } from '../Icons';
+import { useAcademicYears, useCreateAcademicYear, useActivateAcademicYear, useDeleteAcademicYear } from '../../hooks/useAcademicYears';
+import { CheckCircleIcon, TrashIcon, ExclamationTriangleIcon } from '../Icons';
 import Input from '../Input';
 import Button from '../Button';
+import IconButton from '../IconButton';
 import StartOfYearWizardModal from '../StartOfYearWizardModal';
 
 // Primera pieza de UI del backend granular nuevo (ver plan, "Fase 5
 // fusionada", bloque 2): gestiona academic_years en Postgres, en paralelo
 // a "Configuración del Curso" (que sigue gobernando el academicConfiguration
-// del blob viejo hasta que classes migre — bloque 4). Deliberadamente
-// mínimo por ahora: listar/crear/activar, sin editar ni borrar todavía.
+// del blob viejo hasta que classes migre — bloque 4). Listar/crear/activar/
+// borrar; sin editar todavía.
 const AcademicYearManager: React.FC = () => {
     const { data: years = [], isLoading } = useAcademicYears();
     const createYear = useCreateAcademicYear();
     const activateYear = useActivateAcademicYear();
+    const deleteYear = useDeleteAcademicYear();
 
     const [label, setLabel] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [isWizardOpen, setIsWizardOpen] = useState(false);
+    // Un único curso con confirmación abierta a la vez — pedir "sí, de
+    // verdad" con una tarjeta de aviso propia (no el confirm() nativo del
+    // navegador, que no se puede destacar visualmente) antes de un borrado
+    // en cascada e irreversible (clases, matrículas, notas... de ese curso).
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -52,26 +59,61 @@ const AcademicYearManager: React.FC = () => {
                         <p className="text-slate-500 text-center py-4">No hay cursos académicos creados todavía.</p>
                     )}
                     {years.map(year => (
-                        <div key={year.id} className="flex items-center justify-between bg-white p-2 rounded-md border">
-                            <div>
-                                <p className="font-semibold text-slate-700">{year.label}</p>
-                                <p className="text-xs text-slate-500">{year.startDate} — {year.endDate}</p>
+                        confirmDeleteId === year.id ? (
+                            <div key={year.id} className="bg-red-50 border border-red-300 rounded-md p-3 space-y-2">
+                                <div className="flex items-start gap-2">
+                                    <ExclamationTriangleIcon className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                                    <div className="text-sm text-red-800">
+                                        <p className="font-semibold">¿Eliminar «{year.label}»? Esta acción no se puede deshacer.</p>
+                                        <p className="mt-1">Se borrarán también sus clases, el alumnado matriculado en ellas, sus calificaciones, y el diario, las tareas, reuniones y agenda de este curso. Las materias y el alumnado (como personas) no se borran.</p>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end gap-2 pt-1">
+                                    <Button type="button" variant="secondary" onClick={() => setConfirmDeleteId(null)} disabled={deleteYear.isPending}>
+                                        Cancelar
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="danger"
+                                        onClick={() => deleteYear.mutate(year.id, { onSuccess: () => setConfirmDeleteId(null) })}
+                                        disabled={deleteYear.isPending}
+                                    >
+                                        {deleteYear.isPending ? 'Eliminando…' : 'Sí, eliminar definitivamente'}
+                                    </Button>
+                                </div>
                             </div>
-                            {year.isCurrent ? (
-                                <span className="inline-flex items-center gap-1 text-emerald-700 text-sm font-medium">
-                                    <CheckCircleIcon className="w-4 h-4" /> Actual
-                                </span>
-                            ) : (
-                                <Button
-                                    type="button"
-                                    variant="secondary"
-                                    onClick={() => activateYear.mutate(year.id)}
-                                    disabled={activateYear.isPending}
-                                >
-                                    Marcar como actual
-                                </Button>
-                            )}
-                        </div>
+                        ) : (
+                            <div key={year.id} className="flex items-center justify-between bg-white p-2 rounded-md border">
+                                <div>
+                                    <p className="font-semibold text-slate-700">{year.label}</p>
+                                    <p className="text-xs text-slate-500">{year.startDate} — {year.endDate}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {year.isCurrent ? (
+                                        <span className="inline-flex items-center gap-1 text-emerald-700 text-sm font-medium">
+                                            <CheckCircleIcon className="w-4 h-4" /> Actual
+                                        </span>
+                                    ) : (
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                            onClick={() => activateYear.mutate(year.id)}
+                                            disabled={activateYear.isPending}
+                                        >
+                                            Marcar como actual
+                                        </Button>
+                                    )}
+                                    <IconButton
+                                        label={year.isCurrent ? 'Activa otro curso primero para poder eliminar este' : 'Eliminar curso académico'}
+                                        tone="danger"
+                                        disabled={year.isCurrent}
+                                        onClick={() => setConfirmDeleteId(year.id)}
+                                    >
+                                        <TrashIcon className="w-4 h-4" />
+                                    </IconButton>
+                                </div>
+                            </div>
+                        )
                     ))}
                 </div>
 
