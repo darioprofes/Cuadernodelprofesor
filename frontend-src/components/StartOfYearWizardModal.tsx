@@ -362,8 +362,12 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
                         )}
 
                         {parsed && parsed.errores.length > 0 && (
-                            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
-                                <p className="font-semibold mb-1">Avisos al leer el Excel:</p>
+                            // Naranja, no rojo: estas filas se saltan pero el resto de la
+                            // importación sigue adelante — no bloquean nada. Lo que sí
+                            // bloquea (falta la hoja "Curso Académico" o sus datos) tiene
+                            // su propia caja en rojo, justo debajo.
+                            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-800">
+                                <p className="font-semibold mb-1">Avisos al leer el Excel (esas filas concretas no se importarán, el resto sigue adelante):</p>
                                 <ul className="list-disc list-inside">
                                     {parsed.errores.map((e, i) => <li key={i}>{e}</li>)}
                                 </ul>
@@ -384,7 +388,7 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
                                     <p>{plan.clasesCreadas} clase(s) nueva(s) se crearán.</p>
                                     <p>{alumnadoResuelto.validos} alumno(s) a matricular.</p>
                                     {alumnadoResuelto.invalidos > 0 && (
-                                        <p className="text-red-700">{alumnadoResuelto.invalidos} fila(s) de alumnado no coinciden con ninguna clase de la hoja "Horario" — no se importarán.</p>
+                                        <p className="text-orange-700">{alumnadoResuelto.invalidos} fila(s) de alumnado no coinciden con ninguna clase de la hoja "Horario" — no se importarán (el resto sí).</p>
                                     )}
                                 </div>
                                 <div className="max-h-56 overflow-y-auto border rounded-lg divide-y">

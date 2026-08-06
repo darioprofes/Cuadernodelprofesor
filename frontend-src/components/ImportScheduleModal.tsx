@@ -81,7 +81,12 @@ export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes
         })
         .sort((a, b) => toMinutes(a.inicio) - toMinutes(b.inicio));
 
-    const periods = parejasUnicas.map(p => `${p.inicio}-${p.fin}`);
+    // Igual que "inicio" e "fin" cuando la franja viene de una etiqueta
+    // libre sin horas (p.ej. "Recreo", ver scheduleWizard.ts) — sin este
+    // caso especial saldría duplicada como "Recreo-Recreo". Un PDF real
+    // nunca produce inicio===fin (toda franja tiene alguna duración), así
+    // que esto no cambia nada para esa vía.
+    const periods = parejasUnicas.map(p => p.inicio === p.fin ? p.inicio : `${p.inicio}-${p.fin}`);
     const periodIndexOf = new Map(parejasUnicas.map((p, i) => [`${p.inicio}|${p.fin}`, i]));
 
     let newCourses = courses.filter(c => !idsOtrasOcupaciones.has(c.id));

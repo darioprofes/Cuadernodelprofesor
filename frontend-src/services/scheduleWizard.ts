@@ -91,14 +91,18 @@ const PRIMERA_FILA_CONTENIDO = 3;
 const CURSO_FILA_NOMBRE = PRIMERA_FILA_CONTENIDO;
 const CURSO_FILA_INICIO = PRIMERA_FILA_CONTENIDO + 1;
 const CURSO_FILA_FIN = PRIMERA_FILA_CONTENIDO + 2;
-const FESTIVOS_FILA_TITULO = PRIMERA_FILA_CONTENIDO + 4;
-const FESTIVOS_FILA_CABECERA = PRIMERA_FILA_CONTENIDO + 5;
-const FESTIVOS_FILA_INICIO = PRIMERA_FILA_CONTENIDO + 6;
-const FESTIVOS_FILAS = 20;
-const EVALUACIONES_FILA_TITULO = FESTIVOS_FILA_INICIO + FESTIVOS_FILAS + 1;
+// Periodos de evaluación va ANTES que Festivos a propósito (bug real
+// reportado por el usuario): con Festivos primero, sus 20 filas casi
+// siempre vacías hacían que la tabla de Periodos —ya prellenada con datos
+// reales— quedara fuera de la vista inicial y pasara desapercibida.
+const EVALUACIONES_FILA_TITULO = PRIMERA_FILA_CONTENIDO + 4;
 const EVALUACIONES_FILA_CABECERA = EVALUACIONES_FILA_TITULO + 1;
 const EVALUACIONES_FILA_INICIO = EVALUACIONES_FILA_TITULO + 2;
 const EVALUACIONES_FILAS = 10;
+const FESTIVOS_FILA_TITULO = EVALUACIONES_FILA_INICIO + EVALUACIONES_FILAS + 1;
+const FESTIVOS_FILA_CABECERA = FESTIVOS_FILA_TITULO + 1;
+const FESTIVOS_FILA_INICIO = FESTIVOS_FILA_TITULO + 2;
+const FESTIVOS_FILAS = 20;
 
 const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
@@ -576,7 +580,7 @@ function buildHorarioSheet(wb: import('exceljs').Workbook) {
     tituloCell.value = { richText: [{ font: { bold: true, size: 11, color: { argb: COLOR_BANNER_TITULO } }, text: '🗓️ Horario' }] };
     tituloCell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
 
-    const descripcionHorario = 'Una fila por franja horaria. Cada día tiene sus columnas Nivel/Materia/Grupo/Aula (con desplegable). Solo Materia es obligatoria: si además pones Grupo, se crea una clase académica real; si no, es una "otra ocupación" sin alumnado. Deja Materia vacía si esa franja está libre ese día.';
+    const descripcionHorario = 'Una fila por franja horaria — la columna Hora admite un rango ("08:15 - 09:10") o solo una etiqueta libre, como "Recreo" (igual que las franjas de la propia app). Cada día tiene sus columnas Nivel/Materia/Grupo/Aula (con desplegable). Solo Materia es obligatoria: si además pones Grupo, se crea una clase académica real; si no, es una "otra ocupación" sin alumnado. Deja Materia vacía si esa franja está libre ese día.';
     sheet.mergeCells(1, 2, 1, 1 + HORARIO_BANNER_EXPLICACION_COLS);
     const descCell = sheet.getCell(1, 2);
     descCell.value = descripcionHorario;
@@ -634,20 +638,13 @@ function buildHorarioSheet(wb: import('exceljs').Workbook) {
         const filaIndex = r - PRIMERA_FILA_DATOS_HORARIO;
         for (let c = 1; c <= ultimaColumna; c++) estilizarCeldaDatos(sheet.getCell(r, c), filaIndex);
 
-        // Validación de formato de hora — de AVISO, no bloqueante: una
-        // comprobación estricta por fórmula de Excel es frágil con horas de
-        // 1-2 dígitos y distintos tipos de guion, así que solo se
-        // comprueba que haya ":" y "-" en algún sitio; la validación de
-        // verdad la hace parseHorarioSheet() al subir el fichero.
-        sheet.getCell(r, 1).dataValidation = {
-            type: 'custom',
-            allowBlank: true,
-            formulae: [`AND(ISNUMBER(SEARCH(":",A${r})),ISNUMBER(SEARCH("-",A${r})))`],
-            showErrorMessage: true,
-            errorStyle: 'warning',
-            errorTitle: 'Formato de hora',
-            error: 'Se esperaba algo como "08:15 - 09:10". Puedes continuar igualmente.',
-        };
+        // Sin validación en la columna Hora: al principio comprobaba que
+        // hubiera ":" y "-" (pensada solo para rangos de horas), pero la
+        // columna admite igual de bien una etiqueta libre sin horas
+        // (p.ej. "Recreo", igual que las franjas horarias de la propia
+        // app) — ver `parseHorarioSheet`. Poner una validación ahí habría
+        // repetido el mismo error de falso positivo que ya se corrigió en
+        // las celdas de fecha (avisar de algo que en realidad es válido).
 
         DIAS_SEMANA.forEach((_, d) => {
             const colInicio = colInicioDia(d);
@@ -918,12 +915,15 @@ function parseHorarioSheet(sheet: import('exceljs').Worksheet, errores: string[]
             continue;
         }
 
+        // Admite un rango real ("08:15 - 09:10") o, si no lo parsea, una
+        // etiqueta libre para toda la franja (p.ej. "Recreo") — igual de
+        // válido que las franjas horarias de la propia app, que tampoco
+        // exigen horas. `buildImportPlan` (compartido con la importación
+        // PDF) construye el nombre final de la franja como
+        // "inicio-fin" salvo que coincidan, en cuyo caso usa solo el
+        // texto — así una etiqueta libre no sale duplicada.
         const rango = parsearRangoHoras(horaTexto);
-        if (!rango) {
-            errores.push(`Fila ${r} (Horario): rango de horas inválido: "${horaTexto}" (usa HH:MM - HH:MM).`);
-            continue;
-        }
-        const [horaInicio, horaFin] = rango;
+        const [horaInicio, horaFin] = rango ?? [horaTexto, horaTexto];
 
         for (const { bloque, mapa } of bloquesConMapa) {
             const asignatura = celdaTexto(row.getCell(mapa.materia).value);

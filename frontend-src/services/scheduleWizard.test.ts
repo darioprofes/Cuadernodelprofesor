@@ -21,9 +21,11 @@ const ALUMNADO_FILA_DATOS_INICIO = ALUMNADO_FILA_CABECERA + 1;
 const CURSO_FILA_NOMBRE = PRIMERA_FILA_CONTENIDO;
 const CURSO_FILA_INICIO = PRIMERA_FILA_CONTENIDO + 1;
 const CURSO_FILA_FIN = PRIMERA_FILA_CONTENIDO + 2;
-const FESTIVOS_FILA_INICIO = PRIMERA_FILA_CONTENIDO + 6; // 9
-const FESTIVOS_FILAS = 20;
-const EVALUACIONES_FILA_INICIO = FESTIVOS_FILA_INICIO + FESTIVOS_FILAS + 3; // 32
+// Periodos de evaluación va ANTES que Festivos (ver scheduleWizard.ts) —
+// mismo orden reproducido aquí.
+const EVALUACIONES_FILA_INICIO = PRIMERA_FILA_CONTENIDO + 6; // 9
+const EVALUACIONES_FILAS = 10;
+const FESTIVOS_FILA_INICIO = EVALUACIONES_FILA_INICIO + EVALUACIONES_FILAS + 3; // 22
 
 interface DatosDia {
     nivel?: string;
@@ -185,18 +187,22 @@ describe('scheduleWizard', () => {
             expect(errores).toEqual([]);
         });
 
-        it('reporta un rango de horas inválido como error de fila, sin abortar el resto', async () => {
+        // Bug real reportado por el usuario: la columna Hora exigía un rango
+        // "HH:MM - HH:MM" cuando la propia app (Ajustes → Horario Semanal)
+        // acepta una etiqueta libre sin horas para una franja (p.ej.
+        // "Recreo") — el Excel no puede ser más estricto que la app.
+        it('acepta una etiqueta libre sin horas en la columna Hora (p.ej. "Recreo"), sin error', async () => {
             const buffer = await buildWorkbook({
                 horario: [
-                    { hora: 'no-es-una-hora', dias: [{ materia: 'Guardia' }] },
+                    { hora: 'Recreo', dias: [{ materia: 'Guardia' }] },
                     { hora: '09:10 - 10:05', dias: [{ materia: 'Matemáticas' }] },
                 ],
             });
             const { filas, errores } = await parseWorkbook(buffer);
-            expect(errores).toHaveLength(1);
-            expect(errores[0]).toMatch(/rango de horas inválido/i);
-            expect(filas).toHaveLength(1);
-            expect(filas[0].asignatura).toBe('Matemáticas');
+            expect(errores).toEqual([]);
+            expect(filas).toHaveLength(2);
+            expect(filas[0]).toMatchObject({ hora_inicio: 'Recreo', hora_fin: 'Recreo', asignatura: 'Guardia' });
+            expect(filas[1]).toMatchObject({ hora_inicio: '09:10', hora_fin: '10:05', asignatura: 'Matemáticas' });
         });
 
         it('el orden de las subcolumnas (Nivel/Materia/Grupo/Aula) dentro de un bloque de día no importa', async () => {
