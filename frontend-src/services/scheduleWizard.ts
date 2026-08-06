@@ -204,6 +204,30 @@ const parsearFechaISO = (texto: string): string | null => {
     return `${yStr}-${moStr}-${dStr}`;
 };
 
+const fechaISOaDate = (iso: string): Date => new Date(fechaISOaUTC(iso));
+
+// Las celdas de fecha llevan `numFmt` explícito (ver `FORMATO_FECHA`,
+// formato español dd/mm/yyyy) para que Excel las trate como fechas reales
+// en vez de texto libre — bug real reportado por el usuario: en una
+// celda sin formato de fecha, al teclear una fecha Excel la reconocía por
+// su cuenta y la mostraba con el formato corto que tuviera el sistema en
+// ese momento, sin control. Con el numFmt ya fijado de antemano, exceljs
+// devuelve un objeto Date real al leer el fichero (confirmado contra su
+// comportamiento real, no asumido) en vez de una cadena de texto — se lee
+// con getUTC*, igual criterio que el resto de fechas de este fichero,
+// para no depender del huso horario de la máquina. Se mantiene además el
+// parseo de texto por si acaso (pegar como texto, o abrir con un programa
+// que no respete el numFmt) — en ese caso sigue esperando AAAA-MM-DD, el
+// formato interno de esta app (no el que ve el profesor en Excel).
+const leerCeldaFecha = (valor: unknown): { texto: string; fecha: string | null } => {
+    if (valor instanceof Date) {
+        const iso = utcAFechaISO(valor.getTime());
+        return { texto: iso, fecha: iso };
+    }
+    const texto = celdaTexto(valor);
+    return { texto, fecha: texto ? parsearFechaISO(texto) : null };
+};
+
 // Mismo reparto que _default_evaluation_periods en
 // api/app/services/academic_years.py (tercios por días naturales, división
 // entera) — portado aquí para que la plantilla pueda prellenar los 3
@@ -223,18 +247,25 @@ export const defaultEvaluationPeriods = (startDate: string, endDate: string): Fi
     ];
 };
 
-// Aviso de formato (no bloqueante) para una celda de fecha en texto libre —
-// mismo criterio tolerante que ya usa la celda Hora de la hoja Horario.
-const setDateHint = (cell: import('exceljs').Cell) => {
-    cell.dataValidation = {
-        type: 'custom',
-        allowBlank: true,
-        formulae: [`ISNUMBER(SEARCH("-",${cell.address}))`],
-        showErrorMessage: true,
-        errorStyle: 'warning',
-        errorTitle: 'Formato de fecha',
-        error: 'Se esperaba el formato AAAA-MM-DD. Puedes continuar igualmente.',
-    };
+const FORMATO_FECHA = 'dd/mm/yyyy'; // formato español, pedido explícito del usuario
+
+// Deja la celda lista para admitir una fecha real: solo `numFmt` explícito
+// (para que Excel no le aplique su propio formato corto por defecto al
+// reconocer una fecha tecleada, y para que se muestre siempre en
+// AAAA-MM-DD). Sin validación de aviso: la primera versión comprobaba
+// `SEARCH("-", celda)`, pensada para texto libre — pero para un valor que
+// Excel YA reconoció como fecha real (justo lo que se busca con el
+// numFmt), SEARCH/FIND con un argumento numérico lo convierte a texto con
+// el formato numérico genérico (el número de serie, sin guiones), no con
+// el numFmt visible de la celda — así que la validación saltaba SIEMPRE,
+// incluso tecleando exactamente "2026-09-13" (bug real reportado por el
+// usuario, y error de razonamiento mío la primera vez: asumí que SEARCH
+// respetaba el formato de visualización). No hay una validación de aviso
+// sencilla y fiable que sirva a la vez para texto libre y fecha real, así
+// que se prescinde de ella — `leerCeldaFecha()` ya admite ambos casos al
+// parsear, que es donde de verdad hace falta la tolerancia.
+const prepararCeldaFecha = (cell: import('exceljs').Cell) => {
+    cell.numFmt = FORMATO_FECHA;
 };
 
 // Rango de una columna de Configuración, para usar como fuente de un
@@ -406,18 +437,20 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
 
     // Los iconos de estas 3 etiquetas son solo decorativos: el parseo lee
     // B3/B4/B5 directamente por posición, nunca por el texto de A3/A4/A5.
-    const setEtiqueta = (fila: number, etiqueta: string, valor?: string) => {
+    const setEtiqueta = (fila: number, etiqueta: string) => {
         const etiquetaCell = sheet.getCell(fila, 1);
         etiquetaCell.value = etiqueta;
         etiquetaCell.font = { bold: true };
         etiquetaCell.alignment = { vertical: 'middle' };
-        if (valor) sheet.getCell(fila, 2).value = valor;
     };
-    setEtiqueta(CURSO_FILA_NOMBRE, '🏷️ Nombre del curso', prefill?.label);
-    setEtiqueta(CURSO_FILA_INICIO, '📅 Fecha de inicio (AAAA-MM-DD)', prefill?.startDate);
-    setEtiqueta(CURSO_FILA_FIN, '📅 Fecha de fin (AAAA-MM-DD)', prefill?.endDate);
-    setDateHint(sheet.getCell(CURSO_FILA_INICIO, 2));
-    setDateHint(sheet.getCell(CURSO_FILA_FIN, 2));
+    setEtiqueta(CURSO_FILA_NOMBRE, '🏷️ Nombre del curso');
+    setEtiqueta(CURSO_FILA_INICIO, '📅 Fecha de inicio');
+    setEtiqueta(CURSO_FILA_FIN, '📅 Fecha de fin');
+    if (prefill?.label) sheet.getCell(CURSO_FILA_NOMBRE, 2).value = prefill.label;
+    if (prefill?.startDate) sheet.getCell(CURSO_FILA_INICIO, 2).value = fechaISOaDate(prefill.startDate);
+    if (prefill?.endDate) sheet.getCell(CURSO_FILA_FIN, 2).value = fechaISOaDate(prefill.endDate);
+    prepararCeldaFecha(sheet.getCell(CURSO_FILA_INICIO, 2));
+    prepararCeldaFecha(sheet.getCell(CURSO_FILA_FIN, 2));
 
     const tituloSeccion = (fila: number, colFin: number, texto: string) => {
         sheet.mergeCells(fila, 1, fila, colFin);
@@ -435,28 +468,28 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
     };
 
     tituloSeccion(FESTIVOS_FILA_TITULO, 3, '🎉 Festivos y días no lectivos');
-    cabeceraTabla(FESTIVOS_FILA_CABECERA, ['Nombre', 'Fecha inicio (AAAA-MM-DD)', 'Fecha fin (AAAA-MM-DD)']);
+    cabeceraTabla(FESTIVOS_FILA_CABECERA, ['Nombre', 'Fecha inicio', 'Fecha fin']);
     for (let i = 0; i < FESTIVOS_FILAS; i++) {
         const r = FESTIVOS_FILA_INICIO + i;
         for (let c = 1; c <= 3; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
-        setDateHint(sheet.getCell(r, 2));
-        setDateHint(sheet.getCell(r, 3));
+        prepararCeldaFecha(sheet.getCell(r, 2));
+        prepararCeldaFecha(sheet.getCell(r, 3));
     }
 
     tituloSeccion(EVALUACIONES_FILA_TITULO, 4, '📊 Periodos de evaluación');
-    cabeceraTabla(EVALUACIONES_FILA_CABECERA, ['Nombre', 'Fecha inicio (AAAA-MM-DD)', 'Fecha fin (AAAA-MM-DD)', 'Peso']);
+    cabeceraTabla(EVALUACIONES_FILA_CABECERA, ['Nombre', 'Fecha inicio', 'Fecha fin', 'Peso']);
     for (let i = 0; i < EVALUACIONES_FILAS; i++) {
         const r = EVALUACIONES_FILA_INICIO + i;
         for (let c = 1; c <= 4; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
-        setDateHint(sheet.getCell(r, 2));
-        setDateHint(sheet.getCell(r, 3));
+        prepararCeldaFecha(sheet.getCell(r, 2));
+        prepararCeldaFecha(sheet.getCell(r, 3));
     }
     if (prefill?.startDate && prefill?.endDate) {
         defaultEvaluationPeriods(prefill.startDate, prefill.endDate).forEach((p, i) => {
             const r = EVALUACIONES_FILA_INICIO + i;
             sheet.getCell(r, 1).value = p.nombre;
-            sheet.getCell(r, 2).value = p.fechaInicio;
-            sheet.getCell(r, 3).value = p.fechaFin;
+            sheet.getCell(r, 2).value = fechaISOaDate(p.fechaInicio);
+            sheet.getCell(r, 3).value = fechaISOaDate(p.fechaFin);
             sheet.getCell(r, 4).value = p.peso;
         });
     }
@@ -684,9 +717,10 @@ function buildAlumnadoSheet(wb: import('exceljs').Workbook) {
     sheet.views = [{ state: 'frozen', ySplit: ALUMNADO_FILA_CABECERA }];
 
     const ejemplo = sheet.getRow(ALUMNADO_FILA_DATOS_INICIO);
-    ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', 'López', '2012-03-15', '', ''].forEach((v, i) => {
-        ejemplo.getCell(i + 1).value = v;
+    ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', 'López', '', '', ''].forEach((v, i) => {
+        if (v) ejemplo.getCell(i + 1).value = v;
     });
+    ejemplo.getCell(7).value = fechaISOaDate('2012-03-15'); // Fecha Nacimiento
 
     for (let i = 0; i < FILAS_ALUMNADO; i++) {
         const r = ALUMNADO_FILA_DATOS_INICIO + i;
@@ -694,6 +728,7 @@ function buildAlumnadoSheet(wb: import('exceljs').Workbook) {
         setListValidation(sheet.getCell(r, 1), configRange(CONFIG_COL_NIVEL));
         setListValidation(sheet.getCell(r, 2), configRange(CONFIG_COL_MATERIA));
         setListValidation(sheet.getCell(r, 3), configRange(CONFIG_COL_GRUPO));
+        prepararCeldaFecha(sheet.getCell(r, 7)); // Fecha Nacimiento
     }
 }
 
@@ -731,10 +766,8 @@ export async function parseWorkbook(buffer: ArrayBuffer): Promise<ParsedWorkbook
 // parseAlumnadoSheet).
 function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: string[]): CursoAcademicoInfo | null {
     const label = celdaTexto(sheet.getCell(CURSO_FILA_NOMBRE, 2).value);
-    const startDateTexto = celdaTexto(sheet.getCell(CURSO_FILA_INICIO, 2).value);
-    const endDateTexto = celdaTexto(sheet.getCell(CURSO_FILA_FIN, 2).value);
-    const startDate = startDateTexto ? parsearFechaISO(startDateTexto) : null;
-    const endDate = endDateTexto ? parsearFechaISO(endDateTexto) : null;
+    const { texto: startDateTexto, fecha: startDate } = leerCeldaFecha(sheet.getCell(CURSO_FILA_INICIO, 2).value);
+    const { texto: endDateTexto, fecha: endDate } = leerCeldaFecha(sheet.getCell(CURSO_FILA_FIN, 2).value);
 
     if (!label) errores.push(`Hoja "${HOJA_CURSO}": falta el nombre del curso (celda B${CURSO_FILA_NOMBRE}).`);
     if (!startDateTexto) errores.push(`Hoja "${HOJA_CURSO}": falta la fecha de inicio (celda B${CURSO_FILA_INICIO}).`);
@@ -750,11 +783,9 @@ function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: s
     const holidays: FilaFestivo[] = [];
     for (let r = FESTIVOS_FILA_INICIO; r < FESTIVOS_FILA_INICIO + FESTIVOS_FILAS; r++) {
         const nombre = celdaTexto(sheet.getCell(r, 1).value);
-        const inicioTexto = celdaTexto(sheet.getCell(r, 2).value);
-        const finTexto = celdaTexto(sheet.getCell(r, 3).value);
+        const { texto: inicioTexto, fecha: inicio } = leerCeldaFecha(sheet.getCell(r, 2).value);
+        const { texto: finTexto, fecha: fin } = leerCeldaFecha(sheet.getCell(r, 3).value);
         if (!nombre && !inicioTexto && !finTexto) continue; // fila vacía
-        const inicio = parsearFechaISO(inicioTexto);
-        const fin = parsearFechaISO(finTexto);
         if (!nombre || !inicio || !fin) {
             errores.push(`Fila ${r} (${HOJA_CURSO} — Festivos): faltan datos o la fecha no tiene forma AAAA-MM-DD.`);
             continue;
@@ -765,12 +796,10 @@ function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: s
     const evaluationPeriods: FilaPeriodoEvaluacion[] = [];
     for (let r = EVALUACIONES_FILA_INICIO; r < EVALUACIONES_FILA_INICIO + EVALUACIONES_FILAS; r++) {
         const nombre = celdaTexto(sheet.getCell(r, 1).value);
-        const inicioTexto = celdaTexto(sheet.getCell(r, 2).value);
-        const finTexto = celdaTexto(sheet.getCell(r, 3).value);
+        const { texto: inicioTexto, fecha: inicio } = leerCeldaFecha(sheet.getCell(r, 2).value);
+        const { texto: finTexto, fecha: fin } = leerCeldaFecha(sheet.getCell(r, 3).value);
         const pesoTexto = celdaTexto(sheet.getCell(r, 4).value);
         if (!nombre && !inicioTexto && !finTexto) continue; // fila vacía
-        const inicio = parsearFechaISO(inicioTexto);
-        const fin = parsearFechaISO(finTexto);
         if (!nombre || !inicio || !fin) {
             errores.push(`Fila ${r} (${HOJA_CURSO} — Periodos de evaluación): faltan datos o la fecha no tiene forma AAAA-MM-DD.`);
             continue;
@@ -922,6 +951,13 @@ function parseAlumnadoSheet(sheet: import('exceljs').Worksheet, errores: string[
         const idx = indices.get(campo);
         return idx ? celdaTexto(row.getCell(idx).value) : '';
     };
+    // Fecha Nacimiento admite una fecha real de Excel (ver `leerCeldaFecha`)
+    // además del texto libre AAAA-MM-DD que ya se aceptaba — sin bloquear
+    // la fila si no encaja en ninguno de los dos, es un campo opcional.
+    const valorFecha = (row: import('exceljs').Row, campo: string): string | null => {
+        const idx = indices.get(campo);
+        return idx ? leerCeldaFecha(row.getCell(idx).value).fecha : null;
+    };
 
     const alumnado: FilaAlumnado[] = [];
 
@@ -954,7 +990,7 @@ function parseAlumnadoSheet(sheet: import('exceljs').Worksheet, errores: string[
             nombre,
             primerApellido,
             segundoApellido: valor(row, 'segundoapellido'),
-            fechaNacimiento: valor(row, 'fechanacimiento') || null,
+            fechaNacimiento: valorFecha(row, 'fechanacimiento'),
             dni: valor(row, 'dni') || null,
             acneae: acneaeTexto ? acneaeTexto.split(',').map(s => s.trim()).filter(Boolean) : [],
         });

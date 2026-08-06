@@ -71,7 +71,7 @@ function addHorarioSheet(wb: import('exceljs').Workbook, filas: FilaHorarioTest[
     return sheet;
 }
 
-function addAlumnadoSheet(wb: import('exceljs').Workbook, opts?: { cabecera?: string[]; filas?: (string | undefined)[][] }) {
+function addAlumnadoSheet(wb: import('exceljs').Workbook, opts?: { cabecera?: string[]; filas?: (string | Date | undefined)[][] }) {
     const sheet = wb.addWorksheet('Alumnado');
     const cabecera = opts?.cabecera ?? ALUMNADO_CABECERA;
     cabecera.forEach((v, i) => { sheet.getCell(ALUMNADO_FILA_CABECERA, i + 1).value = v; });
@@ -81,12 +81,19 @@ function addAlumnadoSheet(wb: import('exceljs').Workbook, opts?: { cabecera?: st
     return sheet;
 }
 
+// Las fechas admiten `string` (texto libre AAAA-MM-DD) o `Date` (simula lo
+// que exceljs devuelve para una celda con numFmt de fecha real — el
+// camino que realmente toma Excel al reconocer una fecha tecleada, ver
+// `leerCeldaFecha` en scheduleWizard.ts) — ambos caminos deben parsear
+// igual.
+type FechaTest = string | Date;
+
 interface DatosCursoAcademico {
     label?: string;
-    startDate?: string;
-    endDate?: string;
-    holidays?: [string, string, string][]; // [nombre, inicio, fin]
-    evaluationPeriods?: [string, string, string, string?][]; // [nombre, inicio, fin, peso?]
+    startDate?: FechaTest;
+    endDate?: FechaTest;
+    holidays?: [string, FechaTest, FechaTest][]; // [nombre, inicio, fin]
+    evaluationPeriods?: [string, FechaTest, FechaTest, string?][]; // [nombre, inicio, fin, peso?]
 }
 
 const CURSO_ACADEMICO_POR_DEFECTO: DatosCursoAcademico = { label: '2026-2027', startDate: '2026-09-09', endDate: '2027-06-23' };
@@ -125,7 +132,7 @@ function addCursoAcademicoSheet(wb: import('exceljs').Workbook, datos: DatosCurs
 async function buildWorkbook(opts: {
     horario?: FilaHorarioTest[];
     horarioSubcolsOrden?: readonly string[];
-    alumnado?: { cabecera?: string[]; filas: (string | undefined)[][] };
+    alumnado?: { cabecera?: string[]; filas: (string | Date | undefined)[][] };
     cursoAcademico?: DatosCursoAcademico;
     omitirHojas?: string[];
 }): Promise<ArrayBuffer> {
@@ -293,6 +300,21 @@ describe('scheduleWizard', () => {
             expect(alumnado[0].acneae).toEqual([]);
         });
 
+        // Mismo bug/fix que en Curso Académico: Fecha Nacimiento admite una
+        // celda de fecha real (Date), no solo texto AAAA-MM-DD.
+        it('acepta Fecha Nacimiento como celda de fecha real (Date)', async () => {
+            const buffer = await buildWorkbook({
+                alumnado: {
+                    filas: [
+                        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', undefined, new Date(Date.UTC(2012, 2, 15)), undefined, undefined],
+                    ],
+                },
+            });
+            const { alumnado, errores } = await parseWorkbook(buffer);
+            expect(errores).toEqual([]);
+            expect(alumnado[0]?.fechaNacimiento).toBe('2012-03-15');
+        });
+
         it('reporta como error una fila sin Nivel/Materia/Grupo (no se puede resolver la clase)', async () => {
             const buffer = await buildWorkbook({
                 alumnado: {
@@ -424,6 +446,44 @@ describe('scheduleWizard', () => {
             expect(errores).toHaveLength(1);
             expect(errores[0]).toMatch(/Festivos/);
             expect(cursoAcademico?.holidays).toEqual([{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08' }]);
+        });
+
+        // Bug real reportado por el usuario: en una celda sin numFmt de
+        // fecha, Excel reconocía el texto tecleado como fecha por su
+        // cuenta y lo reformateaba con el formato corto por defecto del
+        // sistema (barras, no guiones) — la validación de aviso entonces
+        // saltaba con un valor que a simple vista parecía correcto. Fix:
+        // numFmt='yyyy-mm-dd' explícito + lectura de celdas Date reales
+        // (`leerCeldaFecha`). Estos tests simulan justo eso: una celda
+        // cuyo valor NO es texto sino un objeto Date real, tal como lo
+        // devuelve exceljs para una celda de fecha (confirmado contra su
+        // comportamiento real, no asumido).
+        it('acepta fechas de inicio/fin como celdas de fecha reales (Date), no solo texto', async () => {
+            const buffer = await buildWorkbook({
+                cursoAcademico: {
+                    label: '2026-2027',
+                    startDate: new Date(Date.UTC(2026, 8, 9)),
+                    endDate: new Date(Date.UTC(2027, 5, 23)),
+                },
+            });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(errores).toEqual([]);
+            expect(cursoAcademico?.startDate).toBe('2026-09-09');
+            expect(cursoAcademico?.endDate).toBe('2027-06-23');
+        });
+
+        it('acepta fechas de festivos y periodos de evaluación como celdas de fecha reales (Date)', async () => {
+            const buffer = await buildWorkbook({
+                cursoAcademico: {
+                    ...CURSO_ACADEMICO_POR_DEFECTO,
+                    holidays: [['Navidad', new Date(Date.UTC(2026, 11, 23)), new Date(Date.UTC(2027, 0, 8))]],
+                    evaluationPeriods: [['1ª Evaluación', new Date(Date.UTC(2026, 8, 9)), new Date(Date.UTC(2026, 11, 1)), '1']],
+                },
+            });
+            const { cursoAcademico, errores } = await parseWorkbook(buffer);
+            expect(errores).toEqual([]);
+            expect(cursoAcademico?.holidays).toEqual([{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08' }]);
+            expect(cursoAcademico?.evaluationPeriods).toEqual([{ nombre: '1ª Evaluación', fechaInicio: '2026-09-09', fechaFin: '2026-12-01', peso: 1 }]);
         });
     });
 
