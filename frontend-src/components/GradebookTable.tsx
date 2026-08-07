@@ -1,9 +1,11 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
+import Input from './Input';
 import Badge from './Badge';
 import { linkHoverClassName } from '../theme/components/Link';
 import { SEMANTIC } from '../theme/palette';
@@ -13,16 +15,27 @@ import AssignmentModal from './AssignmentModal';
 import GradeEntryModal from './GradeEntryModal';
 import CategoryModal from './CategoryModal';
 import AcneaeTag from './AcneaeTag';
+import StudentAvatar from './StudentAvatar';
+import ExistingStudentPicker from './ExistingStudentPicker';
 import { calculateAssignmentScoresForStudent, calculateEvaluationPeriodGradeForStudent, calculateOverallFinalGradeForStudent, calculateCriterionScoresFromTool, getGradeColorClass, calculatePeriodGradeCriterial, calculateFinalGradeCriterial, calculateCategoryAverageForStudent } from '../services/gradeCalculations';
 import BulkGradeImportModal from './BulkGradeImportModal';
+import BulkAddStudentModal from './BulkAddStudentModal';
 import StudentSummaryModal from './StudentSummaryModal';
+import StudentPersonalDataModal from './StudentPersonalDataModal';
+import PlanoClaseModal from './PlanoClaseModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ClassLabel from './ClassLabel';
-import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto } from '../utils';
+import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getDayOfWeek1a7 } from '../utils';
 import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
 import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '../hooks/useAssignments';
 import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
-import { encodeGradeInput } from '../services/apiAdapters';
+import { useApiStudents, useUpdateStudent } from '../hooks/useApiStudents';
+import { useAbsences, usePutAbsence, useDeleteAbsence } from '../hooks/useAbsences';
+import type { TipoFalta } from '../types/api';
+import { useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from '../hooks/useEnrollments';
+import { useUpdateClass } from '../hooks/useApiClasses';
+import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
+import { encodeGradeInput, splitStudentPatch, syncStudentPhoto } from '../services/apiAdapters';
 
 
 interface GradebookTableProps {
@@ -107,6 +120,201 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
   // State for Copy Assignment Modal
   const [assignmentToCopy, setAssignmentToCopy] = useState<Assignment | null>(null);
+
+  // Panel de alumnado: avatar+ficha+plano+añadir/quitar directamente desde
+  // el Cuaderno, sin pasar por la sección "Clases" (retirada, ver plan
+  // cuaderno-panel-alumnado.md). Mismo patrón de menú contextual ya usado
+  // antes en ClasesView.tsx.
+  const queryClient = useQueryClient();
+  const currentYear = useCurrentAcademicYear();
+  const yearId = currentYear.data?.id ?? '';
+  const remoteStudents = useApiStudents();
+  const createEnrollmentMutation = useCreateEnrollment();
+  const updateEnrollmentMutation = useUpdateEnrollment();
+  const deleteEnrollmentMutation = useDeleteEnrollment();
+  const updateStudentMutation = useUpdateStudent();
+  const updateClassMutation = useUpdateClass();
+
+  const [studentContextMenu, setStudentContextMenu] = useState<{ x: number; y: number; student: Student } | null>(null);
+  const [fichaEditTarget, setFichaEditTarget] = useState<Student | null>(null);
+  const [isPlanoOpen, setIsPlanoOpen] = useState(false);
+  const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [drawnStudentIds, setDrawnStudentIds] = useState<Set<string>>(new Set());
+  const [lastDrawnStudent, setLastDrawnStudent] = useState<Student | null>(null);
+
+  useEffect(() => {
+      if (!studentContextMenu) return;
+      const close = () => setStudentContextMenu(null);
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
+  }, [studentContextMenu]);
+
+  // Reinicia el sorteo si cambia el alumnado (alta/baja) para no quedarse
+  // con ids de alumnado que ya no está en la clase.
+  useEffect(() => {
+      setDrawnStudentIds(new Set());
+      setLastDrawnStudent(null);
+  }, [classData.id]);
+
+  const openStudentContextMenu = (e: React.MouseEvent, student: Student) => {
+      e.preventDefault();
+      setStudentContextMenu({ x: e.clientX, y: e.clientY, student });
+  };
+
+  const visibleStudents = useMemo(() => {
+      const q = studentSearch.trim().toLowerCase();
+      if (!q) return classData.students;
+      return classData.students.filter(s => getNombreCompleto(s).toLowerCase().includes(q));
+  }, [classData.students, studentSearch]);
+
+  const handleDeleteStudentFromClass = async (student: Student) => {
+      if (!window.confirm(`¿Seguro que quieres eliminar a ${getNombreCompleto(student)} de esta clase? Se perderán todas sus calificaciones.`)) {
+          return;
+      }
+      if (!student.enrollmentId) return;
+      await deleteEnrollmentMutation.mutateAsync({ id: student.enrollmentId, classId: classData.id });
+  };
+
+  const handleSaveFichaEdit = async (studentId: string, data: Partial<Student>) => {
+      const enrollment = classData.students.find(s => s.id === studentId);
+      const { studentPatch, enrollmentPatch } = splitStudentPatch(data);
+      if (Object.keys(studentPatch).length > 0) {
+          await updateStudentMutation.mutateAsync({ id: studentId, data: studentPatch });
+      }
+      if (enrollment?.enrollmentId && Object.keys(enrollmentPatch).length > 0) {
+          await updateEnrollmentMutation.mutateAsync({ id: enrollment.enrollmentId, classId: classData.id, data: enrollmentPatch });
+      }
+      if ('foto' in data) {
+          await syncStudentPhoto(studentId, data.foto);
+          queryClient.invalidateQueries({ queryKey: ['students'] });
+      }
+  };
+
+  const handleEnrollExisting = async (studentId: string) => {
+      await createEnrollmentMutation.mutateAsync({ classId: classData.id, data: { studentId } });
+  };
+
+  const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => {
+      for (const data of newStudentData) {
+          await createEnrollmentMutation.mutateAsync({
+              classId: classData.id,
+              data: { newStudent: { nombre: data.nombre, primerApellido: data.primerApellido, segundoApellido: data.segundoApellido }, acneae: data.acneae },
+          });
+      }
+      setIsBulkAddOpen(false);
+  };
+
+  const handleUpdateMesaProfesor = async (x: number, y: number) => {
+      await updateClassMutation.mutateAsync({ id: classData.id, yearId, data: { mesaProfesorX: x, mesaProfesorY: y } });
+  };
+
+  const handleUpdateStudentPosition = async (studentId: string, x: number, y: number) => {
+      const student = classData.students.find(s => s.id === studentId);
+      if (student?.enrollmentId) {
+          await updateEnrollmentMutation.mutateAsync({ id: student.enrollmentId, classId: classData.id, data: { planoX: x, planoY: y } });
+      }
+  };
+
+  // Selector aleatorio sin repetición ("dado"): baraja el alumnado de la
+  // clase y va sacando uno a uno sin repetir hasta agotar el grupo, momento
+  // en el que se vuelve a barajar solo — útil para preguntas al azar.
+  const handleDrawStudent = () => {
+      const pool = classData.students.filter(s => !drawnStudentIds.has(s.id));
+      const source = pool.length > 0 ? pool : classData.students;
+      const nextDrawnIds = pool.length > 0 ? drawnStudentIds : new Set<string>();
+      if (source.length === 0) return;
+      const picked = source[Math.floor(Math.random() * source.length)];
+      setDrawnStudentIds(new Set(nextDrawnIds).add(picked.id));
+      setLastDrawnStudent(picked);
+  };
+
+  const handleResetDraw = () => {
+      setDrawnStudentIds(new Set());
+      setLastDrawnStudent(null);
+  };
+
+  // Pestaña "Asistencia": faltas locales (tabla `absences`), independiente
+  // de Educastur — ver plan integracion-educastur-faltas.md. La
+  // sincronización real se añade en un bloque aparte (necesita credenciales
+  // reales del profesor para probarse, no se puede verificar en local).
+  const [gradebookTab, setGradebookTab] = useState<'calificaciones' | 'asistencia'>('calificaciones');
+  const [extraAsistenciaDates, setExtraAsistenciaDates] = useState<string[]>([]);
+  const [absenceContextMenu, setAbsenceContextMenu] = useState<{ x: number; y: number; enrollmentId: string; date: string; periodIndex: number } | null>(null);
+
+  const absencesQuery = useAbsences(classData.id, { enabled: gradebookTab === 'asistencia' });
+  const putAbsenceMutation = usePutAbsence();
+  const deleteAbsenceMutation = useDeleteAbsence();
+
+  useEffect(() => {
+      if (!absenceContextMenu) return;
+      const close = () => setAbsenceContextMenu(null);
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
+  }, [absenceContextMenu]);
+
+  const todayISO = useMemo(() => toYYYYMMDD(new Date()), []);
+
+  // Resuelve la franja horaria de esa clase para una fecha dada, a partir de
+  // su horario semanal — si tiene más de una sesión ese día de la semana, se
+  // usa la primera (simplificación aceptada: caso muy poco habitual).
+  const resolvePeriodIndexForDate = (dateStr: string): number | null => {
+      const dow = getDayOfWeek1a7(new Date(`${dateStr}T00:00:00`));
+      const slot = (classData.schedule || []).find(s => s.day === dow);
+      return slot ? slot.periodIndex : null;
+  };
+
+  const absenceMap = useMemo(() => {
+      const map = new Map<string, import('../types/api').Absence>();
+      (absencesQuery.data ?? []).forEach(a => map.set(`${a.enrollmentId}|${a.date}|${a.periodIndex}`, a));
+      return map;
+  }, [absencesQuery.data]);
+
+  const asistenciaColumns = useMemo(() => {
+      const historicDates = new Set<string>();
+      (absencesQuery.data ?? []).forEach(a => { if (a.date !== todayISO) historicDates.add(a.date); });
+      extraAsistenciaDates.forEach(d => { if (d !== todayISO) historicDates.add(d); });
+      const sorted = Array.from(historicDates).sort((a, b) => b.localeCompare(a));
+      return [todayISO, ...sorted];
+  }, [absencesQuery.data, extraAsistenciaDates, todayISO]);
+
+  const pendingSyncCount = (absencesQuery.data ?? []).filter(a => !a.syncedAt).length;
+
+  const handleAbsenceClick = (enrollmentId: string, date: string) => {
+      const periodIndex = resolvePeriodIndexForDate(date);
+      if (periodIndex === null) return;
+      putAbsenceMutation.mutate({ enrollmentId, classId: classData.id, data: { date, periodIndex, tipoFalta: 'I' } });
+  };
+
+  const openAbsenceContextMenu = (e: React.MouseEvent, enrollmentId: string, date: string) => {
+      e.preventDefault();
+      const periodIndex = resolvePeriodIndexForDate(date);
+      if (periodIndex === null) return;
+      setAbsenceContextMenu({ x: e.clientX, y: e.clientY, enrollmentId, date, periodIndex });
+  };
+
+  const handleSetAbsenceType = (tipo: TipoFalta) => {
+      if (!absenceContextMenu) return;
+      const { enrollmentId, date, periodIndex } = absenceContextMenu;
+      putAbsenceMutation.mutate({ enrollmentId, classId: classData.id, data: { date, periodIndex, tipoFalta: tipo } });
+      setAbsenceContextMenu(null);
+  };
+
+  const handleClearAbsence = () => {
+      if (!absenceContextMenu) return;
+      const { enrollmentId, date, periodIndex } = absenceContextMenu;
+      deleteAbsenceMutation.mutate({ enrollmentId, classId: classData.id, date, periodIndex });
+      setAbsenceContextMenu(null);
+  };
+
+  const ABSENCE_COLORS: Record<TipoFalta, string> = {
+      I: 'bg-red-100 text-red-700 border-red-300',
+      J: 'bg-emerald-100 text-emerald-700 border-emerald-300',
+      R: 'bg-amber-100 text-amber-700 border-amber-300',
+  };
+  const ABSENCE_LABELS: Record<TipoFalta, string> = { I: 'Injustificada', J: 'Justificada', R: 'Retraso' };
 
   // Auto-select the current period based on date
   useEffect(() => {
@@ -465,6 +673,30 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
         <div className="flex items-center gap-3 min-w-0">
             <BookOpenIcon className="w-6 h-6 flex-shrink-0 text-white/90" />
             <ClassLabel classData={classData} courses={allCourses} className="text-lg font-bold text-white truncate" />
+            <button
+                onClick={() => setIsPlanoOpen(true)}
+                className="p-1.5 rounded-md text-white/90 hover:bg-white/15 transition-all flex-shrink-0"
+                title="Plano de la clase"
+            >
+                <span className="text-base leading-none">🪑</span>
+            </button>
+            <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                    onClick={handleDrawStudent}
+                    disabled={classData.students.length === 0}
+                    className="p-1.5 rounded-md text-white/90 hover:bg-white/15 transition-all disabled:opacity-40"
+                    title="Sortear alumn@ al azar, sin repetir hasta agotar la clase"
+                >
+                    <span className="text-base leading-none">🎲</span>
+                </button>
+                {lastDrawnStudent && (
+                    <span className="text-xs font-semibold text-white bg-white/15 rounded-full px-2 py-1 flex items-center gap-1.5 whitespace-nowrap">
+                        {getNombreCompleto(lastDrawnStudent)}
+                        <span className="text-white/70 font-normal">({drawnStudentIds.size}/{classData.students.length})</span>
+                        <button onClick={handleResetDraw} title="Reiniciar sorteo" className="hover:text-white/70">↺</button>
+                    </span>
+                )}
+            </div>
         </div>
 
         {/* RIGHT: Evaluation Period Tabs */}
@@ -500,6 +732,23 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
         </div>
       </div>
 
+      <div className="flex items-center gap-1 px-4 sm:px-5 pt-3 border-b border-slate-200">
+          <button
+              onClick={() => setGradebookTab('calificaciones')}
+              className={`px-3 py-1.5 text-sm font-semibold rounded-t-md ${gradebookTab === 'calificaciones' ? 'text-slate-800 border-b-2 border-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+              Calificaciones
+          </button>
+          <button
+              onClick={() => setGradebookTab('asistencia')}
+              className={`px-3 py-1.5 text-sm font-semibold rounded-t-md ${gradebookTab === 'asistencia' ? 'text-slate-800 border-b-2 border-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+              Asistencia
+          </button>
+      </div>
+
+      {gradebookTab === 'calificaciones' && (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm text-left">
           {/* Fix: Header set to sticky top-0 to stick to the very top of scroll view area */}
@@ -507,9 +756,22 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             <tr>
               {/* Alumno Header Top Half: No bottom border, align bottom */}
               <th scope="col" className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] ${activePeriodId !== 'final' ? 'border-b-0 align-bottom' : 'align-middle'}`}>
-                  <div className="flex items-center justify-between gap-1">
-                      <span>Alumn@</span>
-                  </div>
+                  {classData.students.length > 6 ? (
+                      <div className="flex items-center gap-1 normal-case font-normal">
+                          <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                          <input
+                              type="text"
+                              value={studentSearch}
+                              onChange={e => setStudentSearch(e.target.value)}
+                              placeholder="Buscar…"
+                              className="w-full text-xs border-none focus:ring-0 p-0 bg-transparent"
+                          />
+                      </div>
+                  ) : (
+                      <div className="flex items-center justify-between gap-1">
+                          <span>Alumn@</span>
+                      </div>
+                  )}
               </th>
               {activePeriodId === 'final' ? (
                 <>
@@ -581,17 +843,21 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             )}
           </thead>
           <tbody>
-            {classData.students.map((student, index) => (
+            {visibleStudents.map((student, index) => (
               <tr key={student.id} className="bg-white border-b hover:bg-slate-50/50">
                 {/* Fix: Ensure student cell has z-10 to slide UNDER the sticky header (z-30) but over standard cells if scrolling horizontal */}
-                <td className={`${studentCellPad} font-medium text-slate-900 sticky left-0 bg-white hover:bg-slate-50/50 z-10 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group`}>
+                <td
+                    className={`${studentCellPad} font-medium text-slate-900 sticky left-0 bg-white hover:bg-slate-50/50 z-10 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group`}
+                    onContextMenu={e => openStudentContextMenu(e, student)}
+                >
                     <div className="flex items-center gap-1 w-full">
                         <span className="text-xs text-slate-400 w-5 text-right font-mono shrink-0 mr-1">{index + 1}</span>
-                        <button 
+                        <button
                             onClick={() => setSelectedStudentForSummary(student)}
                             className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                         >
-                            <AcneaeTag tags={student.acneae}/> 
+                            <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} />
+                            <AcneaeTag tags={student.acneae}/>
                             <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                         </button>
                     </div>
@@ -647,6 +913,16 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           </tbody>
         </table>
       </div>
+      <div className="p-3 border-t bg-slate-50/50 space-y-2">
+          <button onClick={() => setIsBulkAddOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-green-600 hover:bg-green-100 bg-white rounded-md border border-slate-200 shadow-sm">
+              + Añadir alumn@
+          </button>
+          <ExistingStudentPicker
+              allStudents={remoteStudents.data ?? []}
+              alreadyEnrolledIds={new Set(classData.students.map(s => s.id))}
+              onEnroll={handleEnrollExisting}
+          />
+      </div>
        {activePeriodId !== 'final' && (
           <div className="p-4 border-t flex justify-start items-center bg-slate-200 rounded-b-xl">
             <div className="relative" ref={copyCatRef}>
@@ -692,10 +968,148 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             </div>
           </div>
        )}
+      </>
+      )}
+
+      {gradebookTab === 'asistencia' && (
+      <div>
+        <div className="p-3 border-b bg-slate-50/50 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+                <span>Añadir un día concreto:</span>
+                <input
+                    type="date"
+                    onChange={e => {
+                        const picked = e.target.value;
+                        if (picked) {
+                            setExtraAsistenciaDates(prev => Array.from(new Set([...prev, picked])));
+                            e.target.value = '';
+                        }
+                    }}
+                    className="border border-slate-300 rounded-md text-sm px-2 py-1"
+                />
+            </div>
+            <span className="text-xs text-slate-500">{pendingSyncCount} falta(s) sin sincronizar con Educastur</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm text-left">
+            <thead className="text-xs uppercase sticky top-0 z-20 shadow-sm bg-white">
+              <tr>
+                <th className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]`}>Alumn@</th>
+                {asistenciaColumns.map(date => (
+                  <th key={date} className={`${headerPad} font-semibold text-center bg-white text-slate-700 border-l border-slate-200 min-w-[90px] ${date === todayISO ? 'bg-blue-50' : ''}`}>
+                      {date === todayISO ? 'Hoy' : date.split('-').reverse().join('/')}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleStudents.map((student, index) => (
+                <tr key={student.id} className="bg-white border-b hover:bg-slate-50/50">
+                  <td className={`${studentCellPad} font-medium text-slate-900 sticky left-0 bg-white hover:bg-slate-50/50 z-10 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}>
+                      <div className="flex items-center gap-1 w-full">
+                          <span className="text-xs text-slate-400 w-5 text-right font-mono shrink-0 mr-1">{index + 1}</span>
+                          <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} />
+                          <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
+                      </div>
+                  </td>
+                  {asistenciaColumns.map(date => {
+                      const periodIndex = resolvePeriodIndexForDate(date);
+                      const absence = student.enrollmentId && periodIndex !== null
+                          ? absenceMap.get(`${student.enrollmentId}|${date}|${periodIndex}`)
+                          : undefined;
+                      return (
+                          <td
+                              key={date}
+                              className={`${cellPad} text-center border-l border-slate-200 ${periodIndex === null ? 'bg-slate-50' : 'cursor-pointer hover:bg-slate-50'}`}
+                              onClick={() => student.enrollmentId && handleAbsenceClick(student.enrollmentId, date)}
+                              onContextMenu={e => student.enrollmentId && openAbsenceContextMenu(e, student.enrollmentId, date)}
+                          >
+                              {periodIndex === null ? (
+                                  <span className="text-slate-300 text-xs">—</span>
+                              ) : absence ? (
+                                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full border text-xs font-bold ${ABSENCE_COLORS[absence.tipoFalta]}`} title={ABSENCE_LABELS[absence.tipoFalta]}>
+                                      {absence.tipoFalta}
+                                  </span>
+                              ) : null}
+                          </td>
+                      );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
+
+      {absenceContextMenu && (
+          <>
+              <div className="fixed inset-0 z-40" onMouseDown={() => setAbsenceContextMenu(null)} />
+              <div
+                  style={{ position: 'fixed', top: absenceContextMenu.y, left: absenceContextMenu.x, zIndex: 50 }}
+                  className="bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[160px] text-sm"
+              >
+                  <button className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-700" onMouseDown={() => handleSetAbsenceType('I')}>Injustificada</button>
+                  <button className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-emerald-700" onMouseDown={() => handleSetAbsenceType('J')}>Justificada</button>
+                  <button className="w-full text-left px-3 py-2 hover:bg-amber-50 text-amber-700" onMouseDown={() => handleSetAbsenceType('R')}>Retraso</button>
+                  <button className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-600 border-t border-slate-100" onMouseDown={handleClearAbsence}>Quitar marca</button>
+              </div>
+          </>
+      )}
+
       {activeCategory && <AssignmentModal isOpen={isAssignmentModalOpen} onClose={() => setIsAssignmentModalOpen(false)} onSave={handleSaveAssignment} assignmentToEdit={assignmentToEdit} category={activeCategory} criteria={criteria} specificCompetences={specificCompetences} keyCompetences={keyCompetences} programmingUnits={programmingUnits} evaluationPeriods={evaluationPeriods} academicConfiguration={academicConfiguration} evaluationTools={evaluationTools} allAssignments={classData.assignments} allCategories={classData.categories} />}
       <CategoryModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} onSave={handleSaveCategory} categoryToEdit={categoryToEdit} evaluationPeriodId={activePeriodId} />
       {gradeEntryData && <GradeEntryModal isOpen={isGradeEntryModalOpen} onClose={() => setIsGradeEntryModalOpen(false)} student={gradeEntryData.student} assignment={gradeEntryData.assignment} grade={gradeEntryData.grade} criteriaList={criteria} onSave={handleSaveGrade} evaluationTools={evaluationTools} allAssignments={classData.assignments} students={classData.students} />}
       {assignmentForImport && <BulkGradeImportModal isOpen={isBulkImportModalOpen} onClose={() => setIsBulkImportModalOpen(false)} onSave={handleBulkSaveGrades} assignment={assignmentForImport} students={classData.students} />}
+      <BulkAddStudentModal isOpen={isBulkAddOpen} onClose={() => setIsBulkAddOpen(false)} onSave={handleBulkAddStudents} />
+      <StudentPersonalDataModal
+          isOpen={!!fichaEditTarget}
+          onClose={() => setFichaEditTarget(null)}
+          student={fichaEditTarget}
+          onSave={handleSaveFichaEdit}
+      />
+      {isPlanoOpen && (
+          <PlanoClaseModal
+              isOpen={isPlanoOpen}
+              onClose={() => setIsPlanoOpen(false)}
+              classData={classData}
+              materia={getMateria(classData, allCourses)}
+              onUpdateMesaProfesor={handleUpdateMesaProfesor}
+              onUpdateStudentPosition={handleUpdateStudentPosition}
+              onOpenFicha={setSelectedStudentForSummary}
+          />
+      )}
+      {studentContextMenu && (
+          <>
+              <div className="fixed inset-0 z-40" onMouseDown={() => setStudentContextMenu(null)} />
+              <div
+                  style={{ position: 'fixed', top: studentContextMenu.y, left: studentContextMenu.x, zIndex: 50 }}
+                  className="bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[180px] text-sm"
+              >
+                  <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 border-b border-slate-100 truncate">
+                      {getNombreCompleto(studentContextMenu.student)}
+                  </div>
+                  <button
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
+                      onMouseDown={() => { setSelectedStudentForSummary(studentContextMenu.student); setStudentContextMenu(null); }}
+                  >
+                      Ver ficha
+                  </button>
+                  <button
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
+                      onMouseDown={() => { setFichaEditTarget(studentContextMenu.student); setStudentContextMenu(null); }}
+                  >
+                      Editar ficha
+                  </button>
+                  <button
+                      className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600"
+                      onMouseDown={() => { handleDeleteStudentFromClass(studentContextMenu.student); setStudentContextMenu(null); }}
+                  >
+                      Eliminar de esta clase
+                  </button>
+              </div>
+          </>
+      )}
       {selectedStudentForSummary && (
           <StudentSummaryModal
             isOpen={!!selectedStudentForSummary}

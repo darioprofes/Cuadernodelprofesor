@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { View } from '../types';
 import {
-    HomeIcon, ClockIcon, UserGroupIcon, CalendarDaysIcon, BookOpenIcon, ClipboardDocumentIcon,
+    HomeIcon, ClockIcon, CalendarDaysIcon, BookOpenIcon, ClipboardDocumentIcon,
     UsersIcon, ClipboardDocumentCheckIcon, ChartBarIcon,
     StarIcon, ChevronRightIcon, Bars3Icon, XMarkIcon,
 } from './Icons';
@@ -27,7 +27,6 @@ const NAV_SECTIONS: NavSection[] = [
         items: [
             { view: 'hoy', label: 'Hoy', icon: HomeIcon },
             { view: 'horario', label: 'Horario', icon: ClockIcon },
-            { view: 'clases', label: 'Clases', icon: UserGroupIcon },
             { view: 'calendar', label: 'Agenda', icon: CalendarDaysIcon },
         ],
     },

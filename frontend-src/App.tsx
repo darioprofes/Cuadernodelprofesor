@@ -57,7 +57,6 @@ import CalendarView from './components/CalendarView';
 import Sidebar from './components/Sidebar';
 import HoyView from './components/HoyView';
 import HorarioView from './components/HorarioView';
-import ClasesView from './components/ClasesView';
 import ReunionesView from './components/ReunionesView';
 import ExamenesView from './components/ExamenesView';
 import ClassLabel from './components/ClassLabel';
@@ -656,18 +655,6 @@ const App = () => {
                 classes={hydratedClasses}
                 courses={curriculumCourses}
                 academicConfiguration={effectiveAcademicConfiguration}
-                setActiveView={setActiveView}
-                setActiveClassId={setActiveClassId}
-            />;
-        }
-
-        if (activeView === 'clases') {
-            return <ClasesView
-                courses={curriculumCourses}
-                academicConfiguration={effectiveAcademicConfiguration}
-                criteria={allCriteria}
-                specificCompetences={allCompetences}
-                keyCompetences={keyCompetences}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
             />;

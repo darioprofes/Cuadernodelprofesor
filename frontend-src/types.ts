@@ -354,7 +354,6 @@ export interface AcademicConfiguration {
 export type View =
   | 'hoy'
   | 'horario'
-  | 'clases'
   | 'gradebook'
   | 'journal'
   | 'meetings'
