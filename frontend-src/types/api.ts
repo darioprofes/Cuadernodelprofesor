@@ -386,6 +386,26 @@ export interface GradeInput {
     toolResults?: Record<string, unknown>;
 }
 
+export type TipoFalta = 'R' | 'J' | 'I';
+
+export interface Absence {
+    id: string;
+    enrollmentId: string;
+    date: string;
+    periodIndex: number;
+    tipoFalta: TipoFalta;
+    educasturFaltaId?: number;
+    syncedAt?: string;
+    syncError?: string;
+    updatedAt: string;
+}
+
+export interface AbsenceInput {
+    date: string;
+    periodIndex: number;
+    tipoFalta: TipoFalta;
+}
+
 // Fase 6: journalEntries/tasks/meetings/agendaNotes eran las últimas
 // entidades que en web seguían gobernadas por el blob (autoguardado vía
 // PUT /db) — backend ya las tenía completas desde antes, solo faltaban
