@@ -406,6 +406,29 @@ export interface AbsenceInput {
     tipoFalta: TipoFalta;
 }
 
+export interface SincronizarEducasturInput {
+    usuario: string;
+    contrasena: string;
+    idEmpleado?: number;
+    idCentro?: number;
+    idPerfil?: number;
+}
+
+export interface SincronizarEducasturError {
+    absenceId: string;
+    alumno: string;
+    motivo: string;
+}
+
+export interface SincronizarEducasturResult {
+    sincronizadas: number;
+    errores: SincronizarEducasturError[];
+    idEmpleado?: number;
+    idCentro?: number;
+    idPerfil?: number;
+    nombreProfesor?: string;
+}
+
 // Fase 6: journalEntries/tasks/meetings/agendaNotes eran las últimas
 // entidades que en web seguían gobernadas por el blob (autoguardado vía
 // PUT /db) — backend ya las tenía completas desde antes, solo faltaban

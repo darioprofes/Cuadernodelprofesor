@@ -24,6 +24,7 @@ from routers.categories import router as categories_router, classes_router as ca
 from routers.assignments import router as assignments_router, classes_router as assignments_classes_router
 from routers.grades import router as grades_router, classes_router as grades_classes_router
 from routers.absences import router as absences_router, classes_router as absences_classes_router
+from routers.educastur import router as educastur_router
 from routers.journal_entries import router as journal_entries_router, item_router as journal_entries_item_router
 from routers.tasks import router as tasks_router, item_router as tasks_item_router
 from routers.meetings import router as meetings_router, item_router as meetings_item_router
@@ -98,6 +99,7 @@ app.include_router(grades_router)
 app.include_router(grades_classes_router)
 app.include_router(absences_router)
 app.include_router(absences_classes_router)
+app.include_router(educastur_router)
 app.include_router(journal_entries_router)
 app.include_router(journal_entries_item_router)
 app.include_router(tasks_router)

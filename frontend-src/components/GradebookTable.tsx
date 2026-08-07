@@ -11,6 +11,8 @@ import { linkHoverClassName } from '../theme/components/Link';
 import { SEMANTIC } from '../theme/palette';
 import { pageHeaderMinHeight } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
+import Modal from './Modal';
+import Button from './Button';
 import AssignmentModal from './AssignmentModal';
 import GradeEntryModal from './GradeEntryModal';
 import CategoryModal from './CategoryModal';
@@ -31,7 +33,8 @@ import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '.
 import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
 import { useApiStudents, useUpdateStudent } from '../hooks/useApiStudents';
 import { useAbsences, usePutAbsence, useDeleteAbsence } from '../hooks/useAbsences';
-import type { TipoFalta } from '../types/api';
+import { useSincronizarEducastur } from '../hooks/useEducastur';
+import type { TipoFalta, SincronizarEducasturResult } from '../types/api';
 import { useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from '../hooks/useEnrollments';
 import { useUpdateClass } from '../hooks/useApiClasses';
 import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
@@ -315,6 +318,51 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       R: 'bg-amber-100 text-amber-700 border-amber-300',
   };
   const ABSENCE_LABELS: Record<TipoFalta, string> = { I: 'Injustificada', J: 'Justificada', R: 'Retraso' };
+
+  // Sincronización con Educastur: login->push->logout autocontenido en una
+  // sola llamada (POST /educastur/sincronizar), sin ningún vínculo
+  // persistente — ver integracion-educastur-faltas.md. Usuario/contraseña
+  // se escriben aquí mismo cada vez (autocomplete del navegador), nunca se
+  // guardan en la app.
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [syncUsuario, setSyncUsuario] = useState('');
+  const [syncContrasena, setSyncContrasena] = useState('');
+  const [syncIdEmpleado, setSyncIdEmpleado] = useState('');
+  const [syncIdCentro, setSyncIdCentro] = useState('');
+  const [syncIdPerfil, setSyncIdPerfil] = useState('');
+  const [showSyncIdsFields, setShowSyncIdsFields] = useState(false);
+  const [syncResult, setSyncResult] = useState<SincronizarEducasturResult | null>(null);
+  const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
+
+  const sincronizarMutation = useSincronizarEducastur();
+
+  const handleSyncSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setSyncResult(null);
+      setSyncErrorMsg(null);
+      try {
+          const result = await sincronizarMutation.mutateAsync({
+              usuario: syncUsuario,
+              contrasena: syncContrasena,
+              idEmpleado: syncIdEmpleado ? Number(syncIdEmpleado) : undefined,
+              idCentro: syncIdCentro ? Number(syncIdCentro) : undefined,
+              idPerfil: syncIdPerfil ? Number(syncIdPerfil) : undefined,
+          });
+          setSyncResult(result);
+          setSyncContrasena('');
+      } catch (err) {
+          const message = err instanceof Error ? err.message : 'Error al sincronizar con Educastur.';
+          setSyncErrorMsg(message);
+          if (message.includes('id de empleado')) setShowSyncIdsFields(true);
+      }
+  };
+
+  const handleCloseSyncModal = () => {
+      setIsSyncModalOpen(false);
+      setSyncContrasena('');
+      setSyncResult(null);
+      setSyncErrorMsg(null);
+  };
 
   // Auto-select the current period based on date
   useEffect(() => {
@@ -988,7 +1036,15 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                     className="border border-slate-300 rounded-md text-sm px-2 py-1"
                 />
             </div>
-            <span className="text-xs text-slate-500">{pendingSyncCount} falta(s) sin sincronizar con Educastur</span>
+            <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">{pendingSyncCount} falta(s) sin sincronizar con Educastur</span>
+                <button
+                    onClick={() => setIsSyncModalOpen(true)}
+                    className="text-xs font-semibold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-md border border-blue-200"
+                >
+                    Sincronizar con Educastur
+                </button>
+            </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm text-left">
@@ -1136,6 +1192,64 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             onCopy={handleCopyAssignmentModalSubmit}
           />
       )}
+      <Modal isOpen={isSyncModalOpen} onClose={handleCloseSyncModal} title="Sincronizar con Educastur" size="md">
+          {syncResult ? (
+              <div className="space-y-3">
+                  <p className="text-sm text-emerald-700 font-semibold">
+                      {syncResult.sincronizadas} falta(s) sincronizada(s) correctamente
+                      {syncResult.nombreProfesor ? ` — ${syncResult.nombreProfesor}` : ''}.
+                  </p>
+                  {syncResult.errores.length > 0 && (
+                      <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+                          <p className="font-semibold mb-1">{syncResult.errores.length} error(es):</p>
+                          <ul className="list-disc list-inside space-y-0.5">
+                              {syncResult.errores.map((e, i) => <li key={i}>{e.alumno}: {e.motivo}</li>)}
+                          </ul>
+                      </div>
+                  )}
+                  <div className="flex justify-end pt-2">
+                      <Button type="button" variant="secondary" onClick={handleCloseSyncModal}>Cerrar</Button>
+                  </div>
+              </div>
+          ) : (
+              <form onSubmit={handleSyncSubmit} className="space-y-4" autoComplete="on">
+                  <p className="text-xs text-slate-500">
+                      Se conecta a Educastur solo mientras dura esta sincronización — usuario y contraseña no se guardan en ningún sitio, se piden aquí cada vez.
+                  </p>
+                  <div>
+                      <label className="block text-sm font-medium text-slate-700">Usuario de Educastur</label>
+                      <Input type="text" autoComplete="username" required value={syncUsuario} onChange={e => setSyncUsuario(e.target.value)} className="mt-1" />
+                  </div>
+                  <div>
+                      <label className="block text-sm font-medium text-slate-700">Contraseña</label>
+                      <Input type="password" autoComplete="current-password" required value={syncContrasena} onChange={e => setSyncContrasena(e.target.value)} className="mt-1" />
+                  </div>
+                  {showSyncIdsFields && (
+                      <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                          <div>
+                              <label className="block text-xs font-medium text-slate-600">Id empleado</label>
+                              <Input type="number" value={syncIdEmpleado} onChange={e => setSyncIdEmpleado(e.target.value)} className="mt-1" />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-medium text-slate-600">Id centro</label>
+                              <Input type="number" value={syncIdCentro} onChange={e => setSyncIdCentro(e.target.value)} className="mt-1" />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-medium text-slate-600">Id perfil</label>
+                              <Input type="number" placeholder="2" value={syncIdPerfil} onChange={e => setSyncIdPerfil(e.target.value)} className="mt-1" />
+                          </div>
+                      </div>
+                  )}
+                  {syncErrorMsg && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{syncErrorMsg}</p>}
+                  <div className="flex justify-end gap-2 pt-2">
+                      <Button type="button" variant="secondary" onClick={handleCloseSyncModal}>Cancelar</Button>
+                      <Button type="submit" variant="primary" disabled={sincronizarMutation.isPending}>
+                          {sincronizarMutation.isPending ? 'Sincronizando…' : 'Sincronizar'}
+                      </Button>
+                  </div>
+              </form>
+          )}
+      </Modal>
     </div>
   );
 };
