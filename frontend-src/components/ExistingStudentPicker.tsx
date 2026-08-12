@@ -16,25 +16,32 @@ interface PickerStudent {
     ultimaUnidadSauce?: string;
 }
 
-// Búsqueda y matrícula de un alumno ya existente en otra clase — solo tiene
-// sentido en web (registro global de STUDENT propio del backend nuevo, ver
-// plan "Fase 5 fusionada" bloque 5); en escritorio no hay tal registro
-// aparte del embebido por clase, así que este bloque no se renderiza ahí.
+// Panel de "alumnado disponible" para matricular en la clase activa —
+// solo tiene sentido en web (registro global de STUDENT propio del
+// backend nuevo, ver plan "Fase 5 fusionada" bloque 5); en escritorio no
+// hay tal registro aparte del embebido por clase, así que este bloque no
+// se renderiza ahí.
 //
-// Por defecto solo se busca entre el alumnado importado (SAUCE) en el
-// curso académico actual — el listado global crece con los años y mezclar
-// ahí alumnado de cursos ya cerrados hacía la búsqueda por nombre lenta y
-// ruidosa. "Ver también alumnado de otros cursos" quita ese filtro. Si hay
-// Curso/Unidad de SAUCE en el alumnado visible, se pueden usar como filtro
-// rápido y matricular varios a la vez — pedido explícito del usuario para
-// no tener que ir alumno a alumno buscando por nombre.
+// Siempre visible (no escondido detrás de un "Matricular alumn@ ya
+// existente"): la confusión real que reportó el usuario era que "Importar
+// de SAUCE" parecía matricular directamente en la clase activa, cuando en
+// realidad solo llena este mismo listado — verlo siempre a la vista deja
+// claro que importar y matricular son dos pasos distintos, y que un mismo
+// alumno importado puede acabar matriculado en varias clases.
+//
+// Por defecto solo se lista el alumnado importado (SAUCE) en el curso
+// académico actual — el listado global crece con los años y mezclar ahí
+// alumnado de cursos ya cerrados sería ruido. "Ver también alumnado de
+// otros cursos" quita ese filtro. Si hay Curso/Unidad de SAUCE entre el
+// alumnado visible, se pueden usar como filtro rápido; la selección
+// múltiple + "Matricular N seleccionados" mueve de una vez a la clase
+// activa (cambiar de clase activa recalcula qué sigue disponible aquí).
 const ExistingStudentPicker: React.FC<{
     allStudents: PickerStudent[];
     alreadyEnrolledIds: Set<string>;
     currentYearId?: string;
     onEnroll: (studentId: string) => Promise<void> | void;
 }> = ({ allStudents, alreadyEnrolledIds, currentYearId, onEnroll }) => {
-    const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [verTodos, setVerTodos] = useState(false);
     const [filtroCurso, setFiltroCurso] = useState('');
@@ -77,11 +84,7 @@ const ExistingStudentPicker: React.FC<{
             .filter(s => !q || `${s.nombre ?? ''} ${s.primerApellido ?? ''} ${s.segundoApellido ?? ''}`.toLowerCase().includes(q));
     }, [enAmbito, query, filtroCurso, filtroUnidad]);
 
-    // Sin ningún filtro activo (ni texto ni Curso/Unidad) no se lista nada
-    // — la lista completa del curso podría ser larga, y hasta que no se
-    // acota por algo no aporta mostrarla entera.
-    const hayFiltroActivo = query.trim() !== '' || filtroCurso !== '' || filtroUnidad !== '';
-    const visibles = hayFiltroActivo ? matches.slice(0, 40) : [];
+    const visibles = matches.slice(0, 60);
 
     const toggleSeleccionado = (id: string) => {
         setSeleccionados(prev => {
@@ -89,14 +92,6 @@ const ExistingStudentPicker: React.FC<{
             if (next.has(id)) next.delete(id); else next.add(id);
             return next;
         });
-    };
-
-    const handleClose = () => {
-        setOpen(false);
-        setQuery('');
-        setFiltroCurso('');
-        setFiltroUnidad('');
-        setSeleccionados(new Set());
     };
 
     const handleEnrollOne = async (id: string) => {
@@ -113,27 +108,17 @@ const ExistingStudentPicker: React.FC<{
         setMatriculando(false);
     };
 
-    if (!open) {
-        return (
-            <button onClick={() => setOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 bg-white rounded-md border border-slate-200 shadow-sm">
-                Matricular alumn@ ya existente
-            </button>
-        );
-    }
-
     return (
-        <div className="p-3 border border-slate-200 rounded-md bg-slate-50/50 space-y-2">
+        <div className="space-y-2">
             <div className="flex items-center gap-2">
                 <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />
                 <Input
                     type="text"
-                    autoFocus
                     value={query}
                     onChange={e => setQuery(e.target.value)}
                     placeholder="Buscar por nombre o apellidos…"
                     className="w-full"
                 />
-                <button onClick={handleClose} className="text-xs text-slate-500 hover:text-slate-700 flex-shrink-0">Cerrar</button>
             </div>
 
             {currentYearId && (
@@ -156,33 +141,35 @@ const ExistingStudentPicker: React.FC<{
                 </div>
             )}
 
-            {hayFiltroActivo && (
-                <div className="space-y-1 max-h-64 overflow-y-auto">
-                    {visibles.length === 0 && <p className="text-xs text-slate-400 px-1 py-1">Sin coincidencias.</p>}
-                    {visibles.map(s => (
-                        <label key={s.id} className="flex items-center gap-2 bg-white p-2 rounded-md border text-sm cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={seleccionados.has(s.id)}
-                                onChange={() => toggleSeleccionado(s.id)}
-                            />
-                            <span className="flex-1">{getNombreCompleto(s as Student)}</span>
-                            {(s.ultimoCursoSauce || s.ultimaUnidadSauce) && (
-                                <span className="text-xs text-slate-400">{[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}</span>
-                            )}
-                            <Button variant="secondary" onClick={() => handleEnrollOne(s.id)}>Matricular</Button>
-                        </label>
-                    ))}
-                    {matches.length > visibles.length && (
-                        <p className="text-xs text-slate-400 px-1">…y {matches.length - visibles.length} más — acota la búsqueda para verlos.</p>
-                    )}
-                </div>
-            )}
+            <div className="space-y-1 max-h-96 overflow-y-auto">
+                {visibles.length === 0 && (
+                    <p className="text-xs text-slate-400 px-1 py-2">
+                        {disponibles.length === 0 ? 'No hay alumnado disponible — importa desde SAUCE o añade alumnado nuevo.' : 'Sin coincidencias con este filtro.'}
+                    </p>
+                )}
+                {visibles.map(s => (
+                    <label key={s.id} className="flex items-center gap-2 bg-white p-2 rounded-md border text-sm cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={seleccionados.has(s.id)}
+                            onChange={() => toggleSeleccionado(s.id)}
+                        />
+                        <span className="flex-1">{getNombreCompleto(s as Student)}</span>
+                        {(s.ultimoCursoSauce || s.ultimaUnidadSauce) && (
+                            <span className="text-xs text-slate-400">{[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}</span>
+                        )}
+                        <Button variant="secondary" onClick={() => handleEnrollOne(s.id)}>Matricular</Button>
+                    </label>
+                ))}
+                {matches.length > visibles.length && (
+                    <p className="text-xs text-slate-400 px-1">…y {matches.length - visibles.length} más — acota la búsqueda para verlos.</p>
+                )}
+            </div>
 
             {seleccionados.size > 0 && (
                 <div className="flex justify-end pt-1 border-t">
                     <Button variant="primary" onClick={handleEnrollSeleccionados} disabled={matriculando}>
-                        {matriculando ? 'Matriculando…' : `Matricular ${seleccionados.size} seleccionado(s)`}
+                        {matriculando ? 'Matriculando…' : `Matricular ${seleccionados.size} seleccionado(s) →`}
                     </Button>
                 </div>
             )}

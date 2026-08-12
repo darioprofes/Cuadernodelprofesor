@@ -209,53 +209,23 @@ const ClassManager: React.FC<{
     return (
         <div>
             <h3 className="text-xl font-bold text-slate-800 mb-4">Gestión de Clases y Alumnado</h3>
-            <div className="flex items-center gap-2 mb-4">
-                <label htmlFor="class-select" className="text-sm font-medium">Clase:</label>
-                <Select id="class-select" value={activeClassId} onChange={e => setActiveClassId(e.target.value)}>
-                    {academicClasses.map((c: ClassData) => <option key={c.id} value={c.id}>{formatClassLabel(c, courses)}</option>)}
-                </Select>
-                {activeClass && (
-                    <div className="flex items-center gap-1">
-                        <IconButton label="Editar clase" onClick={() => { setClassToEdit(activeClass); setIsClassModalOpen(true); }}><PencilIcon className="w-4 h-4"/></IconButton>
-                        <IconButton label="Eliminar clase" tone="danger" onClick={() => handleDeleteClass(activeClass.id)}><TrashIcon className="w-4 h-4"/></IconButton>
+            {/* Dos columnas: izquierda = alumnado disponible (importado de SAUCE
+                o suelto, sin matricular en ESTA clase), derecha = la clase activa
+                y quién ya está en ella. Seleccionar en la izquierda y matricular
+                lo mueve a la derecha; cambiar de clase activa cambia qué se ve a
+                la derecha y recalcula qué sigue disponible a la izquierda — un
+                mismo alumno puede acabar matriculado en varias clases a la vez
+                (p.ej. dos materias distintas), así que "disponible" es siempre
+                relativo a la clase activa, no un estado global de la persona. */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="border border-slate-200 rounded-lg bg-slate-50/50 flex flex-col">
+                    <div className="p-3 border-b border-slate-200 bg-white rounded-t-lg flex items-center justify-between gap-2">
+                        <h4 className="font-semibold text-slate-700 text-sm">Alumnado disponible</h4>
+                        <Button variant="secondary" onClick={() => setIsSauceImportOpen(true)}>
+                            Importar de SAUCE
+                        </Button>
                     </div>
-                )}
-                <Button variant="secondary" onClick={() => setIsSauceImportOpen(true)} className="ml-auto">
-                    Importar de SAUCE
-                </Button>
-                <Button variant="primary" onClick={() => { setClassToEdit(null); setIsClassModalOpen(true); }}>
-                    <PlusIcon className="w-4 h-4"/>
-                    Añadir Clase
-                </Button>
-            </div>
-            {activeClass ? (
-                <div className={tableWrapperClassName}>
-                    <table className={tableBaseClassName}>
-                        <thead>
-                            <tr className={tableHeadRowClassName}>
-                                <th className={`${tableHeadCellClassName} text-left w-8`}>#</th>
-                                <th className={`${tableHeadCellClassName} text-left`}>Nombre del/la Alumn@</th>
-                                <th className={`${tableHeadCellClassName} text-left`}>Anotaciones ACNEAE</th>
-                                <th className={`${tableHeadCellClassName} text-right`}>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {activeClass.students.map((student: Student, index: number) => (
-                                <StudentRow
-                                    key={student.id}
-                                    student={student}
-                                    onDelete={handleDeleteStudent}
-                                    onOpenFicha={setStudentForFicha}
-                                    index={index}
-                                    totalStudents={activeClass.students.length}
-                                />
-                            ))}
-                        </tbody>
-                    </table>
-                     <div className="p-3 border-t bg-slate-50/50 space-y-2">
-                        <button onClick={() => setIsBulkAddModalOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-green-600 hover:bg-green-100 bg-white rounded-md border border-slate-200 shadow-sm">
-                           Añadir Alumnado en Lote
-                        </button>
+                    <div className="p-3">
                         <ExistingStudentPicker
                             allStudents={remoteStudents.data ?? []}
                             currentYearId={yearId}
@@ -264,9 +234,61 @@ const ClassManager: React.FC<{
                         />
                     </div>
                 </div>
-            ) : (
-                <p className="text-slate-500 text-center py-8 bg-slate-50 rounded-lg">No hay clases académicas. ¡Añade una para empezar!</p>
-            )}
+
+                <div className="border border-slate-200 rounded-lg flex flex-col">
+                    <div className="p-3 border-b border-slate-200 bg-white rounded-t-lg space-y-2">
+                        <div className="flex items-center gap-2">
+                            <label htmlFor="class-select" className="text-sm font-medium">Clase:</label>
+                            <Select id="class-select" value={activeClassId} onChange={e => setActiveClassId(e.target.value)} className="flex-1">
+                                {academicClasses.map((c: ClassData) => <option key={c.id} value={c.id}>{formatClassLabel(c, courses)}</option>)}
+                            </Select>
+                            {activeClass && (
+                                <div className="flex items-center gap-1">
+                                    <IconButton label="Editar clase" onClick={() => { setClassToEdit(activeClass); setIsClassModalOpen(true); }}><PencilIcon className="w-4 h-4"/></IconButton>
+                                    <IconButton label="Eliminar clase" tone="danger" onClick={() => handleDeleteClass(activeClass.id)}><TrashIcon className="w-4 h-4"/></IconButton>
+                                </div>
+                            )}
+                        </div>
+                        <Button variant="primary" onClick={() => { setClassToEdit(null); setIsClassModalOpen(true); }} className="w-full">
+                            <PlusIcon className="w-4 h-4"/>
+                            Añadir Clase Nueva
+                        </Button>
+                    </div>
+                    {activeClass ? (
+                        <div className={tableWrapperClassName}>
+                            <table className={tableBaseClassName}>
+                                <thead>
+                                    <tr className={tableHeadRowClassName}>
+                                        <th className={`${tableHeadCellClassName} text-left w-8`}>#</th>
+                                        <th className={`${tableHeadCellClassName} text-left`}>Nombre del/la Alumn@</th>
+                                        <th className={`${tableHeadCellClassName} text-left`}>Anotaciones ACNEAE</th>
+                                        <th className={`${tableHeadCellClassName} text-right`}>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {activeClass.students.map((student: Student, index: number) => (
+                                        <StudentRow
+                                            key={student.id}
+                                            student={student}
+                                            onDelete={handleDeleteStudent}
+                                            onOpenFicha={setStudentForFicha}
+                                            index={index}
+                                            totalStudents={activeClass.students.length}
+                                        />
+                                    ))}
+                                </tbody>
+                            </table>
+                            <div className="p-3 border-t bg-slate-50/50">
+                                <button onClick={() => setIsBulkAddModalOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-green-600 hover:bg-green-100 bg-white rounded-md border border-slate-200 shadow-sm">
+                                   Añadir Alumnado en Lote
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="text-slate-500 text-center py-8 bg-slate-50 rounded-b-lg">No hay clases académicas. ¡Añade una para empezar!</p>
+                    )}
+                </div>
+            </div>
             <ClassModal
                 isOpen={isClassModalOpen}
                 onClose={() => setIsClassModalOpen(false)}
