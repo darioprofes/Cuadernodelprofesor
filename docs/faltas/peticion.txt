@@ -1,0 +1,11 @@
+Quiero integrar la autenticación con Educastur (portal del profesorado de Asturias) en el backend, usando como base el script adjunto educastur_faltas.py (login vía Keycloak/RH-SSO, endpoints de tramos horarios, búsqueda de alumnos y registro de faltas).
+
+Objetivo: que el profesor vincule su cuenta de Educastur una sola vez (usuario + contraseña) y a partir de ahí la app pueda marcar faltas sin volver a pedir credenciales, mientras el refresh_token siga vivo.
+
+Necesito que implementes:
+
+EducasturClient: clase (async si el backend usa FastAPI/httpx) que encapsule login, refresh automático de token, y los métodos obtener_tramos, buscar_alumnos, procesar_falta/desmarcar_falta del script adjunto.
+Endpoint de vinculación POST /api/integraciones/educastur/vincular: recibe usuario+contraseña una vez, hace login, decodifica el access_token (JWT) para sacar el nombre del profesor si los claims lo traen (name/given_name+family_name/preferred_username), y guarda cifrado el refresh_token asociado al usuario de mi app (además de id_empleado, id_centro, id_perfil). La contraseña de Educastur no se persiste en ningún sitio.
+Refresh transparente: antes de cualquier llamada a Educastur, comprobar si hay un access_token válido en caché (con TTL corto, memoria o Redis); si no, renovar con grant_type=refresh_token contra el endpoint de token de Keycloak. Importante: Keycloak rota el refresh_token en cada uso — hay que sobrescribir el guardado con el nuevo en cada refresh, no reusar el antiguo.
+Endpoints de mi propio dominio (no calcar los de Educastur 1:1): algo tipo GET /api/mi-horario/hoy, GET /api/faltas/tramo/{id}, POST /api/faltas — que por debajo usen el EducasturClient.
+Manejo de errores: si el refresh falla (refresh_token caducado/inválido), devolver un error claro que el frontend pueda usar para pedir revincular cuenta; nunca loguear tokens completos ni datos de alumnos (nombre/DNI) en claro.
