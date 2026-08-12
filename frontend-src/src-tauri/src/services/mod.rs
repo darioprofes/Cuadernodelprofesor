@@ -1,3 +1,4 @@
+pub mod absences;
 pub mod shortcuts;
 pub mod preferences;
 pub mod evaluation_tools;

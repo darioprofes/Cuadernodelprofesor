@@ -39,6 +39,14 @@ import { useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from '.
 import { useUpdateClass } from '../hooks/useApiClasses';
 import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { encodeGradeInput, splitStudentPatch, syncStudentPhoto } from '../services/apiAdapters';
+import { isTauri } from '@tauri-apps/api/core';
+
+// Sincronización con Educastur: necesita hacer peticiones HTTP reales al
+// propio Educastur (login, tramos, faltas) — solo existe en el backend
+// Python (services/educastur_client.py), sin equivalente en Rust, mismo
+// criterio ya aplicado a la importación de horario en PDF
+// (ScheduleManager.tsx::PDF_IMPORT_AVAILABLE).
+const EDUCASTUR_SYNC_AVAILABLE = !isTauri();
 
 
 interface GradebookTableProps {
@@ -1079,15 +1087,17 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                     Añadir
                 </button>
             </div>
-            <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">{pendingSyncCount} falta(s) sin subir a Educastur</span>
-                <button
-                    onClick={() => setIsSyncModalOpen(true)}
-                    className="text-xs font-semibold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-md border border-blue-200"
-                >
-                    Subir a Educastur
-                </button>
-            </div>
+            {EDUCASTUR_SYNC_AVAILABLE && (
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">{pendingSyncCount} falta(s) sin subir a Educastur</span>
+                    <button
+                        onClick={() => setIsSyncModalOpen(true)}
+                        className="text-xs font-semibold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-md border border-blue-200"
+                    >
+                        Subir a Educastur
+                    </button>
+                </div>
+            )}
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm text-left">

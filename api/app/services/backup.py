@@ -14,6 +14,7 @@ from services.db import get_conn
 # necesita este orden (CASCADE lo resuelve), pero el INSERT sí.
 _TABLES_IN_DEPENDENCY_ORDER = [
     "app_preferences",
+    "educastur_config",
     "shortcuts",
     "students",
     "key_competences",
@@ -30,6 +31,7 @@ _TABLES_IN_DEPENDENCY_ORDER = [
     "academic_year_courses",
     "classes",
     "enrollments",
+    "absences",
     "categories",
     "assignments",
     "grades",

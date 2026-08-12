@@ -10,10 +10,16 @@ pub struct DbState(pub Mutex<Connection>);
 // Embebido en el binario con include_str! porque en producción no hay
 // carpeta migrations/ junto al .exe -- a diferencia del backend Python, que
 // sí puede leer del disco.
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "0001_baseline.sql",
-    include_str!("migrations/0001_baseline.sql"),
-)];
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "0001_baseline.sql",
+        include_str!("migrations/0001_baseline.sql"),
+    ),
+    (
+        "0002_absences_and_student_import_tracking.sql",
+        include_str!("migrations/0002_absences_and_student_import_tracking.sql"),
+    ),
+];
 
 pub fn open(app: &tauri::AppHandle) -> rusqlite::Result<Connection> {
     let dir = app
@@ -92,7 +98,7 @@ mod tests {
         let migration_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 1);
+        assert_eq!(migration_count, 2);
 
         let table_count: i64 = conn
             .query_row(
@@ -101,8 +107,8 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        // 24 tablas de dominio + schema_migrations
-        assert_eq!(table_count, 25);
+        // 24 tablas de dominio del baseline + absences (0002) + schema_migrations
+        assert_eq!(table_count, 26);
 
         // Comprobación de humo de una FK con ON DELETE CASCADE real (no solo
         // que el CREATE TABLE parseara, sino que la restricción funcione).

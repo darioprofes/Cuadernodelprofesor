@@ -3,9 +3,10 @@ use serde_json::Value;
 
 use crate::error::ApiError;
 use crate::services::{
-    academic_years, agenda_notes, assignments, basic_knowledge, categories, classes, courses,
-    evaluation_criteria, evaluation_tools, enrollments, grades, journal_entries, key_competences,
-    meetings, preferences, programming_units, shortcuts, specific_competences, students, tasks,
+    absences, academic_years, agenda_notes, assignments, basic_knowledge, categories, classes,
+    courses, evaluation_criteria, evaluation_tools, enrollments, grades, journal_entries,
+    key_competences, meetings, preferences, programming_units, shortcuts, specific_competences,
+    students, tasks,
 };
 
 fn require_body(body: Option<Value>) -> Result<Value, ApiError> {
@@ -23,7 +24,17 @@ fn found(item: Option<Value>, detail: &str) -> Result<Value, ApiError> {
 // Las rutas nuevas se añaden aquí a medida que cada bloque de la Fase 7
 // migra sus entidades correspondientes.
 pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>) -> Result<Value, ApiError> {
-    let segments: Vec<&str> = path.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+    // Primera ruta que necesita query params (DELETE .../absences?date=..&period_index=..)
+    // -- api.ts manda la ruta con "?" tal cual, hay que separarla de los
+    // segmentos antes de hacer el split por "/".
+    let (path_only, query) = path.split_once('?').unwrap_or((path, ""));
+    let segments: Vec<&str> = path_only.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+    let query_param = |key: &str| -> Option<&str> {
+        query.split('&').find_map(|pair| {
+            let (k, v) = pair.split_once('=')?;
+            if k == key { Some(v) } else { None }
+        })
+    };
 
     match (method, segments.as_slice()) {
         ("GET", ["shortcuts"]) => shortcuts::list(conn),
@@ -133,6 +144,19 @@ pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>
         }
         ("PATCH", ["enrollments", id]) => enrollments::update(conn, id, require_body(body)?),
         ("DELETE", ["enrollments", id]) => enrollments::delete(conn, id),
+
+        // ---- Faltas de asistencia (migración 0002) — sin sincronización
+        // con Educastur en escritorio, ver comentario de esa migración.
+        ("GET", ["classes", class_id, "absences"]) => absences::list_for_class(conn, class_id),
+        ("PUT", ["enrollments", enrollment_id, "absences"]) => absences::put(conn, enrollment_id, require_body(body)?),
+        ("DELETE", ["enrollments", enrollment_id, "absences"]) => {
+            let date = query_param("date").ok_or_else(|| ApiError::bad_request("Falta el parámetro date"))?;
+            let period_index: i64 = query_param("period_index")
+                .ok_or_else(|| ApiError::bad_request("Falta el parámetro period_index"))?
+                .parse()
+                .map_err(|_| ApiError::bad_request("period_index inválido"))?;
+            absences::delete(conn, enrollment_id, date, period_index)
+        }
 
         // ---- Bloque 5: cuaderno de notas ----
         ("GET", ["classes", class_id, "categories"]) => categories::list(conn, class_id),

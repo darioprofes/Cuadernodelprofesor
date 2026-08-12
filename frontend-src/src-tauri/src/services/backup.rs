@@ -12,6 +12,8 @@ const TABLES_IN_DEPENDENCY_ORDER: &[&str] = &[
     "app_preferences",
     "shortcuts",
     "students",
+    // (educastur_config queda fuera a propósito: no existe en escritorio,
+    // no hay sincronización con Educastur aquí -- ver migración 0002)
     "key_competences",
     "operational_descriptors",
     "courses",
@@ -26,6 +28,7 @@ const TABLES_IN_DEPENDENCY_ORDER: &[&str] = &[
     "academic_year_courses",
     "classes",
     "enrollments",
+    "absences",
     "categories",
     "assignments",
     "grades",
