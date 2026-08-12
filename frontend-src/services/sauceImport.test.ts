@@ -43,6 +43,17 @@ describe('sauceImport', () => {
             });
         });
 
+        it('admite "|" como separador (para escribir la tabla a mano, no solo pegarla de Excel)', () => {
+            const cabeceraPipe = ['Alumno/a', 'Nº Id. Escolar', 'Nº Expte. centro', 'DNI/Pasaporte', 'Fecha de nacimiento', 'Curso', 'Fecha de creación', 'Unidad', 'Nacionalidad'].join(' | ');
+            const filaPipe = ['García López, Elena', '1234567', '99', '12345678A', '15/03/2012', '1ESO', '01/09/2024', 'A', 'Española'].join(' | ');
+            const { filas, errores } = parseSauceText(`${cabeceraPipe}\n${filaPipe}`);
+            expect(errores).toEqual([]);
+            expect(filas).toHaveLength(1);
+            expect(filas[0]).toMatchObject({
+                nombre: 'Elena', primerApellido: 'García', segundoApellido: 'López', nie: '1234567', curso: '1ESO', unidad: 'A',
+            });
+        });
+
         it('sin cabecera reconocible, devuelve un error y ninguna fila', () => {
             const { filas, errores } = parseSauceText('columna1\tcolumna2\nvalor1\tvalor2');
             expect(filas).toEqual([]);

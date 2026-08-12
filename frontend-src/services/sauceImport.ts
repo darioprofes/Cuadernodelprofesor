@@ -177,9 +177,21 @@ function localizarCabecera(filas: string[][]): { filaCabecera: number; columnas:
     return null;
 }
 
+// Copiar y pegar una tabla no siempre conserva tabuladores de verdad —
+// depende de dónde se copie desde (una hoja de cálculo sí, una página web
+// a veces los convierte en espacios). "|" es el separador recomendado
+// para pegar/editar a mano (no aparece nunca en nombres, NIE, fechas...);
+// se detecta por línea, así que una tabla bien pegada desde Excel (con
+// tabuladores reales) sigue funcionando igual que antes sin tener que
+// tocar nada.
+const separarFila = (linea: string): string[] => {
+    if (linea.includes('|')) return linea.split('|').map(c => c.trim());
+    return linea.split('\t');
+};
+
 export function parseSauceText(texto: string): SauceImportResult {
     const lineas = texto.split(/\r\n|\r|\n/).filter(l => l.trim().length > 0);
-    const tabla = lineas.map(l => l.split('\t'));
+    const tabla = lineas.map(separarFila);
 
     const cabecera = localizarCabecera(tabla);
     if (!cabecera) {

@@ -290,6 +290,7 @@ const ImportSauceStudentsModal: React.FC<ImportSauceStudentsModalProps> = ({ isO
                         Columnas esperadas: Alumno/a, Nº Id. Escolar (NIE), DNI/Pasaporte, Fecha de nacimiento, Curso, Unidad, Nacionalidad.
                         El NIE es lo más importante: es el identificador único real de SAUCE (no todo el alumnado tiene DNI, pero sí NIE) —
                         con él, reimportar no duplica a nadie. Sin NIE, se compara por nombre y se avisa si hay una posible coincidencia.
+                        {modo === 'texto' && ' Separa las columnas con "|" — no aparece nunca en nombres, fechas ni NIE, así que no hay ambigüedad al pegar o editar a mano (si pegas directo desde Excel con tabuladores reales, también funciona sin tocar nada).'}
                     </p>
 
                     {modo === 'excel' ? (
@@ -309,7 +310,10 @@ const ImportSauceStudentsModal: React.FC<ImportSauceStudentsModalProps> = ({ isO
                             <Textarea
                                 value={textoPegado}
                                 onChange={e => setTextoPegado(e.target.value)}
-                                placeholder={'Alumno/a\tNº Id. Escolar\t…\nGarcía López, Elena\t1234567\t…'}
+                                placeholder={
+                                    'Alumno/a | Nº Id. Escolar | Nº Expte. centro | DNI/Pasaporte | Fecha de nacimiento | Curso | Fecha de creación | Unidad | Nacionalidad\n' +
+                                    'García López, Elena | 1234567 | 99 | 12345678A | 15/03/2012 | 1ESO | 01/09/2024 | A | Española'
+                                }
                                 className="min-h-[140px] font-mono text-xs"
                             />
                             <button
