@@ -243,6 +243,11 @@ export interface Student {
     // de SAUCE — ver services/sauceImport.ts.
     nie?: string;
     nacionalidad?: string;
+    // Rastro de la última importación de SAUCE — ver migración 0011 y
+    // ExistingStudentPicker.tsx (filtro por defecto al matricular).
+    importedAcademicYearId?: string;
+    ultimoCursoSauce?: string;
+    ultimaUnidadSauce?: string;
     telefonoUrgencias?: string;
     tutor1?: Tutor;
     tutor2?: Tutor;

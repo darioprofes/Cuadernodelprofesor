@@ -3,6 +3,7 @@ import Modal from './Modal';
 import Button from './Button';
 import Textarea from './Textarea';
 import { useApiStudents, useCreateStudent, useUpdateStudent } from '../hooks/useApiStudents';
+import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { parseSauceExcel, parseSauceText, matchSauceRow, type SauceRow, type SauceMatch } from '../services/sauceImport';
 
 interface ImportSauceStudentsModalProps {
@@ -18,11 +19,13 @@ interface FilaRevision {
     accion: Accion;
 }
 
-// Solo crea/actualiza STUDENT (persona global) — no matricula en ninguna
-// clase. Matricular alumnado existente ya tiene su propio flujo
-// (ExistingStudentPicker, en la gestión de clases); este importador cubre
-// un problema distinto: tener los datos de la persona (y sobre todo el
-// NIE) registrados de antemano, vengan o no ya de una clase creada.
+// Crea/actualiza STUDENT (persona global) — no matricula en ninguna clase
+// (matricular ya tiene su propio flujo, ExistingStudentPicker, que además
+// usa el rastro que se deja aquí para filtrar por defecto al alumnado de
+// este mismo curso académico, ver migración 0011). Cada persona importada
+// se marca con el curso académico actual y su Curso/Unidad de SAUCE — ni
+// uno ni otro matriculan por sí solos, un grupo-clase puede mezclar
+// alumnado de varias Unidades.
 const ImportSauceStudentsModal: React.FC<ImportSauceStudentsModalProps> = ({ isOpen, onClose }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [modo, setModo] = useState<'excel' | 'texto'>('excel');
@@ -41,6 +44,8 @@ const ImportSauceStudentsModal: React.FC<ImportSauceStudentsModalProps> = ({ isO
     const [defaultAccionNombre, setDefaultAccionNombre] = useState<Accion>('actualizar');
 
     const remoteStudents = useApiStudents();
+    const currentYear = useCurrentAcademicYear();
+    const yearId = currentYear.data?.id;
     const createStudentMutation = useCreateStudent();
     const updateStudentMutation = useUpdateStudent();
 
@@ -130,6 +135,9 @@ const ImportSauceStudentsModal: React.FC<ImportSauceStudentsModalProps> = ({ isO
                         dni: f.fila.dni || undefined,
                         fechaNacimiento: f.fila.fechaNacimiento || undefined,
                         nacionalidad: f.fila.nacionalidad || undefined,
+                        importedAcademicYearId: yearId,
+                        ultimoCursoSauce: f.fila.curso || undefined,
+                        ultimaUnidadSauce: f.fila.unidad || undefined,
                     });
                 } else if (f.match.student) {
                     await updateStudentMutation.mutateAsync({
@@ -142,6 +150,9 @@ const ImportSauceStudentsModal: React.FC<ImportSauceStudentsModalProps> = ({ isO
                             dni: f.fila.dni || undefined,
                             fechaNacimiento: f.fila.fechaNacimiento || undefined,
                             nacionalidad: f.fila.nacionalidad || undefined,
+                            importedAcademicYearId: yearId,
+                            ultimoCursoSauce: f.fila.curso || undefined,
+                            ultimaUnidadSauce: f.fila.unidad || undefined,
                         },
                     });
                 }

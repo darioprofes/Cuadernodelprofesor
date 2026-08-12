@@ -258,6 +258,7 @@ const ClassManager: React.FC<{
                         </button>
                         <ExistingStudentPicker
                             allStudents={remoteStudents.data ?? []}
+                            currentYearId={yearId}
                             alreadyEnrolledIds={new Set(activeClassStudents.map(s => s.id))}
                             onEnroll={handleEnrollExisting}
                         />

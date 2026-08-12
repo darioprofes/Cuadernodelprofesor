@@ -9,7 +9,7 @@ from services.schemas import ApiModel, updated_at_matches
 
 _COLUMNS = """
     id, nombre, primer_apellido, segundo_apellido, fecha_nacimiento, dni,
-    nie, nacionalidad,
+    nie, nacionalidad, imported_academic_year_id, ultimo_curso_sauce, ultima_unidad_sauce,
     telefono_urgencias, tutor1, tutor2, domicilio_direccion, domicilio_localidad,
     domicilio_codigo_postal, domicilio_telefono, alergias, enfermedades_relevantes,
     medicacion_habitual, intolerancias_alimentarias, observaciones_sanitarias,
@@ -38,6 +38,12 @@ class StudentInput(ApiModel):
     # extranjería, que vive en `dni` (ver comentario de la migración 0010).
     nie: Optional[str] = None
     nacionalidad: Optional[str] = None
+    # Rastro de la última importación de SAUCE (ver migración 0011) — no
+    # matricula por sí solo, solo alimenta el filtro por defecto/rápido de
+    # ExistingStudentPicker.tsx.
+    imported_academic_year_id: Optional[uuid.UUID] = None
+    ultimo_curso_sauce: Optional[str] = None
+    ultima_unidad_sauce: Optional[str] = None
     telefono_urgencias: Optional[str] = None
     tutor1: Optional[Tutor] = None
     tutor2: Optional[Tutor] = None

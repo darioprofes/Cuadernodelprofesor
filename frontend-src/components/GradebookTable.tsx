@@ -992,6 +992,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           </button>
           <ExistingStudentPicker
               allStudents={remoteStudents.data ?? []}
+              currentYearId={yearId}
               alreadyEnrolledIds={new Set(classData.students.map(s => s.id))}
               onEnroll={handleEnrollExisting}
           />
