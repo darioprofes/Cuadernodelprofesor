@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from datetime import date as date_cls
 from typing import Optional
 
@@ -68,6 +69,17 @@ class SyncResult(ApiModel):
 
 def _nombre(row: dict) -> str:
     return f"{row.get('nombre') or ''} {row.get('primer_apellido') or ''} {row.get('segundo_apellido') or ''}".strip()
+
+
+# Clave de emparejamiento por nombre — solo se usa como respaldo cuando el
+# alumno no tiene DNI en la app (petición explícita del usuario, no sustituye
+# al emparejamiento por DNI: si hay DNI y no coincide, se sigue reportando
+# como "no encontrado", no se reintenta por nombre). Sin acentos/mayúsculas
+# para tolerar pequeñas discrepancias de tildes entre la app y Educastur.
+def _clave_nombre(*partes: str) -> str:
+    texto = " ".join(p for p in partes if p)
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return re.sub(r"\s+", " ", texto).strip().lower()
 
 
 def _get_config() -> dict:
@@ -276,22 +288,39 @@ def sincronizar(data: SincronizarInput) -> SyncResult:
                     continue
 
                 alumnos_por_dni: dict[str, tuple[dict, dict]] = {}
+                alumnos_por_nombre: dict[str, list[tuple[dict, dict]]] = {}
                 for curso in cursos:
                     for alumno in curso.get("alumnosFaltas", []):
                         if alumno.get("dni"):
                             alumnos_por_dni[alumno["dni"]] = (curso, alumno)
+                        clave = _clave_nombre(alumno.get("nombre", ""), alumno.get("apellido1", ""), alumno.get("apellido2", ""))
+                        if clave:
+                            alumnos_por_nombre.setdefault(clave, []).append((curso, alumno))
 
                 for row in tramo_rows:
-                    if not row["dni"]:
-                        _mark_error(str(row["id"]), "El alumno no tiene DNI registrado en la app.")
-                        errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo="El alumno no tiene DNI registrado en la app, no se puede emparejar."))
-                        continue
-
-                    match = alumnos_por_dni.get(row["dni"])
-                    if not match:
-                        _mark_error(str(row["id"]), "No se encontró a este alumno en Educastur para este tramo.")
-                        errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo="No se encontró a este alumno en Educastur para este tramo."))
-                        continue
+                    if row["dni"]:
+                        match = alumnos_por_dni.get(row["dni"])
+                        if not match:
+                            _mark_error(str(row["id"]), "No se encontró a este alumno en Educastur para este tramo.")
+                            errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo="No se encontró a este alumno en Educastur para este tramo."))
+                            continue
+                    else:
+                        # Sin DNI en la app: se intenta por nombre y apellidos
+                        # completos, solo si hay una única coincidencia — con
+                        # varias no hay forma fiable de saber cuál es sin DNI.
+                        candidatos = alumnos_por_nombre.get(_clave_nombre(row["nombre"], row["primer_apellido"], row["segundo_apellido"]), [])
+                        if len(candidatos) == 1:
+                            match = candidatos[0]
+                        elif len(candidatos) > 1:
+                            motivo = "El alumno no tiene DNI y hay varios alumnos con ese nombre en Educastur para este tramo — no se puede identificar sin DNI."
+                            _mark_error(str(row["id"]), motivo)
+                            errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo=motivo))
+                            continue
+                        else:
+                            motivo = "El alumno no tiene DNI registrado en la app y no se encontró por nombre en Educastur para este tramo."
+                            _mark_error(str(row["id"]), motivo)
+                            errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo=motivo))
+                            continue
 
                     curso, alumno = match
 
