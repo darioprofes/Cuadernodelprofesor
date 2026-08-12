@@ -27,7 +27,7 @@ import StudentPersonalDataModal from './StudentPersonalDataModal';
 import PlanoClaseModal from './PlanoClaseModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ClassLabel from './ClassLabel';
-import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getDayOfWeek1a7 } from '../utils';
+import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getDayOfWeek1a7, parsePeriodRange } from '../utils';
 import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
 import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '../hooks/useAssignments';
 import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
@@ -284,6 +284,25 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   }, [absencesQuery.data, extraAsistenciaDates, todayISO]);
 
   const pendingSyncCount = (absencesQuery.data ?? []).filter(a => !a.syncedAt).length;
+
+  // Aviso local, sin tocar Educastur: alumnado sin DNI o faltas en una
+  // franja sin horas resolubles nunca se van a poder sincronizar, así que
+  // se detecta y se enseña de antemano en vez de descubrirlo solo al
+  // intentar sincronizar (lo de festivos no se puede adelantar así — hace
+  // falta preguntarle a Educastur, ver el botón de sincronizar).
+  const preflightIssues = useMemo(() => {
+      const pending = (absencesQuery.data ?? []).filter(a => !a.syncedAt);
+      const sinDni = new Set<string>();
+      const sinFranja = new Set<string>();
+      for (const a of pending) {
+          const student = classData.students.find(s => s.enrollmentId === a.enrollmentId);
+          const nombre = student ? getNombreCompleto(student) : 'Alumn@ desconocid@';
+          if (!student?.dni) sinDni.add(nombre);
+          const label = academicConfiguration.periods?.[a.periodIndex];
+          if (!label || !parsePeriodRange(label)) sinFranja.add(nombre);
+      }
+      return { sinDni: Array.from(sinDni), sinFranja: Array.from(sinFranja) };
+  }, [absencesQuery.data, classData.students, academicConfiguration.periods]);
 
   const handleAbsenceClick = (enrollmentId: string, date: string) => {
       const periodIndex = resolvePeriodIndexForDate(date);
@@ -1025,6 +1044,17 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
       {gradebookTab === 'asistencia' && (
       <div>
+        {(preflightIssues.sinDni.length > 0 || preflightIssues.sinFranja.length > 0) && (
+            <div className="p-3 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 space-y-1">
+                <p className="font-semibold">Estas faltas no se van a poder sincronizar con Educastur — revísalas:</p>
+                {preflightIssues.sinDni.length > 0 && (
+                    <p>Sin DNI/NIE registrado en la ficha: {preflightIssues.sinDni.join(', ')}.</p>
+                )}
+                {preflightIssues.sinFranja.length > 0 && (
+                    <p>En una franja horaria sin horas (p. ej. "Recreo") — Educastur necesita un tramo con hora real: {preflightIssues.sinFranja.join(', ')}.</p>
+                )}
+            </div>
+        )}
         <div className="p-3 border-b bg-slate-50/50 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 text-sm text-slate-600">
                 <span>Añadir un día concreto:</span>
