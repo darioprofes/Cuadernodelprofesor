@@ -3,7 +3,7 @@ import { SHADOW } from '../shadows';
 import { SPACING } from '../spacing';
 import { TYPOGRAPHY } from '../typography';
 
-export type ModalSize = 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
+export type ModalSize = 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl';
 
 export const MODAL_SIZE_CLASSES: Record<ModalSize, string> = {
     md: 'max-w-md',
@@ -13,6 +13,7 @@ export const MODAL_SIZE_CLASSES: Record<ModalSize, string> = {
     '3xl': 'max-w-3xl',
     '4xl': 'max-w-4xl',
     '5xl': 'max-w-5xl',
+    '6xl': 'max-w-6xl',
 };
 
 export const modalOverlayClassName = 'fixed inset-0 bg-black/30 z-50 flex justify-center items-center overflow-hidden';

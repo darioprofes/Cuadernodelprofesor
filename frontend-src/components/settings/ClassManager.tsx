@@ -208,7 +208,6 @@ const ClassManager: React.FC<{
 
     return (
         <div>
-            <h3 className="text-xl font-bold text-slate-800 mb-4">Gestión de Clases y Alumnado</h3>
             {/* Dos columnas: izquierda = alumnado disponible (importado de SAUCE
                 o suelto, sin matricular en ESTA clase), derecha = la clase activa
                 y quién ya está en ella. Seleccionar en la izquierda y matricular
