@@ -360,9 +360,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [syncUsuario, setSyncUsuario] = useState('');
   const [syncContrasena, setSyncContrasena] = useState('');
-  const [syncIdEmpleado, setSyncIdEmpleado] = useState('');
-  const [syncIdCentro, setSyncIdCentro] = useState('');
-  const [syncIdPerfil, setSyncIdPerfil] = useState('');
   const [syncResult, setSyncResult] = useState<SincronizarEducasturResult | null>(null);
   const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
 
@@ -376,18 +373,9 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           const result = await sincronizarMutation.mutateAsync({
               usuario: syncUsuario,
               contrasena: syncContrasena,
-              idEmpleado: syncIdEmpleado ? Number(syncIdEmpleado) : undefined,
-              idCentro: syncIdCentro ? Number(syncIdCentro) : undefined,
-              idPerfil: syncIdPerfil ? Number(syncIdPerfil) : undefined,
           });
           setSyncResult(result);
           setSyncContrasena('');
-          // El backend ya los recordó en educastur_config para la próxima
-          // vez; rellenamos aquí también para no tener que reescribirlos si
-          // se sincroniza otra vez sin recargar la página.
-          if (result.idEmpleado) setSyncIdEmpleado(String(result.idEmpleado));
-          if (result.idCentro) setSyncIdCentro(String(result.idCentro));
-          if (result.idPerfil) setSyncIdPerfil(String(result.idPerfil));
       } catch (err) {
           const message = err instanceof Error ? err.message : 'Error al sincronizar con Educastur.';
           setSyncErrorMsg(message);
@@ -1147,19 +1135,23 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                               ) : (
                                   <div className="flex items-center justify-center gap-1">
                                       {periodIndices.map(periodIndex => {
-                                          const absence = student.enrollmentId
+                                          // tipoFalta === '' es la marca interna de "borrado
+                                          // pendiente de subir a Educastur" — se ve como una
+                                          // celda vacía, no como una falta marcada.
+                                          const raw = student.enrollmentId
                                               ? absenceMap.get(`${student.enrollmentId}|${date}|${periodIndex}`)
                                               : undefined;
+                                          const tipo = raw?.tipoFalta || undefined;
                                           const label = academicConfiguration.periods?.[periodIndex] ?? `Franja ${periodIndex + 1}`;
                                           return (
                                               <span
                                                   key={periodIndex}
-                                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-full border-2 text-sm font-bold cursor-pointer transition-colors ${absence ? `${ABSENCE_COLORS[absence.tipoFalta]} hover:opacity-80` : 'border-slate-300 bg-white text-slate-300 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500'}`}
-                                                  title={absence ? `${ABSENCE_LABELS[absence.tipoFalta]} — ${label}` : `Marcar falta — ${label}`}
+                                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-full border-2 text-sm font-bold cursor-pointer transition-colors ${tipo ? `${ABSENCE_COLORS[tipo]} hover:opacity-80` : 'border-slate-300 bg-white text-slate-300 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500'}`}
+                                                  title={tipo ? `${ABSENCE_LABELS[tipo]} — ${label}` : `Marcar falta — ${label}`}
                                                   onClick={() => student.enrollmentId && handleAbsenceClick(student.enrollmentId, date, periodIndex)}
                                                   onContextMenu={e => student.enrollmentId && openAbsenceContextMenu(e, student.enrollmentId, date, periodIndex)}
                                               >
-                                                  {absence ? absence.tipoFalta : '+'}
+                                                  {tipo ?? '+'}
                                               </span>
                                           );
                                       })}
@@ -1301,23 +1293,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                   <div>
                       <label className="block text-sm font-medium text-slate-700">Contraseña</label>
                       <Input type="password" autoComplete="current-password" required value={syncContrasena} onChange={e => setSyncContrasena(e.target.value)} className="mt-1" />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p className="col-span-3 text-xs text-slate-500 -mt-1 mb-1">
-                          Se resuelven solos al subir — solo hace falta rellenarlos a mano si por lo que sea no se pudieran determinar automáticamente.
-                      </p>
-                      <div>
-                          <label className="block text-xs font-medium text-slate-600">Id empleado</label>
-                          <Input type="number" value={syncIdEmpleado} onChange={e => setSyncIdEmpleado(e.target.value)} className="mt-1" />
-                      </div>
-                      <div>
-                          <label className="block text-xs font-medium text-slate-600">Id centro</label>
-                          <Input type="number" value={syncIdCentro} onChange={e => setSyncIdCentro(e.target.value)} className="mt-1" />
-                      </div>
-                      <div>
-                          <label className="block text-xs font-medium text-slate-600">Id perfil</label>
-                          <Input type="number" placeholder="2" value={syncIdPerfil} onChange={e => setSyncIdPerfil(e.target.value)} className="mt-1" />
-                      </div>
                   </div>
                   {syncErrorMsg && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{syncErrorMsg}</p>}
                   <div className="flex justify-end gap-2 pt-2">

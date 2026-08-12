@@ -76,6 +76,14 @@ def put_absence(enrollment_id: str, data: AbsenceInput) -> Absence:
             return Absence.model_validate(cur.fetchone())
 
 
+# Si la falta que se quita nunca llegó a subirse a Educastur (sin
+# educastur_falta_id), no hay nada allí que limpiar: se borra al momento,
+# igual que antes. Si sí se subió, borrar solo la fila local dejaría un
+# rastro huérfano en Educastur — en vez de eso, se deja la fila marcada en
+# blanco (tipo_falta='') y pendiente de sincronizar (synced_at=NULL), para
+# que la próxima subida le mande a Educastur el mismo idFalta con
+# tipoFalta='' y la borre también allí. services/educastur_sync.py borra
+# la fila local de verdad solo cuando esa subida en blanco tiene éxito.
 def delete_absence(enrollment_id: str, absence_date: str, period_index: int) -> bool:
 
     with get_conn() as conn:
@@ -83,8 +91,25 @@ def delete_absence(enrollment_id: str, absence_date: str, period_index: int) -> 
         with conn.cursor() as cur:
 
             cur.execute(
-                "DELETE FROM absences WHERE enrollment_id = %s AND date = %s AND period_index = %s",
+                "SELECT educastur_falta_id FROM absences WHERE enrollment_id = %s AND date = %s AND period_index = %s",
                 [enrollment_id, absence_date, period_index]
             )
+            row = cur.fetchone()
+            if row is None:
+                return False
 
-            return cur.rowcount > 0
+            if row["educastur_falta_id"] is None:
+                cur.execute(
+                    "DELETE FROM absences WHERE enrollment_id = %s AND date = %s AND period_index = %s",
+                    [enrollment_id, absence_date, period_index]
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE absences SET tipo_falta = '', synced_at = NULL, sync_error = NULL, updated_at = now()
+                    WHERE enrollment_id = %s AND date = %s AND period_index = %s
+                    """,
+                    [enrollment_id, absence_date, period_index]
+                )
+
+            return True

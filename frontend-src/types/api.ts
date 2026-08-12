@@ -237,6 +237,12 @@ export interface Student {
     segundoApellido?: string;
     fechaNacimiento?: string;
     dni?: string;
+    // NIE = Número de Identificación Escolar (SAUCE), NO el NIE de
+    // extranjería (ese vive en `dni`, etiquetado "DNI/NIE" en la ficha).
+    // Es la clave real para no duplicar alumnado al reimportar el listado
+    // de SAUCE — ver services/sauceImport.ts.
+    nie?: string;
+    nacionalidad?: string;
     telefonoUrgencias?: string;
     tutor1?: Tutor;
     tutor2?: Tutor;
@@ -393,7 +399,10 @@ export interface Absence {
     enrollmentId: string;
     date: string;
     periodIndex: number;
-    tipoFalta: TipoFalta;
+    // '' es la marca interna de "se borró en local, pendiente de subir el
+    // borrado a Educastur" (ver services/absences.py::delete_absence en el
+    // backend) — nunca se manda a mano vía PUT, solo la produce un borrado.
+    tipoFalta: TipoFalta | '';
     educasturFaltaId?: number;
     syncedAt?: string;
     syncError?: string;

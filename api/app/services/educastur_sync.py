@@ -130,6 +130,17 @@ def _mark_synced(absence_id: str, educastur_falta_id: Optional[int]):
             )
 
 
+# tipo_falta='' es la marca de "se borró en local, hay que borrarla también
+# en Educastur" (ver services/absences.py::delete_absence). Una vez esa
+# subida en blanco tiene éxito, la fila ya no representa nada ni en local
+# ni en Educastur — se borra de verdad, en vez de dejar un registro
+# fantasma marcado como "sincronizado en blanco" para siempre.
+def _delete_synced_blank(absence_id: str):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM absences WHERE id = %s", [absence_id])
+
+
 def _mark_error(absence_id: str, motivo: str):
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -290,8 +301,15 @@ def sincronizar(data: SincronizarInput) -> SyncResult:
                             alumno, row["tipo_falta"], id_empleado, id_perfil, id_centro,
                             id_falta=row["educastur_falta_id"] or 0,
                         )
-                        nuevo_id_falta = resultado.get("idFalta") if isinstance(resultado, dict) else None
-                        _mark_synced(str(row["id"]), nuevo_id_falta or row["educastur_falta_id"])
+                        if row["tipo_falta"] == "":
+                            # Confirmación de borrado en Educastur: la fila
+                            # ya no representa nada en ninguno de los dos
+                            # sitios, se borra de verdad en vez de marcarse
+                            # como "sincronizada".
+                            _delete_synced_blank(str(row["id"]))
+                        else:
+                            nuevo_id_falta = resultado.get("idFalta") if isinstance(resultado, dict) else None
+                            _mark_synced(str(row["id"]), nuevo_id_falta or row["educastur_falta_id"])
                         sincronizadas += 1
                     except requests.RequestException as e:
                         motivo = "Error al enviar la falta a Educastur."
