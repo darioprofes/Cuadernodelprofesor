@@ -94,9 +94,19 @@ const ExistingStudentPicker: React.FC<{
         });
     };
 
-    const handleEnrollOne = async (id: string) => {
-        await onEnroll(id);
-        setSeleccionados(prev => { const next = new Set(prev); next.delete(id); return next; });
+    // Solo sobre lo visible (lo filtrado y dentro del límite de 60) — no
+    // tiene sentido seleccionar "todos" incluyendo coincidencias que ni
+    // siquiera se están mostrando.
+    const todosVisiblesSeleccionados = visibles.length > 0 && visibles.every(s => seleccionados.has(s.id));
+    const toggleSeleccionarTodos = () => {
+        setSeleccionados(prev => {
+            if (todosVisiblesSeleccionados) {
+                const next = new Set(prev);
+                visibles.forEach(s => next.delete(s.id));
+                return next;
+            }
+            return new Set([...prev, ...visibles.map(s => s.id)]);
+        });
     };
 
     const handleEnrollSeleccionados = async () => {
@@ -141,6 +151,15 @@ const ExistingStudentPicker: React.FC<{
                 </div>
             )}
 
+            {visibles.length > 0 && (
+                <div className="flex items-center justify-between px-1">
+                    <button type="button" onClick={toggleSeleccionarTodos} className="text-xs text-blue-600 hover:underline font-medium">
+                        {todosVisiblesSeleccionados ? 'Deseleccionar todos' : `Seleccionar todos (${visibles.length})`}
+                    </button>
+                    {seleccionados.size > 0 && <span className="text-xs text-slate-400">{seleccionados.size} seleccionado(s)</span>}
+                </div>
+            )}
+
             <div className="space-y-1 max-h-96 overflow-y-auto">
                 {visibles.length === 0 && (
                     <p className="text-xs text-slate-400 px-1 py-2">
@@ -158,7 +177,6 @@ const ExistingStudentPicker: React.FC<{
                         {(s.ultimoCursoSauce || s.ultimaUnidadSauce) && (
                             <span className="text-xs text-slate-400">{[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}</span>
                         )}
-                        <Button variant="secondary" onClick={() => handleEnrollOne(s.id)}>Matricular</Button>
                     </label>
                 ))}
                 {matches.length > visibles.length && (

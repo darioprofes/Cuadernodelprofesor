@@ -93,15 +93,23 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
     // quedaba desactivado para siempre. Ahora el textarea es un campo
     // normal y un botón explícito "Procesar lista" hace el troceado,
     // así que funciona sin importar cómo haya llegado el texto ahí.
+    // "|" al final de la línea es opcional: "Apellido1, Apellido2, Nombre |
+    // NIE" — separado a propósito del resto (que ya usa comas para
+    // apellidos/nombre, con hasta 3 formas distintas de interpretarlas) para
+    // no crear ambigüedad. Sin "|", la línea se sigue interpretando igual
+    // que siempre.
     const handleProcesarTexto = () => {
         const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         if (lines.length === 0) return;
-        const newStudents: TempStudent[] = lines.map((line, index) => ({
-            id: Date.now() + index,
-            ...parsearNombre(line),
-            nie: '',
-            acneae: new Set<string>(),
-        }));
+        const newStudents: TempStudent[] = lines.map((line, index) => {
+            const [nombreParte, nieParte] = line.split('|').map(p => p.trim());
+            return {
+                id: Date.now() + index,
+                ...parsearNombre(nombreParte),
+                nie: nieParte || '',
+                acneae: new Set<string>(),
+            };
+        });
         setStudents(current => [...current, ...newStudents]);
         setRawText('');
     };
@@ -153,12 +161,13 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
                         id="student-paste-area"
                         value={rawText}
                         onChange={e => setRawText(e.target.value)}
-                        placeholder={"García Fernández, López Martínez, Juan Pablo\nRuiz, Díaz, Ana\n…"}
+                        placeholder={"García Fernández, López Martínez, Juan Pablo | 1234567\nRuiz, Díaz, Ana\n…"}
                         className="mt-1 min-h-[100px] font-mono text-sm"
                     />
                     <p className="mt-1 text-xs text-slate-500">
                         Formato preferido: <code className="bg-slate-100 px-1 rounded">Apellido1, Apellido2, Nombre</code> (un alumno/a por línea) — permite apellidos compuestos.
                         También se acepta <code className="bg-slate-100 px-1 rounded">Apellido1 Apellido2, Nombre</code> o <code className="bg-slate-100 px-1 rounded">Nombre Apellido1 Apellido2</code>.
+                        Para incluir el NIE, añade <code className="bg-slate-100 px-1 rounded">| NIE</code> al final de la línea (opcional, también se puede rellenar después fila a fila).
                         Puedes corregir los campos antes de guardar.
                     </p>
                     <button
