@@ -2,7 +2,7 @@
 import React, { useState, useRef } from 'react';
 import Modal from './Modal';
 import Button from './Button';
-import { ArrowUpTrayIcon } from './Icons';
+import { ArrowUpTrayIcon, ArrowDownTrayIcon } from './Icons';
 import ClassLabel from './ClassLabel';
 import type { ClassData, Course, AcademicConfiguration, FilaHorario } from '../types';
 import { HUE_PRESETS, buildDefaultCategories } from '../utils';
@@ -10,15 +10,33 @@ import { useCreateCourse, useDeleteCourse } from '../hooks/useCourses';
 import { useCreateClass, useUpdateClass, useDeleteClass } from '../hooks/useApiClasses';
 import { useAcademicYearCourses, useAddAcademicYearCourse, useRemoveAcademicYearCourse, useEvaluationPeriods } from '../hooks/useAcademicYears';
 import { useCreateCategory } from '../hooks/useCategories';
+import { generateHorarioTemplate, parseHorarioWorkbook } from '../services/scheduleWizard';
+import { isTauri } from '@tauri-apps/api/core';
+
+// El PDF oficial necesita pdfplumber (solo backend Python) -- sin
+// equivalente en Rust, mismo criterio ya aplicado a la importación de
+// horario del asistente de inicio de curso. El Excel es puro cálculo en
+// memoria (exceljs), funciona igual en las dos plataformas -- en
+// escritorio es la única opción, así que ni se muestra el selector de modo.
+const PDF_IMPORT_AVAILABLE = !isTauri();
+
+const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+};
 
 interface ImportScheduleModalProps {
     isOpen: boolean;
     onClose: () => void;
     // courses/classes: ya resueltos por ScheduleManager (curriculumCourses /
-    // clases del backend nuevo mapeadas a la forma local) — este componente
-    // solo se renderiza en web (nunca en escritorio, ver ScheduleManager),
-    // así que aplica el plan siempre contra el backend nuevo, sin rama
-    // isDesktop propia.
+    // clases del backend nuevo mapeadas a la forma local). Se renderiza en
+    // las dos plataformas (ver PDF_IMPORT_AVAILABLE más arriba) — el plan
+    // se aplica siempre contra el backend "nuevo" sin rama isDesktop propia
+    // porque services/api.ts ya enruta esas mutaciones por su cuenta.
     courses: Course[];
     classes: ClassData[];
     yearId: string;
@@ -198,6 +216,8 @@ export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes
 
 const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClose, courses, classes, yearId, academicConfiguration, setAcademicConfiguration }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const excelFileInputRef = useRef<HTMLInputElement>(null);
+    const [modo, setModo] = useState<'pdf' | 'excel'>(PDF_IMPORT_AVAILABLE ? 'pdf' : 'excel');
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [filas, setFilas] = useState<FilaHorario[] | null>(null);
@@ -239,7 +259,37 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
         setApplied(false);
         setBorrarAcademicasSinUsar(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
+        if (excelFileInputRef.current) excelFileInputRef.current.value = '';
         onClose();
+    };
+
+    const handleDownloadTemplate = async () => {
+        try {
+            const blob = await generateHorarioTemplate();
+            downloadBlob(blob, 'plantilla_horario.xlsx');
+        } catch (e) {
+            setErrorMsg(`Error al generar la plantilla: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    };
+
+    const handleFileChangeExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setLoading(true);
+        setErrorMsg(null);
+        setFilas(null);
+
+        try {
+            const buffer = await file.arrayBuffer();
+            const { filas: parsedFilas, errores } = await parseHorarioWorkbook(buffer);
+            setFilas(parsedFilas);
+            setErroresExtraccion(errores);
+        } catch (err) {
+            setErrorMsg(err instanceof Error ? err.message : String(err));
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -357,7 +407,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={handleClose} title="Importar Horario desde PDF" size="2xl">
+        <Modal isOpen={isOpen} onClose={handleClose} title="Importar Horario" size="2xl">
             <div className="space-y-4">
                 {applied ? (
                     <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
@@ -368,20 +418,40 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                     </div>
                 ) : (
                     <>
+                        {PDF_IMPORT_AVAILABLE && (
+                            <div className="flex gap-2 border-b border-slate-200">
+                                <button
+                                    type="button"
+                                    onClick={() => { setModo('pdf'); setFilas(null); setErroresExtraccion([]); setErrorMsg(null); }}
+                                    className={`px-3 py-2 text-sm font-medium border-b-2 ${modo === 'pdf' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    PDF oficial (SAUCE)
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setModo('excel'); setFilas(null); setErroresExtraccion([]); setErrorMsg(null); }}
+                                    className={`px-3 py-2 text-sm font-medium border-b-2 ${modo === 'excel' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    Excel
+                                </button>
+                            </div>
+                        )}
+
                         <p className="text-sm text-slate-600">
-                            Sube el PDF oficial "Horario individual del profesorado" (SAUCE). Se extraen las franjas
-                            horarias y, para cada una con grupo asignado, se crea (o reutiliza) un curso y una clase
-                            con ese alumnado vacío listo para rellenar.
+                            {modo === 'pdf'
+                                ? 'Sube el PDF oficial "Horario individual del profesorado" (SAUCE).'
+                                : 'Sube un Excel con hoja "Horario" — descarga la plantilla si no tienes una ya rellena (mismo formato que la del asistente de inicio de curso).'
+                            } Se extraen las franjas horarias y, para cada una con grupo asignado, se crea (o reutiliza) un curso y una clase con ese alumnado vacío listo para rellenar.
                         </p>
 
                         <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
-                            <p>⚠️ Al confirmar, la lista de <strong>franjas horarias</strong> (Ajustes → Configuración del Curso) se <strong>sustituye</strong> por las horas encontradas en el PDF. Pensado para hacerse una vez, al empezar.</p>
+                            <p>⚠️ Al confirmar, la lista de <strong>franjas horarias</strong> (Ajustes → Configuración del Curso) se <strong>sustituye</strong> por las horas encontradas en el archivo. Pensado para hacerse una vez, al empezar.</p>
                             <p>Las <strong>otras ocupaciones</strong> (guardias, reuniones, recreo...) se sustituyen siempre por completo — no guardan alumnado ni calificaciones.</p>
                             <p>El <strong>aula</strong> de cada sesión se importa junto a la franja; puedes revisarla o añadir una nota (p.ej. "Laboratorio") pulsando la celda en "Horario Semanal".</p>
                             <p>Los grupos que ya venían fusionados en una misma franja (p.ej. dos subgrupos compartiendo una clase) se mantienen como un único nombre combinado.</p>
                         </div>
 
-                        {!filas && (
+                        {!filas && modo === 'pdf' && (
                             <div>
                                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".pdf" className="hidden" />
                                 <button
@@ -391,6 +461,28 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                                 >
                                     <ArrowUpTrayIcon className="w-5 h-5" />
                                     {loading ? 'Leyendo el PDF…' : 'Seleccionar PDF del horario'}
+                                </button>
+                            </div>
+                        )}
+
+                        {!filas && modo === 'excel' && (
+                            <div className="space-y-2">
+                                <button
+                                    type="button"
+                                    onClick={handleDownloadTemplate}
+                                    className="w-full flex items-center justify-center gap-2 bg-white text-blue-600 border border-blue-200 py-2 rounded-lg hover:bg-blue-50 font-medium text-sm"
+                                >
+                                    <ArrowDownTrayIcon className="w-4 h-4" />
+                                    Descargar plantilla Excel
+                                </button>
+                                <input type="file" ref={excelFileInputRef} onChange={handleFileChangeExcel} accept=".xlsx" className="hidden" />
+                                <button
+                                    onClick={() => excelFileInputRef.current?.click()}
+                                    disabled={loading}
+                                    className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium shadow-sm disabled:bg-blue-300"
+                                >
+                                    <ArrowUpTrayIcon className="w-5 h-5" />
+                                    {loading ? 'Leyendo el Excel…' : 'Seleccionar Excel del horario'}
                                 </button>
                             </div>
                         )}
@@ -411,7 +503,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                         {plan && filas && filas.length > 0 && (
                             <div className="space-y-3">
                                 <div className="p-3 border rounded-lg bg-slate-50 text-sm text-slate-700">
-                                    <p>{filas.length} franjas encontradas en el PDF.</p>
+                                    <p>{filas.length} franjas encontradas.</p>
                                     <p>{plan.periods.length} franjas horarias distintas.</p>
                                     <p>{plan.clasesCreadas} clase(s) nueva(s) se crearán; {plan.clasesActualizadas} clase(s) existentes se completarán con nuevas franjas.</p>
                                 </div>
@@ -462,7 +554,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                         )}
 
                         {filas && filas.length === 0 && !errorMsg && (
-                            <p className="text-slate-500 text-sm">No se ha reconocido ninguna franja horaria en este PDF.</p>
+                            <p className="text-slate-500 text-sm">No se ha reconocido ninguna franja horaria en el archivo.</p>
                         )}
                     </>
                 )}

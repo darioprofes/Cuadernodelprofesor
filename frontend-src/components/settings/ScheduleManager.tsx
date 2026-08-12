@@ -8,19 +8,9 @@ import Select from '../Select';
 import ClassLabel from '../ClassLabel';
 import ImportScheduleModal from '../ImportScheduleModal';
 import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../../theme/components/Table';
-import { isTauri } from '@tauri-apps/api/core';
 import { useCurrentAcademicYear } from '../../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../../hooks/useApiClasses';
 import { apiClassToLocal } from '../../services/apiAdapters';
-
-// La importación de horario en PDF depende del backend Python (pdfplumber,
-// ver api/app/services/horario_pdf.py) — no existe en la versión de
-// escritorio, que no tiene servidor, y eso NO cambia con la Fase 7 (no hay
-// equivalente en Rust). El horario se sigue pudiendo editar a mano en la
-// rejilla de abajo. A diferencia de esto, las clases/franjas en sí ya
-// tienen comando Rust real (bloque 4), así que esta es la ÚNICA rama
-// isDesktop que queda en este fichero.
-const PDF_IMPORT_AVAILABLE = !isTauri();
 
 interface ScheduleSlotInfo {
     classId: string;
@@ -134,30 +124,25 @@ const ScheduleManager: React.FC<{
         <div>
             <div className="flex items-start justify-between gap-4 mb-2">
                 <h3 className="text-xl font-bold text-slate-800">Horario Semanal de Clases</h3>
-                {PDF_IMPORT_AVAILABLE && (
-                    <button
-                        onClick={() => setIsImportModalOpen(true)}
-                        className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm"
-                    >
-                        📥 Importar horario (PDF oficial)
-                    </button>
-                )}
+                <button
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm"
+                >
+                    📥 Importar horario
+                </button>
             </div>
             <p className="text-sm text-slate-600 mb-4">
                 Asigna cada clase a su franja horaria correspondiente. Pulsa una celda para elegir clase, aula y una nota libre (p.ej. "Laboratorio").
-                {!PDF_IMPORT_AVAILABLE && ' La importación desde PDF oficial no está disponible en la versión de escritorio.'}
             </p>
-            {PDF_IMPORT_AVAILABLE && (
-                <ImportScheduleModal
-                    isOpen={isImportModalOpen}
-                    onClose={() => setIsImportModalOpen(false)}
-                    courses={courses}
-                    classes={effectiveClasses}
-                    yearId={yearId}
-                    academicConfiguration={academicConfiguration}
-                    setAcademicConfiguration={setAcademicConfiguration}
-                />
-            )}
+            <ImportScheduleModal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                courses={courses}
+                classes={effectiveClasses}
+                yearId={yearId}
+                academicConfiguration={academicConfiguration}
+                setAcademicConfiguration={setAcademicConfiguration}
+            />
             <div className={tableWrapperClassName}>
                 <table className={tableBaseClassName}>
                     <thead>

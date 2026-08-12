@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateTemplate, parseWorkbook, defaultEvaluationPeriods } from './scheduleWizard';
+import { generateTemplate, parseWorkbook, defaultEvaluationPeriods, generateHorarioTemplate, parseHorarioWorkbook } from './scheduleWizard';
 import type { FilaHorario } from '../types';
 
 const ALUMNADO_CABECERA = ['Nivel', 'Materia', 'Grupo', 'Nombre', 'Primer Apellido', 'Segundo Apellido', 'Fecha Nacimiento', 'DNI', 'ACNEAE'];
@@ -600,6 +600,54 @@ describe('scheduleWizard', () => {
                     : String(valor);
                 expect(texto.length, `banner de "${nombreHoja}" no debería estar vacío`).toBeGreaterThan(10);
             }
+        });
+    });
+
+    // Plantilla ligera (Configuración + Horario, sin Curso Académico ni
+    // Alumnado) usada desde "Horario Semanal" para actualizar el curso YA
+    // activo — reutiliza las mismas dos hojas/parseo que la del asistente,
+    // así que solo hace falta un round-trip de humo, no repetir toda la
+    // batería de casos ya cubierta arriba para parseHorarioSheet.
+    describe('generateHorarioTemplate / parseHorarioWorkbook', () => {
+        it('genera solo las hojas Configuración y Horario, y parsea de vuelta una franja rellenada a mano', async () => {
+            const blob = await generateHorarioTemplate();
+            const buffer = await blob.arrayBuffer();
+            const { Workbook } = await import('exceljs');
+            const wb = new Workbook();
+            await wb.xlsx.load(buffer);
+
+            expect(wb.getWorksheet('Configuración')).toBeDefined();
+            expect(wb.getWorksheet('Horario')).toBeDefined();
+            expect(wb.getWorksheet('Curso Académico')).toBeUndefined();
+            expect(wb.getWorksheet('Alumnado')).toBeUndefined();
+
+            // La plantilla ya trae una fila de ejemplo prellenada en
+            // HORARIO_FILA_DATOS_INICIO (lunes + martes) — se escribe en la
+            // fila siguiente, vacía, para no mezclarla con lo que se prueba.
+            const hoja = wb.getWorksheet('Horario')!;
+            const filaLibre = HORARIO_FILA_DATOS_INICIO + 1;
+            hoja.getCell(filaLibre, 1).value = '10:05 - 11:00';
+            hoja.getCell(filaLibre, 3).value = 'Física y Química'; // Materia, lunes
+            const bufferModificado = await wb.xlsx.writeBuffer();
+
+            const { filas, errores } = await parseHorarioWorkbook(bufferModificado as ArrayBuffer);
+            expect(errores).toEqual([]);
+            // La plantilla ya trae su propia fila de ejemplo (lunes+martes) —
+            // basta con comprobar que la fila añadida a mano se reconoce bien.
+            expect(filas).toContainEqual(expect.objectContaining({
+                dia: 0, hora_inicio: '10:05', hora_fin: '11:00', asignatura: 'Física y Química',
+            }));
+        });
+
+        it('sin hoja "Horario", devuelve un error claro en vez de lanzar', async () => {
+            const { Workbook } = await import('exceljs');
+            const wb = new Workbook();
+            wb.addWorksheet('Otra cosa');
+            const buffer = await wb.xlsx.writeBuffer();
+
+            const { filas, errores } = await parseHorarioWorkbook(buffer as ArrayBuffer);
+            expect(filas).toEqual([]);
+            expect(errores.length).toBeGreaterThan(0);
         });
     });
 });

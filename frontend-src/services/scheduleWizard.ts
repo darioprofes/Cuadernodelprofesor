@@ -1010,3 +1010,42 @@ function parseAlumnadoSheet(sheet: import('exceljs').Worksheet, errores: string[
 
     return alumnado;
 }
+
+// ==========================================================
+// Plantilla ligera "solo Horario" (Configuración + Horario), para
+// actualizar el horario del curso académico YA activo desde "Horario
+// Semanal" (ImportScheduleModal.tsx) — a diferencia de generateTemplate()/
+// parseWorkbook(), que siempre crean un curso académico nuevo entero
+// (Instrucciones + Curso Académico + Alumnado incluidos, que no pintan
+// nada aquí). Reutiliza las mismas dos hojas, mismo layout, mismo parseo,
+// sin duplicar nada — y al ser puro cálculo en memoria (exceljs), funciona
+// igual en web y en escritorio, a diferencia de la importación del PDF
+// oficial (services/horario_pdf.py, solo backend Python).
+// ==========================================================
+
+export async function generateHorarioTemplate(): Promise<Blob> {
+    const { Workbook } = await import('exceljs');
+    const wb = new Workbook();
+    wb.creator = 'Cuaderno Docente';
+    wb.created = new Date();
+
+    buildConfiguracionSheet(wb);
+    buildHorarioSheet(wb);
+
+    const buffer = await wb.xlsx.writeBuffer();
+    return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+export async function parseHorarioWorkbook(buffer: ArrayBuffer): Promise<{ filas: FilaHorario[]; errores: string[] }> {
+    const { Workbook } = await import('exceljs');
+    const wb = new Workbook();
+    await wb.xlsx.load(buffer);
+
+    const hojaHorario = wb.getWorksheet(HOJA_HORARIO);
+    if (!hojaHorario) {
+        return { filas: [], errores: [`No se encuentra la hoja "${HOJA_HORARIO}".`] };
+    }
+    const errores: string[] = [];
+    const filas = parseHorarioSheet(hojaHorario, errores);
+    return { filas, errores };
+}
