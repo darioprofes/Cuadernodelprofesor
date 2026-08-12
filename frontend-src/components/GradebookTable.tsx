@@ -330,7 +330,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [syncIdEmpleado, setSyncIdEmpleado] = useState('');
   const [syncIdCentro, setSyncIdCentro] = useState('');
   const [syncIdPerfil, setSyncIdPerfil] = useState('');
-  const [showSyncIdsFields, setShowSyncIdsFields] = useState(false);
   const [syncResult, setSyncResult] = useState<SincronizarEducasturResult | null>(null);
   const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
 
@@ -350,10 +349,15 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           });
           setSyncResult(result);
           setSyncContrasena('');
+          // El backend ya los recordó en educastur_config para la próxima
+          // vez; rellenamos aquí también para no tener que reescribirlos si
+          // se sincroniza otra vez sin recargar la página.
+          if (result.idEmpleado) setSyncIdEmpleado(String(result.idEmpleado));
+          if (result.idCentro) setSyncIdCentro(String(result.idCentro));
+          if (result.idPerfil) setSyncIdPerfil(String(result.idPerfil));
       } catch (err) {
           const message = err instanceof Error ? err.message : 'Error al sincronizar con Educastur.';
           setSyncErrorMsg(message);
-          if (message.includes('id de empleado')) setShowSyncIdsFields(true);
       }
   };
 
@@ -1224,22 +1228,23 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                       <label className="block text-sm font-medium text-slate-700">Contraseña</label>
                       <Input type="password" autoComplete="current-password" required value={syncContrasena} onChange={e => setSyncContrasena(e.target.value)} className="mt-1" />
                   </div>
-                  {showSyncIdsFields && (
-                      <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                          <div>
-                              <label className="block text-xs font-medium text-slate-600">Id empleado</label>
-                              <Input type="number" value={syncIdEmpleado} onChange={e => setSyncIdEmpleado(e.target.value)} className="mt-1" />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-medium text-slate-600">Id centro</label>
-                              <Input type="number" value={syncIdCentro} onChange={e => setSyncIdCentro(e.target.value)} className="mt-1" />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-medium text-slate-600">Id perfil</label>
-                              <Input type="number" placeholder="2" value={syncIdPerfil} onChange={e => setSyncIdPerfil(e.target.value)} className="mt-1" />
-                          </div>
+                  <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                      <p className="col-span-3 text-xs text-slate-500 -mt-1 mb-1">
+                          Se resuelven solos al sincronizar — solo hace falta rellenarlos a mano si por lo que sea no se pudieran determinar automáticamente.
+                      </p>
+                      <div>
+                          <label className="block text-xs font-medium text-slate-600">Id empleado</label>
+                          <Input type="number" value={syncIdEmpleado} onChange={e => setSyncIdEmpleado(e.target.value)} className="mt-1" />
                       </div>
-                  )}
+                      <div>
+                          <label className="block text-xs font-medium text-slate-600">Id centro</label>
+                          <Input type="number" value={syncIdCentro} onChange={e => setSyncIdCentro(e.target.value)} className="mt-1" />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-medium text-slate-600">Id perfil</label>
+                          <Input type="number" placeholder="2" value={syncIdPerfil} onChange={e => setSyncIdPerfil(e.target.value)} className="mt-1" />
+                      </div>
+                  </div>
                   {syncErrorMsg && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{syncErrorMsg}</p>}
                   <div className="flex justify-end gap-2 pt-2">
                       <Button type="button" variant="secondary" onClick={handleCloseSyncModal}>Cancelar</Button>

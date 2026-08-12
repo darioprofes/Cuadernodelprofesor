@@ -1,25 +1,26 @@
 """
-Cliente para el "Área del Profesorado" (Educastur) — adaptado del script de
-referencia en docs/faltas/educastur_faltas.py (login Keycloak, tramos
-horarios, alumnado de un tramo, marcar/desmarcar falta), con dos cambios
-deliberados respecto al script original:
+Cliente para el "Área del Profesorado" (Educastur): login vía Keycloak,
+consulta de tramos horarios, alumnado de un tramo, y marcado/desmarcado
+de faltas.
 
-  - User-Agent propio y honesto (CuadernoDocente/1.0), no el spoofing de
-    Chrome del script — decisión explícita del usuario: el patrón de
-    peticiones (varias faltas seguidas en milisegundos) ya delata que es
-    automático de todas formas, fingir un navegador no oculta nada real.
-  - `logout()` nuevo: revoca el refresh_token al terminar la sincronización
-    en vez de dejar que caduque solo — cierra la ventana de exposición de
-    inmediato. Nunca se persiste ningún token en ningún sitio (ver
-    integracion-educastur-faltas.md): esta clase vive solo durante la
-    propia llamada de sincronización, nunca más.
+Verificado en vivo por el usuario contra su cuenta real (ver
+docs/faltas/educastur_client.py y probar_educastur.py, mismo contenido) —
+esta copia es la que corre de verdad en el backend.
+
+  - User-Agent propio (CuadernoDocente/1.0) en vez de simular un
+    navegador: el servidor sabe en todo momento qué tipo de cliente está
+    haciendo la petición — decisión explícita del usuario, fingir un
+    navegador no ocultaría nada real de todas formas.
+  - `logout()` revoca el refresh_token al terminar la sincronización, en
+    vez de esperar a que caduque solo. Ningún token se persiste en ningún
+    sitio (ver integracion-educastur-faltas.md) — esta clase vive solo
+    durante la propia llamada de sincronización.
 
 No es una API pública ni documentada por Educastur — es el mismo
 client_id que usa su propia web, reutilizado desde fuera. Puede romperse
 sin aviso si cambian el flujo de login.
 """
 
-import base64
 import json
 import re
 from urllib.parse import urlparse, parse_qs
@@ -30,11 +31,21 @@ REALM_BASE = "https://rhsso.asturias.es/auth/realms/educacion-clave"
 AUTH_URL = f"{REALM_BASE}/protocol/openid-connect/auth"
 TOKEN_URL = f"{REALM_BASE}/protocol/openid-connect/token"
 LOGOUT_URL = f"{REALM_BASE}/protocol/openid-connect/logout"
+# API de cuenta estándar de Keycloak — solo trae los datos propios del
+# login (nombre, email, atributos del realm si los hay). NO es la fuente
+# de idEmpleado/idCentro/idPerfil, pese a que en un principio parecía la
+# candidata lógica: esos IDs viven en la API de faltas (ver
+# FALTAS_EMPLEADO_URL más abajo), confirmado inspeccionando la web real.
+ACCOUNT_URL = f"{REALM_BASE}/account"
 
 CLIENT_ID = "AreaProfesorado"
 REDIRECT_URI = "https://www62.asturias.es/AreaProfesorado/#/home"
 
 FALTAS_API_BASE = "https://www62.asturias.es/faltas-back/api/faltas-tramo"
+# Fuente real de idEmpleado/idCentro/idPerfil — confirmado inspeccionando
+# la web real con las herramientas de desarrollador (no documentado,
+# puede cambiar de forma).
+FALTAS_EMPLEADO_URL = "https://www62.asturias.es/faltas-back/api/faltas/empleado"
 
 USER_AGENT = "CuadernoDocente/1.0 (+https://profe.lamarejada.es)"
 
@@ -44,6 +55,16 @@ TIPOS_FALTA_ACEPTADOS = TIPOS_FALTA_VALIDOS | {""}
 
 class EducasturError(Exception):
     """Cualquier fallo del lado de Educastur (login, red, respuesta inesperada)."""
+
+
+class DiaNoLectivoError(EducasturError):
+    """
+    La fecha consultada es festivo o fin de semana — Educastur devuelve un
+    código propio (430) en vez de una lista vacía. No es un fallo real:
+    para una sincronización que procesa varias fechas seguidas, este caso
+    se distingue de un error genuino y esa fecha se salta sin más, en vez
+    de tratarse como un fallo que bloquea el resto.
+    """
 
 
 class EducasturClient:
@@ -100,6 +121,61 @@ class EducasturClient:
 
         return resp3.json()
 
+    # Perfil de cuenta de Keycloak (nombre, email, atributos del realm si
+    # los hay). Útil como dato de usuario, pero NO trae idEmpleado/
+    # idCentro/idPerfil — para eso, obtener_datos_empleado().
+    def obtener_perfil(self, access_token: str) -> dict:
+
+        try:
+            resp = self.session.get(ACCOUNT_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except (requests.RequestException, ValueError):
+            return {}
+
+    # Fuente real de idEmpleado/idCentro/idPerfil: este endpoint específico
+    # de la API de faltas, no la cuenta de Keycloak. Devuelve el JSON crudo
+    # tal cual lo da Educastur (id, nif, nombre, perfiles[].centros[]...) —
+    # para los IDs ya resueltos y listos para usar, ver resolver_ids_empleado().
+    def obtener_datos_empleado(self, access_token: str) -> dict:
+
+        resp = self.session.get(
+            FALTAS_EMPLEADO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    # Traduce el JSON crudo de obtener_datos_empleado() a los tres IDs que
+    # necesita el resto del cliente. Estructura real confirmada: idEmpleado
+    # va en la raíz como "id" (no "idEmpleado"); idPerfil e idCentro van
+    # anidados en perfiles[]/centros[] (idPerfil llega como string, se
+    # convierte a int). Coge el primer perfil y el primer centro de ese
+    # perfil — si el usuario tuviera varios (más de un centro, o un rol
+    # distinto a "Profesorado"), esto habría que revisarlo para dejar elegir
+    # explícitamente, en vez de asumir siempre el primero.
+    def resolver_ids_empleado(self, datos_empleado: dict) -> dict:
+
+        id_empleado = datos_empleado.get("id")
+
+        perfiles = datos_empleado.get("perfiles") or []
+        id_perfil = None
+        id_centro = None
+        if perfiles:
+            primer_perfil = perfiles[0]
+            id_perfil_raw = primer_perfil.get("idPerfil")
+            id_perfil = int(id_perfil_raw) if id_perfil_raw is not None else None
+            centros = primer_perfil.get("centros") or []
+            if centros:
+                id_centro = centros[0].get("idCentro")
+
+        return {
+            "id_empleado": id_empleado,
+            "id_centro": id_centro,
+            "id_perfil": id_perfil,
+        }
+
     def logout(self, refresh_token: str) -> None:
 
         try:
@@ -120,6 +196,14 @@ class EducasturClient:
             url, params={"fecha": fecha},
             headers={"Authorization": f"Bearer {access_token}"}, timeout=15,
         )
+        # Código propio de Educastur (ni siquiera un código HTTP estándar):
+        # significa "fecha festiva o fin de semana", confirmado tanto desde
+        # este cliente como reproducido en la propia web oficial. No es un
+        # fallo real de la petición, así que se distingue del resto de
+        # errores para que el llamante pueda decidir saltarse la fecha en
+        # vez de tratarlo como un fallo genérico.
+        if resp.status_code == 430:
+            raise DiaNoLectivoError(f"{fecha} es festivo o fin de semana — Educastur no permite consultar faltas ese día.")
         resp.raise_for_status()
         return resp.json()
 
@@ -177,18 +261,3 @@ class EducasturClient:
         resp = self.session.post(url, json=body, headers={"Authorization": f"Bearer {access_token}"}, timeout=15)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
-
-
-# Sin verificar firma: el token ya viene de un login que acabamos de hacer
-# nosotros mismos, solo se lee para intentar sacar id_empleado/id_centro/
-# id_perfil de los claims — punto de incertidumbre real (ver
-# integracion-educastur-faltas.md), qué trae exactamente solo se sabe
-# probando con una cuenta real.
-def decode_jwt_claims(access_token: str) -> dict:
-
-    try:
-        payload_b64 = access_token.split(".")[1]
-        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
-        return json.loads(base64.urlsafe_b64decode(padded))
-    except (IndexError, ValueError, json.JSONDecodeError):
-        return {}

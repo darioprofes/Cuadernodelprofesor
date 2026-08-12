@@ -5,7 +5,7 @@ import requests
 
 from services.db import get_conn
 from services.schemas import ApiModel
-from services.educastur_client import EducasturClient, EducasturError, decode_jwt_claims
+from services.educastur_client import EducasturClient, EducasturError, DiaNoLectivoError
 
 _PERIOD_RANGE_RE = re.compile(r"(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})")
 
@@ -126,24 +126,24 @@ def sincronizar(data: SincronizarInput) -> SyncResult:
     refresh_token = tokens.get("refresh_token", "")
 
     try:
-        claims = decode_jwt_claims(access_token)
         stored = _get_config()
 
-        id_empleado = data.id_empleado or stored.get("id_empleado") or claims.get("idEmpleado")
-        id_centro = data.id_centro or stored.get("id_centro") or claims.get("idCentro")
-        # 2 = profesor, valor por defecto ya usado como tal en el script de referencia.
-        id_perfil = data.id_perfil or stored.get("id_perfil") or claims.get("idPerfil") or 2
+        # GET /faltas/empleado — fuente real de idEmpleado/idCentro/
+        # idPerfil, confirmado contra una cuenta real (ver
+        # docs/faltas/educastur_client.py): idEmpleado va en la raíz como
+        # "id", idPerfil/idCentro van anidados en perfiles[]/centros[].
+        datos_empleado = client.obtener_datos_empleado(access_token)
+        ids = client.resolver_ids_empleado(datos_empleado)
 
-        nombre_profesor = (
-            claims.get("name")
-            or (f"{claims.get('given_name', '')} {claims.get('family_name', '')}".strip() or None)
-            or claims.get("preferred_username")
-            or stored.get("nombre_profesor")
-        )
+        id_empleado = data.id_empleado or stored.get("id_empleado") or ids["id_empleado"]
+        id_centro = data.id_centro or stored.get("id_centro") or ids["id_centro"]
+        id_perfil = data.id_perfil or stored.get("id_perfil") or ids["id_perfil"] or 2
+
+        nombre_profesor = datos_empleado.get("nombre") or stored.get("nombre_profesor")
 
         if not id_empleado or not id_centro:
             raise EducasturError(
-                "No se han podido determinar automáticamente tu id de empleado/centro en Educastur — "
+                "No se han podido determinar tu id de empleado/centro en Educastur — "
                 "hace falta indicarlos a mano la primera vez."
             )
 
@@ -162,6 +162,16 @@ def sincronizar(data: SincronizarInput) -> SyncResult:
 
             try:
                 tramos = client.obtener_tramos(access_token, id_empleado, id_centro, fecha)
+            except DiaNoLectivoError:
+                # No es un fallo real: Educastur no permite consultar faltas
+                # en festivos/fines de semana. Si hay una falta local marcada
+                # en una fecha así, es un dato de la propia app que no tiene
+                # equivalente que sincronizar — se informa, no se reintenta.
+                for row in rows:
+                    motivo = f"{fecha} es festivo o fin de semana según Educastur, no se puede sincronizar."
+                    _mark_error(str(row["id"]), motivo)
+                    errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo=motivo))
+                continue
             except requests.RequestException as e:
                 for row in rows:
                     _mark_error(str(row["id"]), f"No se pudieron obtener los tramos de Educastur: {e}")
