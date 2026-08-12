@@ -1,4 +1,5 @@
 import re
+from datetime import date as date_cls
 from typing import Optional
 
 import requests
@@ -20,6 +21,26 @@ def _parse_period_range(label: str) -> Optional[tuple[int, int]]:
         return None
     h1, m1, h2, m2 = (int(x) for x in m.groups())
     return h1 * 60 + m1, h2 * 60 + m2
+
+
+# Mismo criterio que isHoliday en frontend-src/components/CalendarView.tsx
+# (rangos [startDate, endDate] de academic_years.holidays, JSONB con las
+# claves tal cual las escribe el frontend, camelCase). Findesemana se
+# comprueba aparte del calendario de festivos configurado — nunca hay
+# clase en sábado/domingo, tenga o no vacaciones marcadas ese tramo del año.
+def _is_dia_no_lectivo(fecha: date_cls, holidays: list) -> bool:
+    if fecha.weekday() >= 5:  # 5 = sábado, 6 = domingo
+        return True
+    for h in holidays or []:
+        start, end = h.get("startDate"), h.get("endDate")
+        if not start or not end:
+            continue
+        try:
+            if date_cls.fromisoformat(start) <= fecha <= date_cls.fromisoformat(end):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 class SincronizarInput(ApiModel):
@@ -76,8 +97,10 @@ def _save_config(id_empleado: int, id_centro: int, id_perfil: int, nombre_profes
 
 
 # Faltas locales pendientes, con lo necesario para emparejar con Educastur:
-# DNI del alumno (students.dni) y los "periods" del curso académico de su
-# clase, para resolver a qué franja horaria real corresponde period_index.
+# DNI del alumno (students.dni), los "periods" y "holidays" del curso
+# académico de su clase — periods para resolver a qué franja horaria real
+# corresponde period_index, holidays para saber si esa fecha es no lectiva
+# sin tener que preguntarle a Educastur.
 def _pending_absences() -> list[dict]:
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -86,7 +109,7 @@ def _pending_absences() -> list[dict]:
                 SELECT
                     ab.id, ab.date, ab.period_index, ab.tipo_falta, ab.educastur_falta_id,
                     s.dni, s.nombre, s.primer_apellido, s.segundo_apellido,
-                    ay.periods
+                    ay.periods, ay.holidays
                 FROM absences ab
                 JOIN enrollments e ON e.id = ab.enrollment_id
                 JOIN students s ON s.id = e.student_id
@@ -114,10 +137,44 @@ def _mark_error(absence_id: str, motivo: str):
 
 
 # Orquesta una sincronización completa, de principio a fin, en una única
-# llamada: login -> agrupar pendientes por (fecha, tramo real de Educastur)
-# -> procesar_falta por grupo -> logout. Nunca deja nada de la sesión vivo
-# más allá de esta función (ver integracion-educastur-faltas.md).
+# llamada: comprobaciones 100% locales primero (sin tocar Educastur, ni
+# siquiera autenticarse) -> login solo si queda algo que de verdad se pueda
+# intentar -> agrupar por (fecha, tramo real de Educastur) -> procesar_falta
+# por grupo -> logout. Nunca deja nada de la sesión vivo más allá de esta
+# función (ver integracion-educastur-faltas.md).
 def sincronizar(data: SincronizarInput) -> SyncResult:
+
+    pending = _pending_absences()
+
+    errores: list[SyncErrorRow] = []
+    procesables: list[dict] = []
+
+    # Días no lectivos (festivo/fin de semana según el calendario del propio
+    # curso) y franjas sin hora resoluble: ninguno de los dos necesita
+    # preguntarle nada a Educastur, así que se descartan aquí, antes de
+    # gastar ni un login — pedido explícito del usuario, no solo una
+    # optimización.
+    for row in pending:
+        if _is_dia_no_lectivo(row["date"], row["holidays"]):
+            motivo = f"{row['date']} es festivo o fin de semana — no se pueden sincronizar faltas en días no lectivos."
+            _mark_error(str(row["id"]), motivo)
+            errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo=motivo))
+            continue
+
+        periods = row["periods"] or []
+        label = periods[row["period_index"]] if row["period_index"] < len(periods) else None
+        if not label or not _parse_period_range(label):
+            motivo = "No se pudo resolver la franja horaria de esta falta (no hay clase en ese tramo)."
+            _mark_error(str(row["id"]), motivo)
+            errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo=motivo))
+            continue
+
+        procesables.append(row)
+
+    if not procesables:
+        # Nada que de verdad se pueda intentar — ni siquiera se inicia
+        # sesión en Educastur.
+        return SyncResult(sincronizadas=0, errores=errores)
 
     client = EducasturClient()
 
@@ -149,13 +206,10 @@ def sincronizar(data: SincronizarInput) -> SyncResult:
 
         _save_config(id_empleado, id_centro, id_perfil, nombre_profesor)
 
-        pending = _pending_absences()
-
-        errores: list[SyncErrorRow] = []
         sincronizadas = 0
 
         pending_by_date: dict[str, list[dict]] = {}
-        for row in pending:
+        for row in procesables:
             pending_by_date.setdefault(str(row["date"]), []).append(row)
 
         for fecha, rows in pending_by_date.items():

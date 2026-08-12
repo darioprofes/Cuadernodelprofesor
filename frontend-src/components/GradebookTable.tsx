@@ -260,13 +260,30 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
   const todayISO = useMemo(() => toYYYYMMDD(new Date()), []);
 
-  // Resuelve la franja horaria de esa clase para una fecha dada, a partir de
-  // su horario semanal — si tiene más de una sesión ese día de la semana, se
-  // usa la primera (simplificación aceptada: caso muy poco habitual).
-  const resolvePeriodIndexForDate = (dateStr: string): number | null => {
+  // Mismo criterio que isHoliday en CalendarView.tsx: rangos [startDate,
+  // endDate] de academicConfiguration.holidays.
+  const isHolidayDate = (dateStr: string): boolean => {
+      const d = new Date(`${dateStr}T00:00:00Z`);
+      return (academicConfiguration.holidays || []).some(h => {
+          if (!h.startDate || !h.endDate) return false;
+          const start = new Date(h.startDate + 'T00:00:00Z');
+          const end = new Date(h.endDate + 'T00:00:00Z');
+          return d >= start && d <= end;
+      });
+  };
+
+  // Resuelve TODAS las franjas horarias de esa clase para una fecha dada,
+  // a partir de su horario semanal — un mismo alumno/clase puede tener dos
+  // tramos distintos el mismo día (p.ej. una sesión doble no consecutiva),
+  // y cada uno necesita poder marcarse y sincronizarse por separado. Un día
+  // festivo (o findesemana, que ya no tiene ninguna franja en el horario)
+  // no tiene ninguna franja marcable, ni aunque el horario dijera lo
+  // contrario — no se pueden poner faltas en días no lectivos.
+  const resolvePeriodIndicesForDate = (dateStr: string): number[] => {
+      if (isHolidayDate(dateStr)) return [];
       const dow = getDayOfWeek1a7(new Date(`${dateStr}T00:00:00`));
-      const slot = (classData.schedule || []).find(s => s.day === dow);
-      return slot ? slot.periodIndex : null;
+      const slots = (classData.schedule || []).filter(s => s.day === dow);
+      return Array.from(new Set(slots.map(s => s.periodIndex))).sort((a, b) => a - b);
   };
 
   const absenceMap = useMemo(() => {
@@ -304,16 +321,12 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       return { sinDni: Array.from(sinDni), sinFranja: Array.from(sinFranja) };
   }, [absencesQuery.data, classData.students, academicConfiguration.periods]);
 
-  const handleAbsenceClick = (enrollmentId: string, date: string) => {
-      const periodIndex = resolvePeriodIndexForDate(date);
-      if (periodIndex === null) return;
+  const handleAbsenceClick = (enrollmentId: string, date: string, periodIndex: number) => {
       putAbsenceMutation.mutate({ enrollmentId, classId: classData.id, data: { date, periodIndex, tipoFalta: 'I' } });
   };
 
-  const openAbsenceContextMenu = (e: React.MouseEvent, enrollmentId: string, date: string) => {
+  const openAbsenceContextMenu = (e: React.MouseEvent, enrollmentId: string, date: string, periodIndex: number) => {
       e.preventDefault();
-      const periodIndex = resolvePeriodIndexForDate(date);
-      if (periodIndex === null) return;
       setAbsenceContextMenu({ x: e.clientX, y: e.clientY, enrollmentId, date, periodIndex });
   };
 
@@ -1046,7 +1059,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       <div>
         {(preflightIssues.sinDni.length > 0 || preflightIssues.sinFranja.length > 0) && (
             <div className="p-3 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 space-y-1">
-                <p className="font-semibold">Estas faltas no se van a poder sincronizar con Educastur — revísalas:</p>
+                <p className="font-semibold">Estas faltas no se van a poder subir a Educastur — revísalas:</p>
                 {preflightIssues.sinDni.length > 0 && (
                     <p>Sin DNI/NIE registrado en la ficha: {preflightIssues.sinDni.join(', ')}.</p>
                 )}
@@ -1071,12 +1084,12 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                 />
             </div>
             <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">{pendingSyncCount} falta(s) sin sincronizar con Educastur</span>
+                <span className="text-xs text-slate-500">{pendingSyncCount} falta(s) sin subir a Educastur</span>
                 <button
                     onClick={() => setIsSyncModalOpen(true)}
                     className="text-xs font-semibold text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-md border border-blue-200"
                 >
-                    Sincronizar con Educastur
+                    Subir a Educastur
                 </button>
             </div>
         </div>
@@ -1103,24 +1116,36 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                       </div>
                   </td>
                   {asistenciaColumns.map(date => {
-                      const periodIndex = resolvePeriodIndexForDate(date);
-                      const absence = student.enrollmentId && periodIndex !== null
-                          ? absenceMap.get(`${student.enrollmentId}|${date}|${periodIndex}`)
-                          : undefined;
+                      // Normalmente una sola franja, pero una clase puede
+                      // tener dos tramos el mismo día — cada uno se marca y
+                      // sincroniza por separado, así que la celda muestra un
+                      // círculo por tramo, no uno solo por fecha.
+                      const periodIndices = resolvePeriodIndicesForDate(date);
                       return (
-                          <td
-                              key={date}
-                              className={`${cellPad} text-center border-l border-slate-200 ${periodIndex === null ? 'bg-slate-50' : 'cursor-pointer hover:bg-slate-50'}`}
-                              onClick={() => student.enrollmentId && handleAbsenceClick(student.enrollmentId, date)}
-                              onContextMenu={e => student.enrollmentId && openAbsenceContextMenu(e, student.enrollmentId, date)}
-                          >
-                              {periodIndex === null ? (
+                          <td key={date} className={`${cellPad} text-center border-l border-slate-200 ${periodIndices.length === 0 ? 'bg-slate-50' : ''}`}>
+                              {periodIndices.length === 0 ? (
                                   <span className="text-slate-300 text-xs">—</span>
-                              ) : absence ? (
-                                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full border text-xs font-bold ${ABSENCE_COLORS[absence.tipoFalta]}`} title={ABSENCE_LABELS[absence.tipoFalta]}>
-                                      {absence.tipoFalta}
-                                  </span>
-                              ) : null}
+                              ) : (
+                                  <div className="flex items-center justify-center gap-1">
+                                      {periodIndices.map(periodIndex => {
+                                          const absence = student.enrollmentId
+                                              ? absenceMap.get(`${student.enrollmentId}|${date}|${periodIndex}`)
+                                              : undefined;
+                                          const label = academicConfiguration.periods?.[periodIndex] ?? `Franja ${periodIndex + 1}`;
+                                          return (
+                                              <span
+                                                  key={periodIndex}
+                                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-full border-2 text-sm font-bold cursor-pointer transition-colors ${absence ? `${ABSENCE_COLORS[absence.tipoFalta]} hover:opacity-80` : 'border-slate-300 bg-white text-slate-300 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500'}`}
+                                                  title={absence ? `${ABSENCE_LABELS[absence.tipoFalta]} — ${label}` : `Marcar falta — ${label}`}
+                                                  onClick={() => student.enrollmentId && handleAbsenceClick(student.enrollmentId, date, periodIndex)}
+                                                  onContextMenu={e => student.enrollmentId && openAbsenceContextMenu(e, student.enrollmentId, date, periodIndex)}
+                                              >
+                                                  {absence ? absence.tipoFalta : '+'}
+                                              </span>
+                                          );
+                                      })}
+                                  </div>
+                              )}
                           </td>
                       );
                   })}
@@ -1226,11 +1251,11 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             onCopy={handleCopyAssignmentModalSubmit}
           />
       )}
-      <Modal isOpen={isSyncModalOpen} onClose={handleCloseSyncModal} title="Sincronizar con Educastur" size="md">
+      <Modal isOpen={isSyncModalOpen} onClose={handleCloseSyncModal} title="Subir a Educastur" size="md">
           {syncResult ? (
               <div className="space-y-3">
                   <p className="text-sm text-emerald-700 font-semibold">
-                      {syncResult.sincronizadas} falta(s) sincronizada(s) correctamente
+                      {syncResult.sincronizadas} falta(s) subida(s) correctamente
                       {syncResult.nombreProfesor ? ` — ${syncResult.nombreProfesor}` : ''}.
                   </p>
                   {syncResult.errores.length > 0 && (
@@ -1248,7 +1273,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           ) : (
               <form onSubmit={handleSyncSubmit} className="space-y-4" autoComplete="on">
                   <p className="text-xs text-slate-500">
-                      Se conecta a Educastur solo mientras dura esta sincronización — usuario y contraseña no se guardan en ningún sitio, se piden aquí cada vez.
+                      Se conecta a Educastur solo mientras dura esta subida — usuario y contraseña no se guardan en ningún sitio, se piden aquí cada vez.
                   </p>
                   <div>
                       <label className="block text-sm font-medium text-slate-700">Usuario de Educastur</label>
@@ -1260,7 +1285,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                   </div>
                   <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
                       <p className="col-span-3 text-xs text-slate-500 -mt-1 mb-1">
-                          Se resuelven solos al sincronizar — solo hace falta rellenarlos a mano si por lo que sea no se pudieran determinar automáticamente.
+                          Se resuelven solos al subir — solo hace falta rellenarlos a mano si por lo que sea no se pudieran determinar automáticamente.
                       </p>
                       <div>
                           <label className="block text-xs font-medium text-slate-600">Id empleado</label>
@@ -1279,7 +1304,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                   <div className="flex justify-end gap-2 pt-2">
                       <Button type="button" variant="secondary" onClick={handleCloseSyncModal}>Cancelar</Button>
                       <Button type="submit" variant="primary" disabled={sincronizarMutation.isPending}>
-                          {sincronizarMutation.isPending ? 'Sincronizando…' : 'Sincronizar'}
+                          {sincronizarMutation.isPending ? 'Subiendo…' : 'Subir'}
                       </Button>
                   </div>
               </form>
