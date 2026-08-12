@@ -14,13 +14,14 @@ interface TempStudent {
     nombre: string;
     primerApellido: string;
     segundoApellido: string;
+    nie: string;
     acneae: Set<string>;
 }
 
 interface BulkAddStudentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (students: { nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => void;
+    onSave: (students: { nombre?: string; primerApellido?: string; segundoApellido?: string; nie?: string; acneae: string[] }[]) => void;
 }
 
 
@@ -98,6 +99,7 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
         const newStudents: TempStudent[] = lines.map((line, index) => ({
             id: Date.now() + index,
             ...parsearNombre(line),
+            nie: '',
             acneae: new Set<string>(),
         }));
         setStudents(current => [...current, ...newStudents]);
@@ -123,6 +125,7 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
                 nombre: s.nombre.trim() || undefined,
                 primerApellido: s.primerApellido.trim() || undefined,
                 segundoApellido: s.segundoApellido.trim() || undefined,
+                nie: s.nie.trim() || undefined,
                 acneae: Array.from(s.acneae),
             }));
         
@@ -196,6 +199,14 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
                                         onChange={e => patchStudent(student.id, { nombre: e.target.value })}
                                         placeholder="Nombre"
                                         className="flex-1 min-w-0"
+                                    />
+                                    <Input
+                                        type="text"
+                                        value={student.nie}
+                                        onChange={e => patchStudent(student.id, { nie: e.target.value })}
+                                        placeholder="NIE"
+                                        title="NIE — Nº Identificación Escolar (SAUCE), opcional pero recomendable"
+                                        className="w-24 flex-shrink-0"
                                     />
                                     <AcneaeSelector
                                         selected={student.acneae}

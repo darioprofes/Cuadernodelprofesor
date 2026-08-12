@@ -207,11 +207,11 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       await createEnrollmentMutation.mutateAsync({ classId: classData.id, data: { studentId } });
   };
 
-  const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => {
+  const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; nie?: string; acneae: string[] }[]) => {
       for (const data of newStudentData) {
           await createEnrollmentMutation.mutateAsync({
               classId: classData.id,
-              data: { newStudent: { nombre: data.nombre, primerApellido: data.primerApellido, segundoApellido: data.segundoApellido }, acneae: data.acneae },
+              data: { newStudent: { nombre: data.nombre, primerApellido: data.primerApellido, segundoApellido: data.segundoApellido, nie: data.nie }, acneae: data.acneae },
           });
       }
       setIsBulkAddOpen(false);

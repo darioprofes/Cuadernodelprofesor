@@ -185,13 +185,13 @@ const ClassManager: React.FC<{
         await deleteClassMutation.mutateAsync({ id: classId, yearId });
     };
 
-    const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; acneae: string[] }[]) => {
+    const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; nie?: string; acneae: string[] }[]) => {
         if (!activeClassId) return;
 
         for (const data of newStudentData) {
             await createEnrollmentMutation.mutateAsync({
                 classId: activeClassId,
-                data: { newStudent: { nombre: data.nombre, primerApellido: data.primerApellido, segundoApellido: data.segundoApellido }, acneae: data.acneae },
+                data: { newStudent: { nombre: data.nombre, primerApellido: data.primerApellido, segundoApellido: data.segundoApellido, nie: data.nie }, acneae: data.acneae },
             });
         }
         if (newStudentData.length > 0) {
