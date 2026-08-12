@@ -66,6 +66,8 @@ export const joinStudentEnrollment = (student: ApiStudent, enrollment: ApiEnroll
     acneae: enrollment.acneae,
     fechaNacimiento: student.fechaNacimiento,
     dni: student.dni,
+    nie: student.nie,
+    nacionalidad: student.nacionalidad,
     telefonoUrgencias: student.telefonoUrgencias,
     tutor1: student.tutor1,
     tutor2: student.tutor2,
@@ -135,6 +137,8 @@ export const splitStudentPatch = (data: Partial<Student>): { studentPatch: ApiSt
     if ('segundoApellido' in data) studentPatch.segundoApellido = data.segundoApellido;
     if ('fechaNacimiento' in data) studentPatch.fechaNacimiento = data.fechaNacimiento;
     if ('dni' in data) studentPatch.dni = data.dni;
+    if ('nie' in data) studentPatch.nie = data.nie;
+    if ('nacionalidad' in data) studentPatch.nacionalidad = data.nacionalidad;
     if ('telefonoUrgencias' in data) studentPatch.telefonoUrgencias = data.telefonoUrgencias;
     if ('tutor1' in data) studentPatch.tutor1 = data.tutor1;
     if ('tutor2' in data) studentPatch.tutor2 = data.tutor2;

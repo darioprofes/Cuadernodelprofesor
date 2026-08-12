@@ -9,6 +9,7 @@ from services.schemas import ApiModel, updated_at_matches
 
 _COLUMNS = """
     id, nombre, primer_apellido, segundo_apellido, fecha_nacimiento, dni,
+    nie, nacionalidad,
     telefono_urgencias, tutor1, tutor2, domicilio_direccion, domicilio_localidad,
     domicilio_codigo_postal, domicilio_telefono, alergias, enfermedades_relevantes,
     medicacion_habitual, intolerancias_alimentarias, observaciones_sanitarias,
@@ -33,6 +34,10 @@ class StudentInput(ApiModel):
     segundo_apellido: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     dni: Optional[str] = None
+    # NIE = Número de Identificación Escolar (SAUCE) — no el NIE de
+    # extranjería, que vive en `dni` (ver comentario de la migración 0010).
+    nie: Optional[str] = None
+    nacionalidad: Optional[str] = None
     telefono_urgencias: Optional[str] = None
     tutor1: Optional[Tutor] = None
     tutor2: Optional[Tutor] = None

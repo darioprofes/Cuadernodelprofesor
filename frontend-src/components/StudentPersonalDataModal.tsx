@@ -43,6 +43,8 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                 foto: student.foto,
                 fechaNacimiento: student.fechaNacimiento || '',
                 dni: student.dni || '',
+                nie: student.nie || '',
+                nacionalidad: student.nacionalidad || '',
                 telefonoUrgencias: student.telefonoUrgencias || '',
                 tutor1: student.tutor1 || { ...emptyTutor },
                 tutor2: student.tutor2 || { ...emptyTutor },
@@ -98,6 +100,8 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
             foto: form.foto,
             fechaNacimiento: trimOrUndef(form.fechaNacimiento),
             dni: trimOrUndef(form.dni),
+            nie: trimOrUndef(form.nie),
+            nacionalidad: trimOrUndef(form.nacionalidad),
             telefonoUrgencias: trimOrUndef(form.telefonoUrgencias),
             tutor1: trimTutor(form.tutor1),
             tutor2: trimTutor(form.tutor2),
@@ -157,8 +161,17 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                         <Field label="Fecha de nacimiento">
                             <Input type="date" value={form.fechaNacimiento || ''} onChange={e => set({ fechaNacimiento: e.target.value })} className={inputClass} />
                         </Field>
-                        <Field label="DNI/NIE">
+                        <Field label="DNI/NIE (documento de identidad)">
                             <Input type="text" value={form.dni || ''} onChange={e => set({ dni: e.target.value })} className={inputClass} />
+                        </Field>
+                        <Field label="NIE — Nº Identificación Escolar (SAUCE)">
+                            <Input type="text" value={form.nie || ''} onChange={e => set({ nie: e.target.value })} className={inputClass} />
+                            <p className="mt-1 text-xs text-amber-700">
+                                Muy recomendable rellenarlo: es el identificador único de SAUCE — no todo el alumnado tiene DNI, pero todos tienen NIE. Evita duplicados al importar.
+                            </p>
+                        </Field>
+                        <Field label="Nacionalidad">
+                            <Input type="text" value={form.nacionalidad || ''} onChange={e => set({ nacionalidad: e.target.value })} className={inputClass} />
                         </Field>
                         <Field label="Teléfono de urgencias" className="sm:col-span-2">
                             <Input type="text" value={form.telefonoUrgencias || ''} onChange={e => set({ telefonoUrgencias: e.target.value })} className={inputClass} />

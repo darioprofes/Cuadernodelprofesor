@@ -66,6 +66,12 @@ export interface Student {
   foto?: string; // data URL (base64), embebida en el propio blob SQLite
   fechaNacimiento?: string; // YYYY-MM-DD
   dni?: string;
+  // NIE = Número de Identificación Escolar (SAUCE), NO el NIE de
+  // extranjería (ese vive en `dni`, etiquetado "DNI/NIE" en la ficha). Es
+  // la clave real para no duplicar alumnado al reimportar el listado de
+  // SAUCE — ver services/sauceImport.ts.
+  nie?: string;
+  nacionalidad?: string;
   telefonoUrgencias?: string;
 
   tutor1?: Tutor;

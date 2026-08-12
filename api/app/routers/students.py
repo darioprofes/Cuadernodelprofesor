@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from psycopg.errors import ForeignKeyViolation, RestrictViolation
+from psycopg.errors import ForeignKeyViolation, RestrictViolation, UniqueViolation
 
 from services.auth import require_auth
 from services.students import (
@@ -37,13 +37,19 @@ def get_one_student(student_id: str):
 @router.post("", response_model=Student, status_code=201)
 def post_student(data: StudentInput):
 
-    return create_student(data)
+    try:
+        return create_student(data)
+    except UniqueViolation:
+        raise HTTPException(status_code=409, detail="Ya existe un alumno/a con ese NIE.")
 
 
 @router.patch("/{student_id}", response_model=Student)
 def patch_student(student_id: str, data: StudentPatch):
 
-    status, student = update_student(student_id, data)
+    try:
+        status, student = update_student(student_id, data)
+    except UniqueViolation:
+        raise HTTPException(status_code=409, detail="Ya existe un alumno/a con ese NIE.")
 
     if status == "not_found":
         raise HTTPException(status_code=404, detail="Alumno/a no encontrado/a.")

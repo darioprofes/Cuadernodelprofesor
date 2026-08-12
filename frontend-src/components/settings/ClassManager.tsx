@@ -7,6 +7,7 @@ import ClassModal from '../ClassModal';
 import BulkAddStudentModal from '../BulkAddStudentModal';
 import StudentPersonalDataModal from '../StudentPersonalDataModal';
 import ExistingStudentPicker from '../ExistingStudentPicker';
+import ImportSauceStudentsModal from '../ImportSauceStudentsModal';
 import IconButton from '../IconButton';
 import Button from '../Button';
 import Select from '../Select';
@@ -102,6 +103,7 @@ const ClassManager: React.FC<{
     const [activeClassId, setActiveClassId] = useState(academicClasses[0]?.id || '');
     const [isClassModalOpen, setIsClassModalOpen] = useState(false);
     const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
+    const [isSauceImportOpen, setIsSauceImportOpen] = useState(false);
     const [classToEdit, setClassToEdit] = useState<ClassData | null>(null);
     const [studentForFicha, setStudentForFicha] = useState<Student | null>(null);
 
@@ -218,7 +220,10 @@ const ClassManager: React.FC<{
                         <IconButton label="Eliminar clase" tone="danger" onClick={() => handleDeleteClass(activeClass.id)}><TrashIcon className="w-4 h-4"/></IconButton>
                     </div>
                 )}
-                <Button variant="primary" onClick={() => { setClassToEdit(null); setIsClassModalOpen(true); }} className="ml-auto">
+                <Button variant="secondary" onClick={() => setIsSauceImportOpen(true)} className="ml-auto">
+                    Importar de SAUCE
+                </Button>
+                <Button variant="primary" onClick={() => { setClassToEdit(null); setIsClassModalOpen(true); }}>
                     <PlusIcon className="w-4 h-4"/>
                     Añadir Clase
                 </Button>
@@ -278,6 +283,10 @@ const ClassManager: React.FC<{
                 onClose={() => setStudentForFicha(null)}
                 student={studentForFicha}
                 onSave={handleStudentUpdate}
+            />
+            <ImportSauceStudentsModal
+                isOpen={isSauceImportOpen}
+                onClose={() => setIsSauceImportOpen(false)}
             />
         </div>
     );
