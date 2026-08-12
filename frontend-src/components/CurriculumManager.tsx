@@ -11,7 +11,7 @@ import { useBasicKnowledge, useCreateBasicKnowledge, useUpdateBasicKnowledge, us
 type CurriculumItemType = 'ec' | 'sc' | 'kc' | 'sb' | 'od';
 type CurriculumItem = EvaluationCriterion | SpecificCompetence | KeyCompetence | BasicKnowledge | OperationalDescriptor;
 import { PencilIcon, TrashIcon, PlusIcon, ChevronRightIcon, ChevronDownIcon } from './Icons';
-import { CURRICULOS_OFICIALES, CURRICULOS_PROPIOS, TODOS_LOS_PRESETS } from '../curriculumPresets';
+import { CURRICULOS_OFICIALES, CURRICULOS_OFICIALES_BACHILLERATO, CURRICULOS_PROPIOS, TODOS_LOS_PRESETS } from '../curriculumPresets';
 import { compararCodigo } from '../utils';
 import Button from './Button';
 import IconButton from './IconButton';
@@ -27,8 +27,12 @@ import { linkClassName } from '../theme/components/Link';
 // Fuera del componente (no cierra sobre nada de React) para que los useMemo
 // que la usan puedan depender solo de cursoNumero, sin necesidad de incluir
 // la propia función como dependencia.
-const filtrarPorCurso = (cursoNumero: number | null, presets: typeof TODOS_LOS_PRESETS) =>
-    cursoNumero === null ? presets : presets.filter(p => p.curso === cursoNumero);
+// ESO y Bachillerato comparten numeración de curso (1º-2º de Bachillerato
+// solapan con 1º-2º de ESO) — filtrar solo por número mezclaría currículos
+// de las dos etapas en el mismo desplegable, así que hace falta también la
+// etapa del curso seleccionado.
+const filtrarPorCurso = (cursoNumero: number | null, etapa: 'eso' | 'bachillerato', presets: typeof TODOS_LOS_PRESETS) =>
+    presets.filter(p => p.etapa === etapa && (cursoNumero === null || p.curso === cursoNumero));
 
 const Accordion: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
     <details className="border border-slate-200 rounded-lg">
@@ -292,8 +296,19 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         return match ? Number(match[1]) : null;
     }, [courses, selectedCourseId]);
 
-    const oficialesFiltrados = useMemo(() => filtrarPorCurso(cursoNumeroSeleccionado, CURRICULOS_OFICIALES), [cursoNumeroSeleccionado]);
-    const propiosFiltrados = useMemo(() => filtrarPorCurso(cursoNumeroSeleccionado, CURRICULOS_PROPIOS), [cursoNumeroSeleccionado]);
+    const etapaSeleccionada = useMemo((): 'eso' | 'bachillerato' => {
+        const course = courses.find((c: Course) => c.id === selectedCourseId);
+        return course && isBachilleratoStage(course.level) ? 'bachillerato' : 'eso';
+    }, [courses, selectedCourseId]);
+
+    const oficialesFiltrados = useMemo(
+        () => filtrarPorCurso(cursoNumeroSeleccionado, etapaSeleccionada, [...CURRICULOS_OFICIALES, ...CURRICULOS_OFICIALES_BACHILLERATO]),
+        [cursoNumeroSeleccionado, etapaSeleccionada]
+    );
+    const propiosFiltrados = useMemo(
+        () => filtrarPorCurso(cursoNumeroSeleccionado, etapaSeleccionada, CURRICULOS_PROPIOS),
+        [cursoNumeroSeleccionado, etapaSeleccionada]
+    );
     const presetsFiltrados = useMemo(() => [...oficialesFiltrados, ...propiosFiltrados], [oficialesFiltrados, propiosFiltrados]);
 
     const handleCargarPreset = async () => {
@@ -921,19 +936,20 @@ SB,sb-bg3-1,"A.1","La célula como unidad estructural..."`}
                             value={presetsFiltrados.some(p => p.id === presetSeleccionado) ? presetSeleccionado : ''}
                             onChange={e => setPresetSeleccionado(e.target.value)}
                             className="flex-1"
+                            title={presetsFiltrados.find(p => p.id === presetSeleccionado)?.materia}
                         >
                             <option value="">Selecciona materia y curso...</option>
                             {oficialesFiltrados.length > 0 && (
                                 <optgroup label="Oficiales (decreto LOMLOE, Asturias)">
                                     {oficialesFiltrados.map(preset => (
-                                        <option key={preset.id} value={preset.id}>{preset.etiqueta}</option>
+                                        <option key={preset.id} value={preset.id} title={preset.materia}>{preset.etiqueta}</option>
                                     ))}
                                 </optgroup>
                             )}
                             {propiosFiltrados.length > 0 && (
                                 <optgroup label="⚠ No oficiales (propios)">
                                     {propiosFiltrados.map(preset => (
-                                        <option key={preset.id} value={preset.id}>⚠ {preset.etiqueta} — no oficial</option>
+                                        <option key={preset.id} value={preset.id} title={preset.materia}>⚠ {preset.etiqueta} — no oficial</option>
                                     ))}
                                 </optgroup>
                             )}
