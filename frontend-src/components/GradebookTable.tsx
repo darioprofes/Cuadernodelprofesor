@@ -244,6 +244,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   // reales del profesor para probarse, no se puede verificar en local).
   const [gradebookTab, setGradebookTab] = useState<'calificaciones' | 'asistencia'>('calificaciones');
   const [extraAsistenciaDates, setExtraAsistenciaDates] = useState<string[]>([]);
+  const [asistenciaDatePicker, setAsistenciaDatePicker] = useState('');
   const [absenceContextMenu, setAbsenceContextMenu] = useState<{ x: number; y: number; enrollmentId: string; date: string; periodIndex: number } | null>(null);
 
   const absencesQuery = useAbsences(classData.id, { enabled: gradebookTab === 'asistencia' });
@@ -1073,15 +1074,21 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                 <span>Añadir un día concreto:</span>
                 <input
                     type="date"
-                    onChange={e => {
-                        const picked = e.target.value;
-                        if (picked) {
-                            setExtraAsistenciaDates(prev => Array.from(new Set([...prev, picked])));
-                            e.target.value = '';
-                        }
-                    }}
+                    value={asistenciaDatePicker}
+                    onChange={e => setAsistenciaDatePicker(e.target.value)}
                     className="border border-slate-300 rounded-md text-sm px-2 py-1"
                 />
+                <button
+                    type="button"
+                    disabled={!asistenciaDatePicker}
+                    onClick={() => {
+                        setExtraAsistenciaDates(prev => Array.from(new Set([...prev, asistenciaDatePicker])));
+                        setAsistenciaDatePicker('');
+                    }}
+                    className="text-xs font-semibold text-blue-600 hover:bg-blue-50 px-2 py-1.5 rounded-md border border-blue-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                    Añadir
+                </button>
             </div>
             <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500">{pendingSyncCount} falta(s) sin subir a Educastur</span>
@@ -1100,7 +1107,19 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                 <th className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]`}>Alumn@</th>
                 {asistenciaColumns.map(date => (
                   <th key={date} className={`${headerPad} font-semibold text-center bg-white text-slate-700 border-l border-slate-200 min-w-[90px] ${date === todayISO ? 'bg-blue-50' : ''}`}>
-                      {date === todayISO ? 'Hoy' : date.split('-').reverse().join('/')}
+                      <div className="flex items-center justify-center gap-1">
+                          <span>{date === todayISO ? 'Hoy' : date.split('-').reverse().join('/')}</span>
+                          {extraAsistenciaDates.includes(date) && (
+                              <button
+                                  type="button"
+                                  title="Quitar esta fecha de la vista (no borra ninguna falta ya marcada en ella)"
+                                  onClick={() => setExtraAsistenciaDates(prev => prev.filter(d => d !== date))}
+                                  className="text-slate-400 hover:text-red-600 font-normal normal-case leading-none"
+                              >
+                                  ×
+                              </button>
+                          )}
+                      </div>
                   </th>
                 ))}
               </tr>
