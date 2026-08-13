@@ -244,7 +244,7 @@ const COLOR_BANNER_FONDO = 'FFEFF6FF'; // Tailwind blue-50
 const COLOR_ZEBRA = 'FFF8FAFC'; // Tailwind slate-50, apenas perceptible
 const COLOR_BORDE_FINO = 'FFE2E8F0'; // Tailwind slate-200
 
-const sinAcentos = (texto: string): string =>
+export const sinAcentos = (texto: string): string =>
     texto.normalize('NFKD').replace(/[̀-ͯ]/g, '');
 
 const normalizarDia = (texto: string): number | null => {
