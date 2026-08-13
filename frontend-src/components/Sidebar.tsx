@@ -80,7 +80,9 @@ const SidebarContent: React.FC<{
 }> = ({ activeView, onNavigate, onOpenFavoritos }) => (
     <>
         <div className="px-4 py-4 border-b border-slate-200 flex items-center gap-2 flex-shrink-0">
-            <img src="/logo.png" alt="" className="w-9 h-9 rounded-lg flex-shrink-0 object-cover" />
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: PALETTE.navy.header }}>
+                <Logo className="w-5 h-5 text-white" />
+            </div>
             <div className="min-w-0">
                 <p className="font-bold text-base text-slate-800 leading-tight break-words">Cuaderno Docente</p>
                 <p className="text-xs text-slate-400 leading-tight">La Marejada</p>
@@ -156,7 +158,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenFavo
                 <button onClick={() => setMobileMenuOpen(true)} className="p-1.5 -ml-1.5 rounded-lg hover:bg-slate-100" title="Abrir menú">
                     <Bars3Icon className="w-6 h-6 text-slate-700" />
                 </button>
-                <img src="/logo.png" alt="" className="w-7 h-7 rounded-lg flex-shrink-0 object-cover" />
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: PALETTE.navy.header }}>
+                    <Logo className="w-4 h-4 text-white" />
+                </div>
                 <span className="font-bold text-slate-800">Cuaderno Docente</span>
             </header>
 
