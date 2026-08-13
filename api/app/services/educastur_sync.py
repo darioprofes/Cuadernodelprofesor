@@ -297,6 +297,8 @@ def sincronizar(data: SincronizarInput) -> SyncResult:
                         if clave:
                             alumnos_por_nombre.setdefault(clave, []).append((curso, alumno))
 
+                to_refresh: list[tuple[dict, dict]] = []
+
                 for row in tramo_rows:
                     if row["dni"]:
                         match = alumnos_por_dni.get(row["dni"])
@@ -325,7 +327,7 @@ def sincronizar(data: SincronizarInput) -> SyncResult:
                     curso, alumno = match
 
                     try:
-                        resultado = client.procesar_falta(
+                        client.procesar_falta(
                             access_token, fecha, id_tramo, curso["idCurso"], curso["idUnidad"],
                             alumno, row["tipo_falta"], id_empleado, id_perfil, id_centro,
                             id_falta=row["educastur_falta_id"] or 0,
@@ -337,13 +339,47 @@ def sincronizar(data: SincronizarInput) -> SyncResult:
                             # como "sincronizada".
                             _delete_synced_blank(str(row["id"]))
                         else:
-                            nuevo_id_falta = resultado.get("idFalta") if isinstance(resultado, dict) else None
-                            _mark_synced(str(row["id"]), nuevo_id_falta or row["educastur_falta_id"])
+                            # La respuesta de /procesar no trae idFalta de
+                            # forma fiable (el script original de referencia
+                            # tampoco confía en ella — obtiene el idFalta
+                            # real releyendo /buscar después). Se marca aquí
+                            # como sincronizada sin id nuevo todavía;
+                            # to_refresh (más abajo) rellena el idFalta real
+                            # tras un segundo buscar_alumnos de este mismo
+                            # tramo tan pronto termine este bucle.
+                            to_refresh.append((row, alumno))
                         sincronizadas += 1
                     except requests.RequestException as e:
                         motivo = "Error al enviar la falta a Educastur."
                         _mark_error(str(row["id"]), motivo)
                         errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo=motivo))
+
+                if to_refresh:
+                    # Sin esto, una falta recién creada se marca "sincronizada"
+                    # con educastur_falta_id=NULL — indistinguible de "nunca
+                    # se subió", así que un borrado posterior en el cuaderno
+                    # haría un DELETE local silencioso en vez de encolar el
+                    # borrado en Educastur (bug real reportado en producción:
+                    # la falta quedaba huérfana allí, sin forma de quitarla
+                    # desde la app). Releer /buscar es la única fuente fiable
+                    # del idFalta real — mismo criterio que el script de
+                    # referencia (ver alumno_sel.get("idFalta") tras un nuevo
+                    # buscar_alumnos, docs/faltas/educastur_faltas.py).
+                    try:
+                        cursos_actualizados = client.buscar_alumnos(access_token, fecha, id_tramo, id_empleado, id_perfil, id_centro)
+                    except requests.RequestException:
+                        cursos_actualizados = []
+
+                    por_matricula: dict[str, dict] = {}
+                    for curso_act in cursos_actualizados:
+                        for al in curso_act.get("alumnosFaltas", []):
+                            if al.get("idMatricula") is not None:
+                                por_matricula[al["idMatricula"]] = al
+
+                    for row, alumno in to_refresh:
+                        refrescado = por_matricula.get(alumno.get("idMatricula"))
+                        nuevo_id_falta = refrescado.get("idFalta") if refrescado else None
+                        _mark_synced(str(row["id"]), nuevo_id_falta or row["educastur_falta_id"])
 
         return SyncResult(
             sincronizadas=sincronizadas, errores=errores,
