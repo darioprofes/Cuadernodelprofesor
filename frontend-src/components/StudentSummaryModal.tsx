@@ -25,6 +25,11 @@ import StudentPhotoAvatar from './StudentPhotoAvatar';
 interface StudentSummaryModalProps {
     isOpen: boolean;
     onClose: () => void;
+    // Abre directamente en la ficha completa de solo lectura en vez del
+    // resumen de calificaciones/evolución — usado por el "Ver ficha" del
+    // menú contextual, que debe llevar al mismo contenido que "Editar
+    // ficha" (StudentPersonalDataModal) pero sin poder modificarlo.
+    initialShowFullFicha?: boolean;
     student: Student;
     classData: ClassData;
     courses: Course[];
@@ -36,10 +41,10 @@ interface StudentSummaryModalProps {
 }
 
 const StudentSummaryModal: React.FC<StudentSummaryModalProps> = ({
-    isOpen, onClose, student, classData, courses, academicConfiguration, criteria, specificCompetences, keyCompetences, repartoIgualCriterios
+    isOpen, onClose, initialShowFullFicha = false, student, classData, courses, academicConfiguration, criteria, specificCompetences, keyCompetences, repartoIgualCriterios
 }) => {
     const [activeTab, setActiveTab] = useState<'personal' | 'evolution' | 'competences' | 'criteria'>('personal');
-    const [showFullFicha, setShowFullFicha] = useState(false);
+    const [showFullFicha, setShowFullFicha] = useState(initialShowFullFicha);
 
     // Nota oficial (motor de criterios); la de categorías se mantiene como
     // comparación con el sistema tradicional.
@@ -79,7 +84,7 @@ const StudentSummaryModal: React.FC<StudentSummaryModalProps> = ({
             <div className="flex flex-col h-full max-h-[80vh]">
                 {showFullFicha ? (
                     <div className="flex-1 overflow-y-auto min-h-0 pr-2">
-                        <FullFichaScreen student={student} onBack={() => setShowFullFicha(false)} />
+                        <FullFichaScreen student={student} classData={classData} courses={courses} onBack={() => setShowFullFicha(false)} />
                     </div>
                 ) : (
                     <>
@@ -180,7 +185,7 @@ const PersonalDataTab: React.FC<{ student: Student; classData: ClassData; course
     const edad = student.fechaNacimiento ? Math.floor((Date.now() - new Date(student.fechaNacimiento + 'T00:00:00').getTime()) / (365.25 * 24 * 3600 * 1000)) : undefined;
 
     const hayMasDatos = tieneMasDatos(student);
-    const hayDatos = student.fechaNacimiento || student.dni || student.telefonoUrgencias || hayMasDatos;
+    const hayDatos = student.fechaNacimiento || student.dni || student.nie || student.nacionalidad || student.telefonoUrgencias || hayMasDatos;
 
     return (
         <div className="space-y-5">
@@ -191,7 +196,9 @@ const PersonalDataTab: React.FC<{ student: Student; classData: ClassData; course
                     <DataRow label="Grupo" value={classData.grupo} />
                     <DataRow label="Fecha de nacimiento" value={student.fechaNacimiento ? formatFechaEs(student.fechaNacimiento) : undefined} />
                     <DataRow label="Edad" value={edad != null ? `${edad} años` : undefined} />
-                    <DataRow label="DNI/NIE" value={student.dni} />
+                    <DataRow label="DNI/NIE (documento de identidad)" value={student.dni} />
+                    <DataRow label="NIE — Nº Identificación Escolar (SAUCE)" value={student.nie} />
+                    <DataRow label="Nacionalidad" value={student.nacionalidad} />
                     <DataRow label="Teléfono de urgencias" value={student.telefonoUrgencias} />
                 </div>
             </div>
@@ -215,11 +222,23 @@ const PersonalDataTab: React.FC<{ student: Student; classData: ClassData; course
     );
 };
 
-// Pantalla separada (no una pestaña más) con todos los datos personales
-// detallados: familia, domicilio, académica, sanitaria, atención educativa,
-// autorizaciones y observaciones. Se accede desde "Datos personales completos" en
-// la pestaña de Datos Personales, con un botón de volver.
-const FullFichaScreen: React.FC<{ student: Student; onBack: () => void }> = ({ student, onBack }) => {
+// Pantalla separada (no una pestaña más) con TODOS los datos personales —
+// incluidos los básicos (antes solo vivían en PersonalDataTab, la pestaña
+// resumen): si se entra aquí directamente desde "Ver ficha" del menú
+// contextual, sin pasar por esa pestaña, hace falta que esta pantalla sea
+// autosuficiente y no dependa de lo que ya se haya visto antes — si no, un
+// alumno sin datos "extra" (familia/domicilio/sanitaria...) mostraba una
+// pantalla en blanco pese a tener foto, curso, DNI, etc. Familia, domicilio,
+// académica, sanitaria, atención educativa, autorizaciones y observaciones
+// siguen sin mostrarse si están vacías, para no llenar la ficha de
+// etiquetas sin contenido. Con botón de volver solo cuando se llega aquí
+// desde dentro del resumen ("Datos personales completos"); si se entra
+// directamente no hay a dónde volver, así que se omite.
+const FullFichaScreen: React.FC<{ student: Student; classData: ClassData; courses: Course[]; onBack: () => void }> = ({ student, classData, courses, onBack }) => {
+    const materia = getMateria(classData, courses);
+    const course = courses.find(c => c.id === classData.courseId);
+    const edad = student.fechaNacimiento ? Math.floor((Date.now() - new Date(student.fechaNacimiento + 'T00:00:00').getTime()) / (365.25 * 24 * 3600 * 1000)) : undefined;
+
     const hayFamilia = (student.tutor1?.nombre || student.tutor1?.telefono || student.tutor1?.email || student.tutor1?.relacion)
         || (student.tutor2?.nombre || student.tutor2?.telefono || student.tutor2?.email || student.tutor2?.relacion);
     const hayDomicilio = student.domicilioDireccion || student.domicilioLocalidad || student.domicilioCodigoPostal || student.domicilioTelefono;
@@ -234,6 +253,26 @@ const FullFichaScreen: React.FC<{ student: Student; onBack: () => void }> = ({ s
             <button onClick={onBack} className={`text-sm font-semibold flex items-center gap-1 mb-2 ${linkClassName}`}>
                 <ChevronRightIcon className="w-4 h-4 rotate-180" /> Volver a la ficha
             </button>
+
+            <div className="flex items-center gap-4">
+                <StudentPhotoAvatar foto={student.foto} size="w-24 h-24" />
+                <div>
+                    <div className="flex items-center gap-2 mb-1">
+                        <h2 className="text-xl font-bold text-slate-800">{getNombreCompleto(student)}</h2>
+                        <AcneaeTag tags={student.acneae} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                        <DataRow label="Curso" value={course ? `${course.level} - ${materia}` : undefined} />
+                        <DataRow label="Grupo" value={classData.grupo} />
+                        <DataRow label="Fecha de nacimiento" value={student.fechaNacimiento ? formatFechaEs(student.fechaNacimiento) : undefined} />
+                        <DataRow label="Edad" value={edad != null ? `${edad} años` : undefined} />
+                        <DataRow label="DNI/NIE (documento de identidad)" value={student.dni} />
+                        <DataRow label="NIE — Nº Identificación Escolar (SAUCE)" value={student.nie} />
+                        <DataRow label="Nacionalidad" value={student.nacionalidad} />
+                        <DataRow label="Teléfono de urgencias" value={student.telefonoUrgencias} />
+                    </div>
+                </div>
+            </div>
 
             {hayFamilia && (
                 <DataSection title="Datos familiares">

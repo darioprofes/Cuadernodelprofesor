@@ -128,6 +128,12 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
   // State for Student Summary Modal
   const [selectedStudentForSummary, setSelectedStudentForSummary] = useState<Student | null>(null);
+  // "Ver ficha" desde el menú contextual debe llevar directamente a la
+  // ficha completa de solo lectura (mismos datos que "Editar ficha", sin
+  // opción de modificarlos) — no al resumen de calificaciones/evolución que
+  // abre el clic izquierdo, que sería la misma pantalla que ya se puede ver
+  // sin usar el menú contextual.
+  const [summaryOpensOnFullFicha, setSummaryOpensOnFullFicha] = useState(false);
 
   // State for Copy Assignment Modal
   const [assignmentToCopy, setAssignmentToCopy] = useState<Assignment | null>(null);
@@ -311,23 +317,23 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
   const pendingSyncCount = (absencesQuery.data ?? []).filter(a => !a.syncedAt).length;
 
-  // Aviso local, sin tocar Educastur: alumnado sin DNI o faltas en una
-  // franja sin horas resolubles nunca se van a poder sincronizar, así que
-  // se detecta y se enseña de antemano en vez de descubrirlo solo al
-  // intentar sincronizar (lo de festivos no se puede adelantar así — hace
-  // falta preguntarle a Educastur, ver el botón de sincronizar).
+  // Aviso local, sin tocar Educastur: faltas en una franja sin horas
+  // resolubles nunca se van a poder sincronizar (a diferencia de un alumno
+  // sin DNI, que sí tiene una vía de respaldo por nombre — ver
+  // educastur_sync.py), así que se detecta y se enseña de antemano en vez
+  // de descubrirlo solo al intentar sincronizar (lo de festivos no se puede
+  // adelantar así — hace falta preguntarle a Educastur, ver el botón de
+  // sincronizar).
   const preflightIssues = useMemo(() => {
       const pending = (absencesQuery.data ?? []).filter(a => !a.syncedAt);
-      const sinDni = new Set<string>();
       const sinFranja = new Set<string>();
       for (const a of pending) {
           const student = classData.students.find(s => s.enrollmentId === a.enrollmentId);
           const nombre = student ? getNombreCompleto(student) : 'Alumn@ desconocid@';
-          if (!student?.dni) sinDni.add(nombre);
           const label = academicConfiguration.periods?.[a.periodIndex];
           if (!label || !parsePeriodRange(label)) sinFranja.add(nombre);
       }
-      return { sinDni: Array.from(sinDni), sinFranja: Array.from(sinFranja) };
+      return { sinFranja: Array.from(sinFranja) };
   }, [absencesQuery.data, classData.students, academicConfiguration.periods]);
 
   const handleAbsenceClick = (enrollmentId: string, date: string, periodIndex: number) => {
@@ -934,7 +940,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                     <div className="flex items-center gap-1 w-full">
                         <span className="text-xs text-slate-400 w-5 text-right font-mono shrink-0 mr-1">{index + 1}</span>
                         <button
-                            onClick={() => setSelectedStudentForSummary(student)}
+                            onClick={() => { setSummaryOpensOnFullFicha(false); setSelectedStudentForSummary(student); }}
                             className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                         >
                             <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} />
@@ -1055,15 +1061,10 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
       {gradebookTab === 'asistencia' && (
       <div>
-        {(preflightIssues.sinDni.length > 0 || preflightIssues.sinFranja.length > 0) && (
+        {preflightIssues.sinFranja.length > 0 && (
             <div className="p-3 bg-amber-50 border-b border-amber-200 text-xs text-amber-800 space-y-1">
-                <p className="font-semibold">Estas faltas no se van a poder subir a Educastur — revísalas:</p>
-                {preflightIssues.sinDni.length > 0 && (
-                    <p>Sin DNI/NIE registrado en la ficha: {preflightIssues.sinDni.join(', ')}.</p>
-                )}
-                {preflightIssues.sinFranja.length > 0 && (
-                    <p>En una franja horaria sin horas (p. ej. "Recreo") — Educastur necesita un tramo con hora real: {preflightIssues.sinFranja.join(', ')}.</p>
-                )}
+                <p className="font-semibold">Revisa estas faltas antes de subirlas a Educastur:</p>
+                <p>En una franja horaria sin horas (p. ej. "Recreo") — Educastur necesita un tramo con hora real, esto no se podrá subir: {preflightIssues.sinFranja.join(', ')}.</p>
             </div>
         )}
         <div className="p-3 border-b bg-slate-50/50 flex items-center justify-between gap-2 flex-wrap">
@@ -1126,11 +1127,19 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             <tbody>
               {visibleStudents.map((student, index) => (
                 <tr key={student.id} className="bg-white border-b hover:bg-slate-50/50">
-                  <td className={`${studentCellPad} font-medium text-slate-900 sticky left-0 bg-white hover:bg-slate-50/50 z-10 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]`}>
+                  <td
+                      className={`${studentCellPad} font-medium text-slate-900 sticky left-0 bg-white hover:bg-slate-50/50 z-10 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group`}
+                      onContextMenu={e => openStudentContextMenu(e, student)}
+                  >
                       <div className="flex items-center gap-1 w-full">
                           <span className="text-xs text-slate-400 w-5 text-right font-mono shrink-0 mr-1">{index + 1}</span>
-                          <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} />
-                          <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
+                          <button
+                              onClick={() => { setSummaryOpensOnFullFicha(false); setSelectedStudentForSummary(student); }}
+                              className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
+                          >
+                              <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} />
+                              <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
+                          </button>
                       </div>
                   </td>
                   {asistenciaColumns.map(date => {
@@ -1147,18 +1156,29 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                                   <div className="flex items-center justify-center gap-1">
                                       {periodIndices.map(periodIndex => {
                                           // tipoFalta === '' es la marca interna de "borrado
-                                          // pendiente de subir a Educastur" — se ve como una
-                                          // celda vacía, no como una falta marcada.
+                                          // pendiente de subir a Educastur" (ver
+                                          // services/absences.py::delete_absence) — la celda no
+                                          // se ve como una falta marcada, pero SÍ lleva un borde
+                                          // discontinuo ámbar para no confundirse con una celda
+                                          // que nunca tuvo falta: sin esa pista, borrar una falta
+                                          // ya subida parece no tener ningún efecto hasta que se
+                                          // sincroniza (el hueco cuenta igual en "N falta(s) sin
+                                          // subir", pero eso pasa fácilmente desapercibido).
                                           const raw = student.enrollmentId
                                               ? absenceMap.get(`${student.enrollmentId}|${date}|${periodIndex}`)
                                               : undefined;
                                           const tipo = raw?.tipoFalta || undefined;
+                                          const pendingDelete = raw?.tipoFalta === '' && !raw.syncedAt;
                                           const label = academicConfiguration.periods?.[periodIndex] ?? `Franja ${periodIndex + 1}`;
                                           return (
                                               <span
                                                   key={periodIndex}
-                                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-full border-2 text-sm font-bold cursor-pointer transition-colors ${tipo ? `${ABSENCE_COLORS[tipo]} hover:opacity-80` : 'border-slate-300 bg-white text-slate-300 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500'}`}
-                                                  title={tipo ? `${ABSENCE_LABELS[tipo]} — ${label}` : `Marcar falta — ${label}`}
+                                                  className={`inline-flex items-center justify-center w-8 h-8 rounded-full border-2 text-sm font-bold cursor-pointer transition-colors ${
+                                                      tipo ? `${ABSENCE_COLORS[tipo]} hover:opacity-80`
+                                                      : pendingDelete ? 'border-dashed border-amber-400 bg-amber-50 text-amber-500 hover:bg-amber-100'
+                                                      : 'border-slate-300 bg-white text-slate-300 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-500'
+                                                  }`}
+                                                  title={tipo ? `${ABSENCE_LABELS[tipo]} — ${label}` : pendingDelete ? `Pendiente de borrar en Educastur — ${label}` : `Marcar falta — ${label}`}
                                                   onClick={() => student.enrollmentId && handleAbsenceClick(student.enrollmentId, date, periodIndex)}
                                                   onContextMenu={e => student.enrollmentId && openAbsenceContextMenu(e, student.enrollmentId, date, periodIndex)}
                                               >
@@ -1228,7 +1248,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                   </div>
                   <button
                       className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
-                      onMouseDown={() => { setSelectedStudentForSummary(studentContextMenu.student); setStudentContextMenu(null); }}
+                      onMouseDown={() => { setSummaryOpensOnFullFicha(true); setSelectedStudentForSummary(studentContextMenu.student); setStudentContextMenu(null); }}
                   >
                       Ver ficha
                   </button>
@@ -1251,6 +1271,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           <StudentSummaryModal
             isOpen={!!selectedStudentForSummary}
             onClose={() => setSelectedStudentForSummary(null)}
+            initialShowFullFicha={summaryOpensOnFullFicha}
             student={selectedStudentForSummary}
             classData={classData}
             courses={allCourses}
