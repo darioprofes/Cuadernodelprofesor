@@ -14,10 +14,11 @@ import Select from '../Select';
 import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../../theme/components/Table';
 import { useCurrentAcademicYear, useEvaluationPeriods } from '../../hooks/useAcademicYears';
 import { useApiClasses, useCreateClass, useUpdateClass, useDeleteClass } from '../../hooks/useApiClasses';
-import { useApiStudents, useUpdateStudent } from '../../hooks/useApiStudents';
+import { useApiStudents, useUpdateStudent, useDeleteStudent } from '../../hooks/useApiStudents';
 import { useEnrollments, useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from '../../hooks/useEnrollments';
 import { useCreateCategory } from '../../hooks/useCategories';
 import { apiClassToLocal, joinStudentEnrollment, splitStudentPatch, syncStudentPhoto } from '../../services/apiAdapters';
+import { ApiError } from '../../services/api';
 
 
 interface StudentRowProps {
@@ -82,6 +83,7 @@ const ClassManager: React.FC<{
     const createEnrollmentMutation = useCreateEnrollment();
     const updateEnrollmentMutation = useUpdateEnrollment();
     const deleteEnrollmentMutation = useDeleteEnrollment();
+    const deleteStudentMutation = useDeleteStudent();
     const updateStudentMutation = useUpdateStudent();
     // Bug real (2026-08-04): igual que en ImportScheduleModal.tsx —
     // createClassMutation solo manda los campos "cáscara", así que una
@@ -154,6 +156,23 @@ const ClassManager: React.FC<{
         const enrollment = activeClassStudents.find(s => s.id === studentId);
         if (!enrollment?.enrollmentId) return;
         await deleteEnrollmentMutation.mutateAsync({ id: enrollment.enrollmentId, classId: activeClassId });
+    };
+
+    // Borrado definitivo de la ficha (persona), no solo desmatricular —
+    // para alumnado dado de alta por error o que ya no tiene matrícula en
+    // ningún curso académico. El backend rechaza con un mensaje claro
+    // (409) si todavía tiene matrículas en algún sitio, así que aquí no
+    // hace falta comprobarlo antes: se intenta y se muestra ese mensaje
+    // si falla.
+    const handleDeleteStudentPermanently = async (studentId: string) => {
+        if (!window.confirm('¿Borrar definitivamente la ficha de este/a alumn@? Solo es posible si no tiene matrículas en ningún curso académico. Esta acción no se puede deshacer.')) {
+            return;
+        }
+        try {
+            await deleteStudentMutation.mutateAsync(studentId);
+        } catch (err) {
+            alert(err instanceof ApiError ? err.detail : 'No se pudo borrar el alumno/a.');
+        }
     };
 
     const handleSaveClass = async (classData: Omit<ClassData, 'students' | 'categories' | 'assignments' | 'grades'>) => {
@@ -230,6 +249,7 @@ const ClassManager: React.FC<{
                             currentYearId={yearId}
                             alreadyEnrolledIds={new Set(activeClassStudents.map(s => s.id))}
                             onEnroll={handleEnrollExisting}
+                            onDeleteStudent={handleDeleteStudentPermanently}
                         />
                     </div>
                 </div>

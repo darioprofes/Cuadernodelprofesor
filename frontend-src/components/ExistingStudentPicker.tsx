@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import type { Student } from '../types';
 import { getNombreCompleto } from '../utils';
-import { MagnifyingGlassIcon } from './Icons';
+import { MagnifyingGlassIcon, TrashIcon } from './Icons';
 import Input from './Input';
 import Button from './Button';
 import Select from './Select';
+import IconButton from './IconButton';
 
 interface PickerStudent {
     id: string;
@@ -41,7 +42,14 @@ const ExistingStudentPicker: React.FC<{
     alreadyEnrolledIds: Set<string>;
     currentYearId?: string;
     onEnroll: (studentId: string) => Promise<void> | void;
-}> = ({ allStudents, alreadyEnrolledIds, currentYearId, onEnroll }) => {
+    // Borrado definitivo de la ficha (no solo desmatricular) — opcional
+    // porque solo tiene sentido donde exista un registro global de
+    // STUDENT propio (ver ClassManager.tsx). El backend ya rechaza el
+    // borrado con un mensaje claro si la persona tiene matrículas en
+    // cualquier clase/curso académico, así que aquí no hace falta
+    // comprobarlo por adelantado — el mensaje de error lo cuenta.
+    onDeleteStudent?: (studentId: string) => Promise<void> | void;
+}> = ({ allStudents, alreadyEnrolledIds, currentYearId, onEnroll, onDeleteStudent }) => {
     const [query, setQuery] = useState('');
     const [verTodos, setVerTodos] = useState(false);
     const [filtroCurso, setFiltroCurso] = useState('');
@@ -167,17 +175,29 @@ const ExistingStudentPicker: React.FC<{
                     </p>
                 )}
                 {visibles.map(s => (
-                    <label key={s.id} className="flex items-center gap-2 bg-white p-2 rounded-md border text-sm cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={seleccionados.has(s.id)}
-                            onChange={() => toggleSeleccionado(s.id)}
-                        />
-                        <span className="flex-1">{getNombreCompleto(s as Student)}</span>
-                        {(s.ultimoCursoSauce || s.ultimaUnidadSauce) && (
-                            <span className="text-xs text-slate-400">{[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}</span>
+                    <div key={s.id} className="flex items-center gap-2 bg-white p-2 rounded-md border text-sm">
+                        <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={seleccionados.has(s.id)}
+                                onChange={() => toggleSeleccionado(s.id)}
+                            />
+                            <span className="flex-1 truncate">{getNombreCompleto(s as Student)}</span>
+                            {(s.ultimoCursoSauce || s.ultimaUnidadSauce) && (
+                                <span className="text-xs text-slate-400 shrink-0">{[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}</span>
+                            )}
+                        </label>
+                        {onDeleteStudent && (
+                            <IconButton
+                                label="Borrar ficha definitivamente"
+                                tone="danger"
+                                size="sm"
+                                onClick={() => onDeleteStudent(s.id)}
+                            >
+                                <TrashIcon className="w-4 h-4" />
+                            </IconButton>
                         )}
-                    </label>
+                    </div>
                 ))}
                 {matches.length > visibles.length && (
                     <p className="text-xs text-slate-400 px-1">…y {matches.length - visibles.length} más — acota la búsqueda para verlos.</p>
