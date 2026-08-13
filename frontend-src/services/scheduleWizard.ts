@@ -24,7 +24,7 @@
 // finos y algunos iconos en cabeceras que NUNCA se leen por texto al
 // parsear (ver nota junto a `PRIMERA_FILA_CONTENIDO` y los `estiliza*`).
 
-import type { FilaHorario } from '../types';
+import type { ClassData, Course, FilaHorario, Student } from '../types';
 
 export interface FilaAlumnado {
     nivel: string;
@@ -69,6 +69,104 @@ export interface ParsedWorkbook {
     filas: FilaHorario[];
     alumnado: FilaAlumnado[];
     errores: string[];
+}
+
+// Volcado de lo que YA hay en la app (curso académico activo) a las mismas
+// formas que produce parseWorkbook() al leer un Excel subido — así
+// generateTemplate() puede rellenar la plantilla con datos reales
+// reutilizando exactamente los mismos build*Sheet que la plantilla en
+// blanco, sin una segunda mecánica de escritura paralela.
+export interface DatosRealesTemplate {
+    holidays: FilaFestivo[];
+    evaluationPeriods: FilaPeriodoEvaluacion[];
+    configuracion: { niveles: string[]; materias: string[]; grupos: string[]; aulas: string[] };
+    // Franjas horarias reales (academicYear.periods), EN SU ORDEN — una fila
+    // de la hoja Horario por cada una, aunque algún día esté libre en esa
+    // franja (así se ve la estructura real de la semana, no solo lo
+    // ocupado). `horario` referencia cada franja por ese mismo texto.
+    periods: string[];
+    horario: FilaHorario[];
+    alumnado: FilaAlumnado[];
+}
+
+// Puro (sin React ni backend): recibe piezas ya hidratadas por los hooks
+// habituales (mismo `ClassData`/`Course`/`Student` que ya usa el resto de
+// la app, con `students` ya resuelto vía joinEnrolledStudents) y las
+// aplana al formato fila que espera cada hoja. `periods` es
+// academicYear.periods (las franjas horarias reales, en su orden) — cada
+// franja se vuelca como una única "Hora" (hora_inicio = hora_fin = esa
+// etiqueta), igual que una etiqueta libre sin rango de horas (ver
+// parseHorarioSheet) porque una franja del curso activo ya es un texto
+// único ("8:15-9:10"), no dos campos separados.
+export function buildDatosRealesTemplate(input: {
+    holidays: FilaFestivo[];
+    evaluationPeriods: FilaPeriodoEvaluacion[];
+    periods: string[];
+    classes: ClassData[];
+    courses: Course[];
+}): DatosRealesTemplate {
+    const courseById = new Map(input.courses.map(c => [c.id, c]));
+
+    const niveles = new Set<string>();
+    const materias = new Set<string>();
+    const grupos = new Set<string>();
+    const aulas = new Set<string>();
+
+    const horario: FilaHorario[] = [];
+    const alumnado: FilaAlumnado[] = [];
+
+    for (const cls of input.classes) {
+        const course = courseById.get(cls.courseId);
+        if (!course) continue;
+
+        materias.add(course.subject);
+        if (course.type !== 'other') niveles.add(course.level);
+        if (cls.grupo) grupos.add(cls.grupo);
+
+        for (const slot of cls.schedule || []) {
+            const horaLabel = input.periods[slot.periodIndex];
+            if (!horaLabel) continue; // franja huérfana (índice fuera de rango) — se descarta, no se inventa una etiqueta
+            if (slot.aula) aulas.add(slot.aula);
+            horario.push({
+                dia: slot.day - 1, // ClassData.schedule usa 1=Lunes; FilaHorario usa 0=Lunes (ver ImportScheduleModal.tsx)
+                hora_inicio: horaLabel,
+                hora_fin: horaLabel,
+                grupo: cls.grupo ?? null,
+                asignatura: course.subject,
+                aula: slot.aula ?? null,
+                ensenanza: course.type !== 'other' ? course.level : null,
+            });
+        }
+
+        if (course.type === 'other') continue; // "otra ocupación": sin alumnado por definición
+        for (const student of cls.students) {
+            alumnado.push({
+                nivel: course.level,
+                materia: course.subject,
+                grupo: cls.grupo ?? '',
+                nombre: student.nombre ?? '',
+                primerApellido: student.primerApellido ?? '',
+                segundoApellido: student.segundoApellido ?? '',
+                fechaNacimiento: student.fechaNacimiento ?? null,
+                dni: student.dni ?? null,
+                acneae: student.acneae ?? [],
+            });
+        }
+    }
+
+    return {
+        holidays: input.holidays,
+        evaluationPeriods: input.evaluationPeriods,
+        configuracion: {
+            niveles: Array.from(niveles).sort(),
+            materias: Array.from(materias).sort(),
+            grupos: Array.from(grupos).sort(),
+            aulas: Array.from(aulas).sort(),
+        },
+        periods: input.periods,
+        horario,
+        alumnado,
+    };
 }
 
 const HOJA_INSTRUCCIONES = 'Instrucciones';
@@ -379,17 +477,22 @@ export interface PrefillCursoAcademico {
     endDate?: string;
 }
 
-export async function generateTemplate(prefill?: PrefillCursoAcademico): Promise<Blob> {
+// `datosReales`, si se da, sustituye los ejemplos de cada hoja por lo que
+// YA hay en la app (ver buildDatosRealesTemplate) — usado por "Descargar
+// configuración actual" para editar/revisar lo existente, a diferencia del
+// asistente de inicio de curso (que solo pasa `prefill`, sin datosReales,
+// porque un curso nuevo nunca tiene nada real que volcar todavía).
+export async function generateTemplate(prefill?: PrefillCursoAcademico, datosReales?: DatosRealesTemplate): Promise<Blob> {
     const { Workbook } = await import('exceljs');
     const wb = new Workbook();
     wb.creator = 'Cuaderno Docente';
     wb.created = new Date();
 
     buildInstruccionesSheet(wb);
-    buildCursoAcademicoSheet(wb, prefill);
-    buildConfiguracionSheet(wb);
-    buildHorarioSheet(wb);
-    buildAlumnadoSheet(wb);
+    buildCursoAcademicoSheet(wb, prefill, datosReales);
+    buildConfiguracionSheet(wb, datosReales?.configuracion);
+    buildHorarioSheet(wb, datosReales && { periods: datosReales.periods, horario: datosReales.horario });
+    buildAlumnadoSheet(wb, datosReales?.alumnado);
 
     const buffer = await wb.xlsx.writeBuffer();
     return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -439,7 +542,7 @@ function buildInstruccionesSheet(wb: import('exceljs').Workbook) {
 // que se muestra antes de descargar; si trae fechas, ya se prellenan los 3
 // periodos de evaluación por defecto (editables) para no obligar a
 // calcularlos a mano.
-function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: PrefillCursoAcademico) {
+function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: PrefillCursoAcademico, datosReales?: DatosRealesTemplate) {
     const sheet = wb.addWorksheet(HOJA_CURSO);
     sheet.getColumn(1).width = 32;
     sheet.getColumn(2).width = 20;
@@ -491,6 +594,17 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
         prepararCeldaFecha(sheet.getCell(r, 2));
         prepararCeldaFecha(sheet.getCell(r, 3));
     }
+    // Recorta a FESTIVOS_FILAS si hubiera más festivos reales que filas —
+    // el parseo de esta tabla lee un rango fijo (a diferencia de Horario/
+    // Alumnado, que leen hasta el final real de la hoja), así que más de
+    // esto no se podría releer en una futura re-subida. Caso extremo, nunca
+    // visto en un curso real (20 festivos ya es muchísimo).
+    (datosReales?.holidays ?? []).slice(0, FESTIVOS_FILAS).forEach((h, i) => {
+        const r = FESTIVOS_FILA_INICIO + i;
+        sheet.getCell(r, 1).value = h.nombre;
+        sheet.getCell(r, 2).value = fechaISOaDate(h.fechaInicio);
+        sheet.getCell(r, 3).value = fechaISOaDate(h.fechaFin);
+    });
 
     tituloSeccion(EVALUACIONES_FILA_TITULO, 4, '📊 Periodos de evaluación');
     cabeceraTabla(EVALUACIONES_FILA_CABECERA, ['Nombre', 'Fecha inicio', 'Fecha fin', 'Peso']);
@@ -500,15 +614,17 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
         prepararCeldaFecha(sheet.getCell(r, 2));
         prepararCeldaFecha(sheet.getCell(r, 3));
     }
-    if (prefill?.startDate && prefill?.endDate) {
-        defaultEvaluationPeriods(prefill.startDate, prefill.endDate).forEach((p, i) => {
-            const r = EVALUACIONES_FILA_INICIO + i;
-            sheet.getCell(r, 1).value = p.nombre;
-            sheet.getCell(r, 2).value = fechaISOaDate(p.fechaInicio);
-            sheet.getCell(r, 3).value = fechaISOaDate(p.fechaFin);
-            sheet.getCell(r, 4).value = p.peso;
-        });
-    }
+    // Prioridad: periodos reales del curso activo > los 3 por defecto
+    // calculados a partir de las fechas del mini-formulario previo.
+    const periodosAEscribir = datosReales?.evaluationPeriods
+        ?? (prefill?.startDate && prefill?.endDate ? defaultEvaluationPeriods(prefill.startDate, prefill.endDate) : []);
+    periodosAEscribir.slice(0, EVALUACIONES_FILAS).forEach((p, i) => {
+        const r = EVALUACIONES_FILA_INICIO + i;
+        sheet.getCell(r, 1).value = p.nombre;
+        sheet.getCell(r, 2).value = fechaISOaDate(p.fechaInicio);
+        sheet.getCell(r, 3).value = fechaISOaDate(p.fechaFin);
+        sheet.getCell(r, 4).value = p.peso;
+    });
 }
 
 // Los iconos de estas 4 cabeceras son solo decorativos: nada las lee por
@@ -516,7 +632,7 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
 // si llevaran icono dejarían de coincidir con el emparejamiento por texto
 // que ya usan `parseAlumnadoSheet`/`mapearSubcolumnas` — por eso esas se
 // quedan sin icono).
-function buildConfiguracionSheet(wb: import('exceljs').Workbook) {
+function buildConfiguracionSheet(wb: import('exceljs').Workbook, configuracionReal?: DatosRealesTemplate['configuracion']) {
     const sheet = wb.addWorksheet(HOJA_CONFIGURACION);
 
     addBanner(
@@ -524,12 +640,19 @@ function buildConfiguracionSheet(wb: import('exceljs').Workbook) {
         'Declara aquí, una vez, lo que usas: niveles, materias/actividades (incluye guardias, reuniones...), grupos y aulas — un valor por fila. Estas listas alimentan los desplegables de "Horario" y "Alumnado". Son 4 listas INDEPENDIENTES entre sí: la fila 5 de una columna no tiene por qué tener nada que ver con la fila 5 de otra — cada columna es su propia lista suelta.',
     );
 
-    const columnas: { header: string; ejemplo: string; ejemplo2?: string }[] = [
-        { header: '🎓 Niveles que impartes', ejemplo: '1º ESO' },
-        { header: '📘 Materias / actividades que impartes', ejemplo: 'Biología y Geología', ejemplo2: 'Guardia' },
-        { header: '👥 Grupos a los que das clase', ejemplo: '1º ESO A' },
-        { header: '🏫 Aulas habituales', ejemplo: 'A16' },
+    const columnas: { header: string; ejemplo: string; ejemplo2?: string; reales?: string[] }[] = [
+        { header: '🎓 Niveles que impartes', ejemplo: '1º ESO', reales: configuracionReal?.niveles },
+        { header: '📘 Materias / actividades que impartes', ejemplo: 'Biología y Geología', ejemplo2: 'Guardia', reales: configuracionReal?.materias },
+        { header: '👥 Grupos a los que das clase', ejemplo: '1º ESO A', reales: configuracionReal?.grupos },
+        { header: '🏫 Aulas habituales', ejemplo: 'A16', reales: configuracionReal?.aulas },
     ];
+
+    // Configuración no se relee al subir (solo alimenta los desplegables
+    // dentro del propio Excel), así que aquí sí puede crecer libremente por
+    // encima de CONFIG_FILAS si hay más materias/grupos reales que el hueco
+    // por defecto — a diferencia de Festivos/Periodos en Curso Académico.
+    const filasReales = configuracionReal ? Math.max(...columnas.map(c => c.reales?.length ?? 0)) : 0;
+    const filas = Math.max(CONFIG_FILAS, filasReales);
 
     columnas.forEach((c, i) => {
         const col = i + 1;
@@ -537,11 +660,15 @@ function buildConfiguracionSheet(wb: import('exceljs').Workbook) {
         const headerCell = sheet.getCell(CONFIG_FILA_CABECERA, col);
         headerCell.value = c.header;
         estilizarCabecera(headerCell);
-        sheet.getCell(CONFIG_FILA_DATOS_INICIO, col).value = c.ejemplo;
-        if (c.ejemplo2) sheet.getCell(CONFIG_FILA_DATOS_INICIO + 1, col).value = c.ejemplo2;
+        if (c.reales && c.reales.length > 0) {
+            c.reales.forEach((valor, j) => { sheet.getCell(CONFIG_FILA_DATOS_INICIO + j, col).value = valor; });
+        } else {
+            sheet.getCell(CONFIG_FILA_DATOS_INICIO, col).value = c.ejemplo;
+            if (c.ejemplo2) sheet.getCell(CONFIG_FILA_DATOS_INICIO + 1, col).value = c.ejemplo2;
+        }
     });
 
-    for (let i = 0; i < CONFIG_FILAS; i++) {
+    for (let i = 0; i < filas; i++) {
         const r = CONFIG_FILA_DATOS_INICIO + i;
         for (let c = 1; c <= 4; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
     }
@@ -561,7 +688,7 @@ const PRIMERA_FILA_DATOS_HORARIO = HORARIO_FILA_SUBCOL + 1;
 // horizontal para leerlo entero.
 const HORARIO_BANNER_EXPLICACION_COLS = 8;
 
-function buildHorarioSheet(wb: import('exceljs').Workbook) {
+function buildHorarioSheet(wb: import('exceljs').Workbook, horarioReal?: { periods: string[]; horario: FilaHorario[] }) {
     const sheet = wb.addWorksheet(HOJA_HORARIO);
     const ultimaColumna = colInicioDia(DIAS_SEMANA.length - 1) + COLS_POR_DIA - 1;
 
@@ -633,7 +760,8 @@ function buildHorarioSheet(wb: import('exceljs').Workbook) {
     // Cabecera (2 filas) y columna Hora siempre visibles al bajar por la tabla.
     sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: HORARIO_FILA_SUBCOL }];
 
-    const filaFinDatos = PRIMERA_FILA_DATOS_HORARIO + FILAS_HORARIO - 1;
+    const filas = Math.max(FILAS_HORARIO, horarioReal?.periods.length ?? 0);
+    const filaFinDatos = PRIMERA_FILA_DATOS_HORARIO + filas - 1;
     for (let r = PRIMERA_FILA_DATOS_HORARIO; r <= filaFinDatos; r++) {
         const filaIndex = r - PRIMERA_FILA_DATOS_HORARIO;
         for (let c = 1; c <= ultimaColumna; c++) estilizarCeldaDatos(sheet.getCell(r, c), filaIndex);
@@ -655,18 +783,41 @@ function buildHorarioSheet(wb: import('exceljs').Workbook) {
         });
     }
 
-    // Fila de ejemplo, coherente con los ejemplos ya sembrados en
-    // Configuración (para que los desplegables muestren algo válido nada
-    // más abrir la plantilla): una clase académica real el lunes, y una
-    // "otra ocupación" (sin grupo) el martes.
-    sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, 1).value = '08:15 - 09:10';
-    const lunesInicio = colInicioDia(0);
-    sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, lunesInicio + 0).value = '1º ESO';
-    sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, lunesInicio + 1).value = 'Biología y Geología';
-    sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, lunesInicio + 2).value = '1º ESO A';
-    sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, lunesInicio + 3).value = 'A16';
-    const martesInicio = colInicioDia(1);
-    sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, martesInicio + 1).value = 'Guardia';
+    if (horarioReal) {
+        // Una fila por franja real (en su orden), aunque algún día quede
+        // libre en ella — así se ve la estructura completa de la semana,
+        // no solo lo ocupado. A lo sumo una clase por (día, franja): un
+        // mismo profesor no puede estar en dos sitios a la vez.
+        const porDiaYHora = new Map<string, FilaHorario>();
+        horarioReal.horario.forEach(f => porDiaYHora.set(`${f.dia}|${f.hora_inicio}`, f));
+
+        horarioReal.periods.forEach((horaLabel, i) => {
+            const r = PRIMERA_FILA_DATOS_HORARIO + i;
+            sheet.getCell(r, 1).value = horaLabel;
+            DIAS_SEMANA.forEach((_, d) => {
+                const fila = porDiaYHora.get(`${d}|${horaLabel}`);
+                if (!fila) return;
+                const colInicio = colInicioDia(d);
+                if (fila.ensenanza) sheet.getCell(r, colInicio + 0).value = fila.ensenanza;
+                sheet.getCell(r, colInicio + 1).value = fila.asignatura;
+                if (fila.grupo) sheet.getCell(r, colInicio + 2).value = fila.grupo;
+                if (fila.aula) sheet.getCell(r, colInicio + 3).value = fila.aula;
+            });
+        });
+    } else {
+        // Fila de ejemplo, coherente con los ejemplos ya sembrados en
+        // Configuración (para que los desplegables muestren algo válido nada
+        // más abrir la plantilla): una clase académica real el lunes, y una
+        // "otra ocupación" (sin grupo) el martes.
+        sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, 1).value = '08:15 - 09:10';
+        const lunesInicio = colInicioDia(0);
+        sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, lunesInicio + 0).value = '1º ESO';
+        sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, lunesInicio + 1).value = 'Biología y Geología';
+        sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, lunesInicio + 2).value = '1º ESO A';
+        sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, lunesInicio + 3).value = 'A16';
+        const martesInicio = colInicioDia(1);
+        sheet.getCell(PRIMERA_FILA_DATOS_HORARIO, martesInicio + 1).value = 'Guardia';
+    }
 
     // Borde grueso al principio de cada bloque de día (y al final del
     // último) — sin esto cuesta ver a simple vista dónde empieza cada día,
@@ -703,7 +854,7 @@ const NOTA_AUTOINCREMENTO = 'Si arrastras el tirador de relleno (la crucecita de
 // Cabeceras en texto plano a propósito, sin icono: `parseAlumnadoSheet`
 // las empareja por texto (insensible a mayúsculas/acentos/espacios) contra
 // `CAMPOS_ALUMNADO` — un icono delante rompería ese emparejamiento.
-function buildAlumnadoSheet(wb: import('exceljs').Workbook) {
+function buildAlumnadoSheet(wb: import('exceljs').Workbook, alumnadoReal?: FilaAlumnado[]) {
     const sheet = wb.addWorksheet(HOJA_ALUMNADO);
 
     const columnas = ['Nivel', 'Materia', 'Grupo', 'Nombre', 'Primer Apellido', 'Segundo Apellido', 'Fecha Nacimiento', 'DNI', 'ACNEAE'];
@@ -725,13 +876,24 @@ function buildAlumnadoSheet(wb: import('exceljs').Workbook) {
     sheet.getRow(ALUMNADO_FILA_CABECERA).height = 20;
     sheet.views = [{ state: 'frozen', ySplit: ALUMNADO_FILA_CABECERA }];
 
-    const ejemplo = sheet.getRow(ALUMNADO_FILA_DATOS_INICIO);
-    ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', 'López', '', '', ''].forEach((v, i) => {
-        if (v) ejemplo.getCell(i + 1).value = v;
-    });
-    ejemplo.getCell(7).value = fechaISOaDate('2012-03-15'); // Fecha Nacimiento
+    if (alumnadoReal) {
+        alumnadoReal.forEach((a, i) => {
+            const row = sheet.getRow(ALUMNADO_FILA_DATOS_INICIO + i);
+            [a.nivel, a.materia, a.grupo, a.nombre, a.primerApellido, a.segundoApellido, '', a.dni ?? '', a.acneae.join(', ')].forEach((v, c) => {
+                if (v) row.getCell(c + 1).value = v;
+            });
+            if (a.fechaNacimiento) row.getCell(7).value = fechaISOaDate(a.fechaNacimiento);
+        });
+    } else {
+        const ejemplo = sheet.getRow(ALUMNADO_FILA_DATOS_INICIO);
+        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', 'López', '', '', ''].forEach((v, i) => {
+            if (v) ejemplo.getCell(i + 1).value = v;
+        });
+        ejemplo.getCell(7).value = fechaISOaDate('2012-03-15'); // Fecha Nacimiento
+    }
 
-    for (let i = 0; i < FILAS_ALUMNADO; i++) {
+    const filas = Math.max(FILAS_ALUMNADO, alumnadoReal?.length ?? 0);
+    for (let i = 0; i < filas; i++) {
         const r = ALUMNADO_FILA_DATOS_INICIO + i;
         for (let c = 1; c <= 9; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
         setListValidation(sheet.getCell(r, 1), configRange(CONFIG_COL_NIVEL));

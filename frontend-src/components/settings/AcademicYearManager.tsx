@@ -1,10 +1,25 @@
 import React, { useState } from 'react';
-import { useAcademicYears, useCreateAcademicYear, useActivateAcademicYear, useDeleteAcademicYear } from '../../hooks/useAcademicYears';
+import { useAcademicYears, useCreateAcademicYear, useActivateAcademicYear, useDeleteAcademicYear, useCurrentAcademicYear, useEvaluationPeriods } from '../../hooks/useAcademicYears';
+import { useCourses } from '../../hooks/useCourses';
+import { useApiClasses } from '../../hooks/useApiClasses';
+import { useApiStudents } from '../../hooks/useApiStudents';
+import { useEnrollmentsForClasses } from '../../hooks/useEnrollments';
+import { apiClassToLocal, joinEnrolledStudents } from '../../services/apiAdapters';
+import { generateTemplate, buildDatosRealesTemplate } from '../../services/scheduleWizard';
 import { CheckCircleIcon, TrashIcon, ExclamationTriangleIcon } from '../Icons';
 import Input from '../Input';
 import Button from '../Button';
 import IconButton from '../IconButton';
 import StartOfYearWizardModal from '../StartOfYearWizardModal';
+
+const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+};
 
 // Primera pieza de UI del backend granular nuevo (ver plan, "Fase 5
 // fusionada", bloque 2): gestiona academic_years en Postgres, en paralelo
@@ -16,6 +31,20 @@ const AcademicYearManager: React.FC = () => {
     const createYear = useCreateAcademicYear();
     const activateYear = useActivateAcademicYear();
     const deleteYear = useDeleteAcademicYear();
+
+    // Datos del curso activo, solo para "Descargar configuración actual" —
+    // ver handleDownloadCurrentConfig. Nada de esto se usa para listar/
+    // crear/activar/borrar cursos académicos, que sigue funcionando solo
+    // con `years` de arriba.
+    const currentYear = useCurrentAcademicYear();
+    const currentYearId = currentYear.data?.id ?? '';
+    const currentEvaluationPeriods = useEvaluationPeriods(currentYearId, { enabled: !!currentYearId });
+    const allCourses = useCourses();
+    const currentClasses = useApiClasses(currentYearId, { enabled: !!currentYearId });
+    const classIds = (currentClasses.data ?? []).map(c => c.id);
+    const enrollmentsQueries = useEnrollmentsForClasses(classIds, { enabled: !!currentClasses.data });
+    const allStudents = useApiStudents();
+    const [isDownloadingConfig, setIsDownloadingConfig] = useState(false);
 
     const [label, setLabel] = useState('');
     const [startDate, setStartDate] = useState('');
@@ -36,17 +65,69 @@ const AcademicYearManager: React.FC = () => {
         );
     };
 
+    // Vuelca el curso académico activo (materias, horario, festivos,
+    // periodos, alumnado) a la misma plantilla que genera el asistente de
+    // inicio de curso, pero rellena con datos reales en vez de ejemplos —
+    // de solo lectura, no toca la base de datos. Sirve tanto para revisar/
+    // archivar la configuración como semilla para "Iniciar nuevo curso
+    // académico" (el Excel resultante ya es válido para volver a subirlo
+    // ahí tal cual, aunque ese asistente cree siempre un curso nuevo, no
+    // actualiza el activo).
+    const handleDownloadCurrentConfig = async () => {
+        if (!currentYear.data || !currentClasses.data || !allCourses.data || !allStudents.data) return;
+        setIsDownloadingConfig(true);
+        try {
+            const classesLocal = currentClasses.data.map((cls, i) => ({
+                ...apiClassToLocal(cls),
+                students: joinEnrolledStudents(enrollmentsQueries[i]?.data ?? [], allStudents.data!),
+            }));
+            const datosReales = buildDatosRealesTemplate({
+                holidays: currentYear.data.holidays.map(h => ({ nombre: h.name, fechaInicio: h.startDate, fechaFin: h.endDate })),
+                evaluationPeriods: (currentEvaluationPeriods.data ?? []).map(p => ({ nombre: p.name, fechaInicio: p.startDate, fechaFin: p.endDate, peso: p.weight })),
+                periods: currentYear.data.periods,
+                classes: classesLocal,
+                courses: allCourses.data,
+            });
+            const blob = await generateTemplate(
+                { label: currentYear.data.label, startDate: currentYear.data.startDate, endDate: currentYear.data.endDate },
+                datosReales,
+            );
+            const filename = `configuracion_${currentYear.data.label}.xlsx`;
+            downloadBlob(blob, filename);
+            alert(`Configuración descargada: "${filename}", en tu carpeta de Descargas.`);
+        } catch (e) {
+            alert(`Error al generar la plantilla: ${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setIsDownloadingConfig(false);
+        }
+    };
+
+    const descargaConfigListo = !!currentYear.data && !!currentClasses.data && !!allCourses.data && !!allStudents.data
+        && enrollmentsQueries.every(q => !q.isLoading);
+
     return (
         <div className="space-y-8">
             <div>
                 <div className="flex items-start justify-between gap-4 mb-4">
                     <h3 className="text-xl font-bold text-slate-800">Cursos Académicos</h3>
-                    <button
-                        onClick={() => setIsWizardOpen(true)}
-                        className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm"
-                    >
-                        🚀 Iniciar nuevo curso académico (Excel)
-                    </button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                        {currentYear.data && (
+                            <button
+                                onClick={handleDownloadCurrentConfig}
+                                disabled={!descargaConfigListo || isDownloadingConfig}
+                                title="Descarga en un Excel lo que ya hay configurado en el curso activo (materias, horario, festivos, periodos y alumnado) — de solo lectura, no cambia nada en la app."
+                                className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isDownloadingConfig ? 'Generando…' : '📥 Descargar configuración actual'}
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setIsWizardOpen(true)}
+                            className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm"
+                        >
+                            🚀 Iniciar nuevo curso académico (Excel)
+                        </button>
+                    </div>
                 </div>
                 <StartOfYearWizardModal isOpen={isWizardOpen} onClose={() => setIsWizardOpen(false)} />
                 <p className="text-sm text-slate-600 mb-4">
