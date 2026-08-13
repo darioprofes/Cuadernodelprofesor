@@ -291,12 +291,15 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   // a partir de su horario semanal — un mismo alumno/clase puede tener dos
   // tramos distintos el mismo día (p.ej. una sesión doble no consecutiva),
   // y cada uno necesita poder marcarse y sincronizarse por separado. Un día
-  // festivo (o findesemana, que ya no tiene ninguna franja en el horario)
-  // no tiene ninguna franja marcable, ni aunque el horario dijera lo
-  // contrario — no se pueden poner faltas en días no lectivos.
+  // festivo o findesemana no tiene ninguna franja marcable, ni aunque el
+  // horario dijera lo contrario (p.ej. una franja dada de alta por error
+  // en sábado/domingo) — no se pueden poner faltas en días no lectivos.
+  // Findesemana se comprueba aparte de los festivos configurados, mismo
+  // criterio que _is_dia_no_lectivo en api/app/services/educastur_sync.py:
+  // nunca hay clase en sábado/domingo, esté o no marcado como festivo.
   const resolvePeriodIndicesForDate = (dateStr: string): number[] => {
-      if (isHolidayDate(dateStr)) return [];
       const dow = getDayOfWeek1a7(new Date(`${dateStr}T00:00:00`));
+      if (dow >= 6 || isHolidayDate(dateStr)) return [];
       const slots = (classData.schedule || []).filter(s => s.day === dow);
       return Array.from(new Set(slots.map(s => s.periodIndex))).sort((a, b) => a - b);
   };
