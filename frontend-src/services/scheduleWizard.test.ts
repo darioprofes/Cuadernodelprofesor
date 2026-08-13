@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { generateTemplate, parseWorkbook, defaultEvaluationPeriods, generateHorarioTemplate, parseHorarioWorkbook } from './scheduleWizard';
 import type { FilaHorario } from '../types';
 
-const ALUMNADO_CABECERA = ['Nivel', 'Materia', 'Grupo', 'Nombre', 'Primer Apellido', 'Segundo Apellido', 'Fecha Nacimiento', 'DNI', 'ACNEAE'];
+const ALUMNADO_CABECERA = ['Nivel', 'Materia', 'Grupo', 'Nombre', 'Primer Apellido', 'Segundo Apellido', 'Fecha Nacimiento', 'DNI', 'NIE', 'ACNEAE'];
 
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 const SUBCOLS_ORDEN_NORMAL = ['Nivel', 'Materia', 'Grupo', 'Aula'] as const;
@@ -272,7 +272,7 @@ describe('scheduleWizard', () => {
             const buffer = await buildWorkbook({
                 alumnado: {
                     filas: [
-                        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', 'López', '2012-03-15', '12345678A', 'RE, ACS'],
+                        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', 'López', '2012-03-15', '12345678A', '1234567', 'RE, ACS'],
                     ],
                 },
             });
@@ -287,15 +287,16 @@ describe('scheduleWizard', () => {
                 segundoApellido: 'López',
                 fechaNacimiento: '2012-03-15',
                 dni: '12345678A',
+                nie: '1234567',
                 acneae: ['RE', 'ACS'],
             }]);
         });
 
-        it('acepta filas sin los campos opcionales (fecha/DNI/ACNEAE)', async () => {
+        it('acepta filas sin los campos opcionales (fecha/DNI/NIE/ACNEAE)', async () => {
             const buffer = await buildWorkbook({
                 alumnado: {
                     filas: [
-                        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Marcos', 'Rodríguez', undefined, undefined, undefined, undefined],
+                        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Marcos', 'Rodríguez', undefined, undefined, undefined, undefined, undefined],
                     ],
                 },
             });
@@ -303,6 +304,7 @@ describe('scheduleWizard', () => {
             expect(errores).toEqual([]);
             expect(alumnado).toHaveLength(1);
             expect(alumnado[0].fechaNacimiento).toBeNull();
+            expect(alumnado[0].nie).toBeNull();
             expect(alumnado[0].acneae).toEqual([]);
         });
 
@@ -312,7 +314,7 @@ describe('scheduleWizard', () => {
             const buffer = await buildWorkbook({
                 alumnado: {
                     filas: [
-                        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', undefined, new Date(Date.UTC(2012, 2, 15)), undefined, undefined],
+                        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', undefined, new Date(Date.UTC(2012, 2, 15)), undefined, undefined, undefined],
                     ],
                 },
             });
@@ -325,7 +327,7 @@ describe('scheduleWizard', () => {
             const buffer = await buildWorkbook({
                 alumnado: {
                     filas: [
-                        [undefined, undefined, undefined, 'Lucía', 'Fernández', undefined, undefined, undefined, undefined],
+                        [undefined, undefined, undefined, 'Lucía', 'Fernández', undefined, undefined, undefined, undefined, undefined],
                     ],
                 },
             });
@@ -339,7 +341,7 @@ describe('scheduleWizard', () => {
             const buffer = await buildWorkbook({
                 alumnado: {
                     filas: [
-                        ['1º ESO', 'Biología y Geología', '1º ESO A', undefined, undefined, undefined, undefined, undefined, undefined],
+                        ['1º ESO', 'Biología y Geología', '1º ESO A', undefined, undefined, undefined, undefined, undefined, undefined, undefined],
                     ],
                 },
             });
@@ -353,7 +355,7 @@ describe('scheduleWizard', () => {
             const buffer = await buildWorkbook({
                 alumnado: {
                     filas: [
-                        [undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
+                        [undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
                     ],
                 },
             });

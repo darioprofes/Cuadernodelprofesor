@@ -35,6 +35,12 @@ export interface FilaAlumnado {
     segundoApellido: string;
     fechaNacimiento: string | null;
     dni: string | null;
+    // NIE = Número de Identificación Escolar (SAUCE) — no el NIE de
+    // extranjería (ese vive en `dni`, ver students.nie en el backend).
+    // Sin DNI, este es el segundo identificador más fiable para
+    // reconocer al mismo alumno al re-sincronizar (ver services/
+    // excelSync.ts) — más estable que el nombre, que puede repetirse.
+    nie: string | null;
     acneae: string[];
 }
 
@@ -149,6 +155,7 @@ export function buildDatosRealesTemplate(input: {
                 segundoApellido: student.segundoApellido ?? '',
                 fechaNacimiento: student.fechaNacimiento ?? null,
                 dni: student.dni ?? null,
+                nie: student.nie ?? null,
                 acneae: student.acneae ?? [],
             });
         }
@@ -857,12 +864,12 @@ const NOTA_AUTOINCREMENTO = 'Si arrastras el tirador de relleno (la crucecita de
 function buildAlumnadoSheet(wb: import('exceljs').Workbook, alumnadoReal?: FilaAlumnado[]) {
     const sheet = wb.addWorksheet(HOJA_ALUMNADO);
 
-    const columnas = ['Nivel', 'Materia', 'Grupo', 'Nombre', 'Primer Apellido', 'Segundo Apellido', 'Fecha Nacimiento', 'DNI', 'ACNEAE'];
-    const anchos = [20, 26, 20, 18, 20, 20, 18, 14, 20];
+    const columnas = ['Nivel', 'Materia', 'Grupo', 'Nombre', 'Primer Apellido', 'Segundo Apellido', 'Fecha Nacimiento', 'DNI', 'NIE', 'ACNEAE'];
+    const anchos = [20, 26, 20, 18, 20, 20, 18, 14, 14, 20];
 
     addBanner(
-        sheet, 9, anchos.reduce((a, b) => a + b, 0), '🧑‍🎓', 'Alumnado',
-        'Una fila por alumno/a. Nivel/Materia/Grupo deben coincidir con una clase de la hoja "Horario". El resto de la ficha (tutores, domicilio, datos sanitarios...) se rellena después desde la app. Consejo: para copiar Nivel/Grupo en varias filas, arrastra con Ctrl pulsado — si no, Excel puede incrementar el número.',
+        sheet, columnas.length, anchos.reduce((a, b) => a + b, 0), '🧑‍🎓', 'Alumnado',
+        'Una fila por alumno/a. Nivel/Materia/Grupo deben coincidir con una clase de la hoja "Horario". NIE = Número de Identificación Escolar (SAUCE), no el NIE de extranjería (ese va en DNI). El resto de la ficha (tutores, domicilio, datos sanitarios...) se rellena después desde la app. Consejo: para copiar Nivel/Grupo en varias filas, arrastra con Ctrl pulsado — si no, Excel puede incrementar el número.',
     );
 
     columnas.forEach((c, i) => {
@@ -879,14 +886,14 @@ function buildAlumnadoSheet(wb: import('exceljs').Workbook, alumnadoReal?: FilaA
     if (alumnadoReal) {
         alumnadoReal.forEach((a, i) => {
             const row = sheet.getRow(ALUMNADO_FILA_DATOS_INICIO + i);
-            [a.nivel, a.materia, a.grupo, a.nombre, a.primerApellido, a.segundoApellido, '', a.dni ?? '', a.acneae.join(', ')].forEach((v, c) => {
+            [a.nivel, a.materia, a.grupo, a.nombre, a.primerApellido, a.segundoApellido, '', a.dni ?? '', a.nie ?? '', a.acneae.join(', ')].forEach((v, c) => {
                 if (v) row.getCell(c + 1).value = v;
             });
             if (a.fechaNacimiento) row.getCell(7).value = fechaISOaDate(a.fechaNacimiento);
         });
     } else {
         const ejemplo = sheet.getRow(ALUMNADO_FILA_DATOS_INICIO);
-        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', 'López', '', '', ''].forEach((v, i) => {
+        ['1º ESO', 'Biología y Geología', '1º ESO A', 'Elena', 'García', 'López', '', '', '', ''].forEach((v, i) => {
             if (v) ejemplo.getCell(i + 1).value = v;
         });
         ejemplo.getCell(7).value = fechaISOaDate('2012-03-15'); // Fecha Nacimiento
@@ -895,7 +902,7 @@ function buildAlumnadoSheet(wb: import('exceljs').Workbook, alumnadoReal?: FilaA
     const filas = Math.max(FILAS_ALUMNADO, alumnadoReal?.length ?? 0);
     for (let i = 0; i < filas; i++) {
         const r = ALUMNADO_FILA_DATOS_INICIO + i;
-        for (let c = 1; c <= 9; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
+        for (let c = 1; c <= columnas.length; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
         setListValidation(sheet.getCell(r, 1), configRange(CONFIG_COL_NIVEL));
         setListValidation(sheet.getCell(r, 2), configRange(CONFIG_COL_MATERIA));
         setListValidation(sheet.getCell(r, 3), configRange(CONFIG_COL_GRUPO));
@@ -1102,7 +1109,7 @@ function parseHorarioSheet(sheet: import('exceljs').Worksheet, errores: string[]
     return filas;
 }
 
-const CAMPOS_ALUMNADO = ['nivel', 'materia', 'grupo', 'nombre', 'primerapellido', 'segundoapellido', 'fechanacimiento', 'dni', 'acneae'] as const;
+const CAMPOS_ALUMNADO = ['nivel', 'materia', 'grupo', 'nombre', 'primerapellido', 'segundoapellido', 'fechanacimiento', 'dni', 'nie', 'acneae'] as const;
 
 function parseAlumnadoSheet(sheet: import('exceljs').Worksheet, errores: string[]): FilaAlumnado[] {
     const header = sheet.getRow(ALUMNADO_FILA_CABECERA);
@@ -1166,6 +1173,7 @@ function parseAlumnadoSheet(sheet: import('exceljs').Worksheet, errores: string[
             segundoApellido: valor(row, 'segundoapellido'),
             fechaNacimiento: valorFecha(row, 'fechanacimiento'),
             dni: valor(row, 'dni') || null,
+            nie: valor(row, 'nie') || null,
             acneae: acneaeTexto ? acneaeTexto.split(',').map(s => s.trim()).filter(Boolean) : [],
         });
     }
