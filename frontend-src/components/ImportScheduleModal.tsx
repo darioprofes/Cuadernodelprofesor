@@ -79,33 +79,69 @@ export const normalizarNivel = (raw: string): string => {
 // que YA existían pero a los que esta importación no les toca ninguna
 // franja (ya no aparecen en el PDF actual): true los borra del todo
 // (alumnado y calificaciones incluidos), false los deja tal cual estaban.
-export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[], evaluationPeriods: AcademicConfiguration['evaluationPeriods'], borrarAcademicasSinUsar: boolean) => {
+//
+// `sustituirOtrasOcupaciones` (por defecto true, comportamiento histórico de
+// este asistente): "otras ocupaciones" (guardias, reuniones, recreo...) no
+// guardan alumnado ni calificaciones, así que importar el horario implica
+// sustituirlas siempre por completo (curso + clase) — sin esto, reimportar
+// tras renombrar una (p.ej. "Libre" → "RECREO") no la reconoce por el
+// nombre y crea otra en paralelo, dejando la antigua con franjas obsoletas.
+// SyncAcademicYearModal.tsx pasa `false`: ese flujo promete no borrar nada
+// sin que el profesor lo marque explícitamente (a diferencia de este
+// asistente), así que "otras ocupaciones" se emparejan por identidad
+// (materia+tipo, igual que las académicas) en vez de sustituirse siempre.
+//
+// `periodosReferencia`: por defecto (undefined/vacío, comportamiento
+// histórico) la lista de franjas se recalcula desde cero a partir de lo que
+// aparece en el propio fichero — correcto para el asistente de importación,
+// que no tiene ningún horario previo con el que ser consistente. Pero
+// SyncAcademicYearModal.tsx sincroniza sobre un curso YA activo, cuyas
+// clases guardan sus franjas por ÍNDICE (ClassData.schedule[].periodIndex),
+// no por texto: si una franja real (p.ej. "11:00-11:30") no tiene ninguna
+// clase asignada esa semana, recalcular la lista la haría desaparecer y
+// desplazaría el índice de todas las franjas posteriores, desincronizando
+// las franjas ya guardadas de cualquier clase real que sí las usa (bug real
+// encontrado verificando esta función contra producción: una clase con una
+// franja después del hueco aparecía como "actualizada", duplicando esa
+// franja con el índice desplazado en vez de reconocerla). Se le pasan las
+// franjas reales del curso (`academicYear.periods`), en su orden real, y se
+// usan tal cual — ninguna franja desaparece ni cambia de índice solo por no
+// tener contenido esta semana.
+export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[], evaluationPeriods: AcademicConfiguration['evaluationPeriods'], borrarAcademicasSinUsar: boolean, sustituirOtrasOcupaciones: boolean = true, periodosReferencia?: string[]) => {
     // La materia puede venir vacía (franja sin nada asignado en el PDF,
     // p.ej. el recreo): se importa igual, sin nombre por defecto.
     const filasValidas = filas.filter(f => f.hora_inicio && f.hora_fin);
 
-    // "Otras ocupaciones" (guardias, reuniones, recreo...) no guardan
-    // alumnado ni calificaciones, así que importar el horario implica
-    // sustituirlas siempre por completo (curso + clase) — sin esto, reimportar
-    // tras renombrar una (p.ej. "Libre" → "RECREO") no la reconoce por el
-    // nombre y crea otra en paralelo, dejando la antigua con franjas
-    // obsoletas.
-    const idsOtrasOcupaciones = new Set(courses.filter(c => c.type === 'other').map(c => c.id));
-
-    const parejasUnicas = Array.from(new Set(filasValidas.map(f => `${f.hora_inicio}|${f.hora_fin}`)))
-        .map(par => {
-            const [inicio, fin] = par.split('|');
-            return { inicio, fin };
-        })
-        .sort((a, b) => toMinutes(a.inicio) - toMinutes(b.inicio));
+    const idsOtrasOcupaciones = sustituirOtrasOcupaciones
+        ? new Set(courses.filter(c => c.type === 'other').map(c => c.id))
+        : new Set<string>();
 
     // Igual que "inicio" e "fin" cuando la franja viene de una etiqueta
     // libre sin horas (p.ej. "Recreo", ver scheduleWizard.ts) — sin este
     // caso especial saldría duplicada como "Recreo-Recreo". Un PDF real
     // nunca produce inicio===fin (toda franja tiene alguna duración), así
-    // que esto no cambia nada para esa vía.
-    const periods = parejasUnicas.map(p => p.inicio === p.fin ? p.inicio : `${p.inicio}-${p.fin}`);
-    const periodIndexOf = new Map(parejasUnicas.map((p, i) => [`${p.inicio}|${p.fin}`, i]));
+    // que esto no cambia nada para esa vía. Solo se usa para RECONSTRUIR una
+    // etiqueta a partir de inicio/fin ya conocidos — nunca para separar una
+    // etiqueta ya unida, que podría contener guiones propios.
+    const etiquetaFranja = (inicio: string, fin: string): string => (inicio === fin ? inicio : `${inicio}-${fin}`);
+
+    let periods: string[];
+    let periodIndexOf: (fila: { hora_inicio: string; hora_fin: string }) => number | undefined;
+    if (periodosReferencia && periodosReferencia.length > 0) {
+        periods = periodosReferencia;
+        const porEtiqueta = new Map(periodosReferencia.map((label, i) => [label, i]));
+        periodIndexOf = fila => porEtiqueta.get(etiquetaFranja(fila.hora_inicio, fila.hora_fin));
+    } else {
+        const parejasUnicas = Array.from(new Set(filasValidas.map(f => `${f.hora_inicio}|${f.hora_fin}`)))
+            .map(par => {
+                const [inicio, fin] = par.split('|');
+                return { inicio, fin };
+            })
+            .sort((a, b) => toMinutes(a.inicio) - toMinutes(b.inicio));
+        periods = parejasUnicas.map(p => etiquetaFranja(p.inicio, p.fin));
+        const porPar = new Map(parejasUnicas.map((p, i) => [`${p.inicio}|${p.fin}`, i]));
+        periodIndexOf = fila => porPar.get(`${fila.hora_inicio}|${fila.hora_fin}`);
+    }
 
     let newCourses = courses.filter(c => !idsOtrasOcupaciones.has(c.id));
     let newClasses = classes.filter(cl => !idsOtrasOcupaciones.has(cl.courseId));
@@ -165,7 +201,7 @@ export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes
 
     for (const fila of filasValidas) {
         const day = fila.dia + 1; // el backend usa 0=Lunes; ClassData.schedule usa 1=Lunes
-        const periodIndex = periodIndexOf.get(`${fila.hora_inicio}|${fila.hora_fin}`);
+        const periodIndex = periodIndexOf(fila);
         if (periodIndex === undefined) continue;
 
         // El grupo (p.ej. "S4ABCD", ya fusionado si varias "Unidad" compartían

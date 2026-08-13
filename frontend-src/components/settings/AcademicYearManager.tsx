@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAcademicYears, useCreateAcademicYear, useActivateAcademicYear, useDeleteAcademicYear, useCurrentAcademicYear, useEvaluationPeriods } from '../../hooks/useAcademicYears';
 import { useCourses } from '../../hooks/useCourses';
 import { useApiClasses } from '../../hooks/useApiClasses';
@@ -11,6 +11,7 @@ import Input from '../Input';
 import Button from '../Button';
 import IconButton from '../IconButton';
 import StartOfYearWizardModal from '../StartOfYearWizardModal';
+import SyncAcademicYearModal from '../SyncAcademicYearModal';
 
 const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
@@ -45,6 +46,19 @@ const AcademicYearManager: React.FC = () => {
     const enrollmentsQueries = useEnrollmentsForClasses(classIds, { enabled: !!currentClasses.data });
     const allStudents = useApiStudents();
     const [isDownloadingConfig, setIsDownloadingConfig] = useState(false);
+    const [isSyncOpen, setIsSyncOpen] = useState(false);
+
+    // Clases reales del curso activo, con alumnado ya hidratado — usado
+    // tanto por "Descargar configuración actual" como por
+    // SyncAcademicYearModal (que necesita comparar contra lo real para
+    // decidir qué es nuevo/actualizado/ausente al re-subir un Excel).
+    const classesLocal = useMemo(
+        () => (currentClasses.data ?? []).map((cls, i) => ({
+            ...apiClassToLocal(cls),
+            students: joinEnrolledStudents(enrollmentsQueries[i]?.data ?? [], allStudents.data ?? []),
+        })),
+        [currentClasses.data, enrollmentsQueries, allStudents.data]
+    );
 
     const [label, setLabel] = useState('');
     const [startDate, setStartDate] = useState('');
@@ -77,10 +91,6 @@ const AcademicYearManager: React.FC = () => {
         if (!currentYear.data || !currentClasses.data || !allCourses.data || !allStudents.data) return;
         setIsDownloadingConfig(true);
         try {
-            const classesLocal = currentClasses.data.map((cls, i) => ({
-                ...apiClassToLocal(cls),
-                students: joinEnrolledStudents(enrollmentsQueries[i]?.data ?? [], allStudents.data!),
-            }));
             const datosReales = buildDatosRealesTemplate({
                 holidays: currentYear.data.holidays.map(h => ({ nombre: h.name, fechaInicio: h.startDate, fechaFin: h.endDate })),
                 evaluationPeriods: (currentEvaluationPeriods.data ?? []).map(p => ({ nombre: p.name, fechaInicio: p.startDate, fechaFin: p.endDate, peso: p.weight })),
@@ -121,6 +131,14 @@ const AcademicYearManager: React.FC = () => {
                                 {isDownloadingConfig ? 'Generando…' : '📥 Descargar configuración actual'}
                             </button>
                         )}
+                        {currentYear.data && (
+                            <button
+                                onClick={() => setIsSyncOpen(true)}
+                                className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm"
+                            >
+                                🔄 Sincronizar desde Excel
+                            </button>
+                        )}
                         <button
                             onClick={() => setIsWizardOpen(true)}
                             className="flex-shrink-0 bg-white border border-slate-300 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg hover:bg-slate-50 shadow-sm"
@@ -130,6 +148,22 @@ const AcademicYearManager: React.FC = () => {
                     </div>
                 </div>
                 <StartOfYearWizardModal isOpen={isWizardOpen} onClose={() => setIsWizardOpen(false)} />
+                {currentYear.data && (
+                    <SyncAcademicYearModal
+                        isOpen={isSyncOpen}
+                        onClose={() => setIsSyncOpen(false)}
+                        yearId={currentYear.data.id}
+                        yearLabel={currentYear.data.label}
+                        yearStartDate={currentYear.data.startDate}
+                        yearEndDate={currentYear.data.endDate}
+                        yearHolidays={currentYear.data.holidays}
+                        yearPeriods={currentYear.data.periods}
+                        evaluationPeriods={currentEvaluationPeriods.data ?? []}
+                        courses={allCourses.data ?? []}
+                        classes={classesLocal}
+                        allStudents={allStudents.data ?? []}
+                    />
+                )}
                 <p className="text-sm text-slate-600 mb-4">
                     Cada curso académico archiva sus propias clases, matrículas y notas por separado. Solo uno puede estar activo a la vez.
                 </p>

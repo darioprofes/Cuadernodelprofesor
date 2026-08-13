@@ -123,7 +123,17 @@ export function buildDatosRealesTemplate(input: {
 
     for (const cls of input.classes) {
         const course = courseById.get(cls.courseId);
-        if (!course) continue;
+        // Una materia sin nombre no se puede volcar: la hoja Horario usa
+        // "Materia vacía" como la propia marca de "franja libre" (ver
+        // parseHorarioSheet), así que una clase real con materia en
+        // blanco sería indistinguible de "no hay nada aquí" al escribirla
+        // — y, peor, si coincide en día/hora con otra clase real, su
+        // entrada en blanco podía pisar silenciosamente a la real al
+        // volcarlas (bug real encontrado verificando esta función contra
+        // producción: un franja quedaba "libre" cuando en realidad la
+        // ocupaba una clase de verdad). Se descarta aquí, antes de
+        // generar ninguna fila — no se puede representar en este formato.
+        if (!course || !course.subject) continue;
 
         materias.add(course.subject);
         if (course.type !== 'other') niveles.add(course.level);
