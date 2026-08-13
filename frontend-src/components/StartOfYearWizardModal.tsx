@@ -380,7 +380,7 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
                             </div>
                         )}
 
-                        {plan && parsed && cursoAcademico && (parsed.filas.length > 0 || parsed.alumnado.length > 0) && (
+                        {plan && parsed && cursoAcademico && (
                             <div className="space-y-3">
                                 <div className="p-3 border rounded-lg bg-slate-50 text-sm text-slate-700">
                                     <p>Curso académico «{cursoAcademico.label}» ({cursoAcademico.startDate} — {cursoAcademico.endDate}), {cursoAcademico.holidays.length} festivo(s), {cursoAcademico.evaluationPeriods.length || 3} periodo(s) de evaluación.</p>
@@ -391,33 +391,35 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
                                         <p className="text-orange-700">{alumnadoResuelto.invalidos} fila(s) de alumnado no coinciden con ninguna clase de la hoja "Horario" — no se importarán (el resto sí).</p>
                                     )}
                                 </div>
-                                <div className="max-h-56 overflow-y-auto border rounded-lg divide-y">
-                                    {plan.classes.map(cls => {
-                                        const course = plan.courses.find(c => c.id === cls.courseId);
-                                        const alumnadoDeClase = parsed.alumnado.filter(f => resolveClassId(f, plan) === cls.id).length;
-                                        return (
-                                            <div key={cls.id} className="p-2 px-3 text-sm flex justify-between items-center gap-2">
-                                                <span>
-                                                    <ClassLabel classData={cls} courses={plan.courses} />
-                                                    {course && <span className="text-slate-400 ml-2">({course.level})</span>}
-                                                </span>
-                                                <span className="text-slate-400 flex-shrink-0">
-                                                    {(cls.schedule || []).length} sesión(es)/semana
-                                                    {alumnadoDeClase > 0 && ` · ${alumnadoDeClase} alumno(s)`}
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                {plan.classes.length > 0 ? (
+                                    <div className="max-h-56 overflow-y-auto border rounded-lg divide-y">
+                                        {plan.classes.map(cls => {
+                                            const course = plan.courses.find(c => c.id === cls.courseId);
+                                            const alumnadoDeClase = parsed.alumnado.filter(f => resolveClassId(f, plan) === cls.id).length;
+                                            return (
+                                                <div key={cls.id} className="p-2 px-3 text-sm flex justify-between items-center gap-2">
+                                                    <span>
+                                                        <ClassLabel classData={cls} courses={plan.courses} />
+                                                        {course && <span className="text-slate-400 ml-2">({course.level})</span>}
+                                                    </span>
+                                                    <span className="text-slate-400 flex-shrink-0">
+                                                        {(cls.schedule || []).length} sesión(es)/semana
+                                                        {alumnadoDeClase > 0 && ` · ${alumnadoDeClase} alumno(s)`}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <p className="text-slate-500 text-sm">
+                                        Sin materias, horario ni alumnado en el Excel — se creará solo el curso académico (fechas, festivos y periodos de evaluación). Podrás añadir clases y alumnado después desde la app.
+                                    </p>
+                                )}
                                 <div className="flex justify-end gap-2 pt-2">
                                     <Button variant="secondary" onClick={handleClose}>Cancelar</Button>
                                     <Button variant="primary" onClick={handleConfirm} disabled={applying}>{applying ? 'Aplicando…' : 'Confirmar Importación'}</Button>
                                 </div>
                             </div>
-                        )}
-
-                        {parsed && parsed.filas.length === 0 && parsed.alumnado.length === 0 && parsed.errores.length === 0 && (
-                            <p className="text-slate-500 text-sm">No se ha reconocido ninguna fila en el Excel.</p>
                         )}
                     </>
                 )}
