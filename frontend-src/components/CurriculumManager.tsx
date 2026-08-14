@@ -692,6 +692,23 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         return [...(remoteBasicKnowledge.data ?? [])].sort((a, b) => compararCodigo(a.code, b.code));
     }, [remoteBasicKnowledge.data]);
 
+    // Bug real: EditableItem mostraba los ids en bruto de descriptor/
+    // competencia (p.ej. "e5eba6ff-fbf0-...") en vez de su código corto
+    // (p.ej. "STEM1") bajo "Competencias Específicas" — sí se resolvían
+    // bien en "Competencias Clave", que ya recorre keyCompetences con sus
+    // descriptores anidados. Estos dos mapas dan el mismo código legible en
+    // los otros dos sitios que hasta ahora mostraban el id sin resolver.
+    const descriptorCodeById = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const kc of keyCompetences) {
+            for (const od of kc.descriptors || []) map.set(od.id, od.code);
+        }
+        return map;
+    }, [keyCompetences]);
+    const competenceCodeById = useMemo(() => {
+        return new Map(filteredCompetences.map(sc => [sc.id, sc.code]));
+    }, [filteredCompetences]);
+
     // Agrupa los saberes básicos por el nombre real de su bloque oficial
     // (p.ej. "A. Proyecto científico") en vez de mostrarlos en una lista
     // plana — el nombre viene de las filas BB del CSV importado (ver
@@ -788,7 +805,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                 <Accordion title={`Competencias Específicas para ${courseName}`}>
                     <div className="space-y-2">
                         {filteredCompetences.map((sc: SpecificCompetence) => (
-                            <EditableItem key={sc.id} item={sc} type="sc" onSave={handleUpdate} onDelete={handleDelete} defaultEditing={sc.id === newlyAddedId} />
+                            <EditableItem key={sc.id} item={sc} type="sc" onSave={handleUpdate} onDelete={handleDelete} defaultEditing={sc.id === newlyAddedId} descriptorCodeById={descriptorCodeById} />
                         ))}
                         <button
                             onClick={handleAddSpecificCompetence}
@@ -904,7 +921,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                         {criteriaGroupedByCompetence.groups.map(({ competence, criteria: groupCriteria }: { competence: SpecificCompetence; criteria: EvaluationCriterion[] }) => (
                             <CriterioGroup key={competence.id} title={`${competence.code}: ${competence.description}`} count={groupCriteria.length}>
                                 {groupCriteria.map((ec: EvaluationCriterion) => (
-                                    <EditableItem key={ec.id} item={ec} type="ec" onSave={handleUpdate} onDelete={handleDelete} editableWeight={selectedCourse?.pesoCriteriosManual === true} defaultEditing={ec.id === newlyAddedId} />
+                                    <EditableItem key={ec.id} item={ec} type="ec" onSave={handleUpdate} onDelete={handleDelete} editableWeight={selectedCourse?.pesoCriteriosManual === true} defaultEditing={ec.id === newlyAddedId} competenceCodeById={competenceCodeById} />
                                 ))}
                                 <button
                                     onClick={() => handleAddCriterion(competence.id)}
@@ -917,7 +934,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                         {criteriaGroupedByCompetence.orphanCriteria.length > 0 && (
                             <CriterioGroup title="Sin competencia específica asociada" count={criteriaGroupedByCompetence.orphanCriteria.length}>
                                 {criteriaGroupedByCompetence.orphanCriteria.map((ec: EvaluationCriterion) => (
-                                    <EditableItem key={ec.id} item={ec} type="ec" onSave={handleUpdate} onDelete={handleDelete} editableWeight={selectedCourse?.pesoCriteriosManual === true} defaultEditing={ec.id === newlyAddedId} />
+                                    <EditableItem key={ec.id} item={ec} type="ec" onSave={handleUpdate} onDelete={handleDelete} editableWeight={selectedCourse?.pesoCriteriosManual === true} defaultEditing={ec.id === newlyAddedId} competenceCodeById={competenceCodeById} />
                                 ))}
                             </CriterioGroup>
                         )}
@@ -1064,6 +1081,10 @@ interface EditableItemProps {
     onDelete: (type: CurriculumItemType, id: string) => void;
     editableWeight?: boolean;
     defaultEditing?: boolean;
+    // Solo hacen falta para 'sc' (descriptores enlazados) y 'ec' (competencia
+    // enlazada) — mostrar su código corto (p.ej. "STEM1") en vez del id.
+    descriptorCodeById?: Map<string, string>;
+    competenceCodeById?: Map<string, string>;
 }
 
 // `code`/`description`/`id` existen en los 5 tipos de ítem curricular, así
@@ -1071,7 +1092,7 @@ interface EditableItemProps {
 // EvaluationCriterion), `keyCompetenceDescriptorIds` (solo en
 // SpecificCompetence) y `competenceId` (solo en EvaluationCriterion) usan
 // el operador `in` para estrechar la unión sin necesidad de casts.
-const EditableItem: React.FC<EditableItemProps> = ({ item, type, onSave, onDelete, editableWeight, defaultEditing }) => {
+const EditableItem: React.FC<EditableItemProps> = ({ item, type, onSave, onDelete, editableWeight, defaultEditing, descriptorCodeById, competenceCodeById }) => {
     const [isEditing, setIsEditing] = useState(!!defaultEditing);
     const [data, setData] = useState<CurriculumItem>(item);
 
@@ -1158,8 +1179,16 @@ const EditableItem: React.FC<EditableItemProps> = ({ item, type, onSave, onDelet
                                 : <Badge variant="danger" className="ml-2 align-middle">Sin peso</Badge>
                     )}
                 </p>
-                {type === 'sc' && <p className="text-xs text-slate-500 mt-1">Descriptores: {(keyCompetenceDescriptorIds || []).join(', ')}</p>}
-                 {type === 'ec' && <p className="text-xs text-slate-500 mt-1">Comp. Específica: {competenceId}</p>}
+                {type === 'sc' && (
+                    <p className="text-xs text-slate-500 mt-1">
+                        Descriptores: {(keyCompetenceDescriptorIds || []).map(id => descriptorCodeById?.get(id) ?? id).join(', ') || '—'}
+                    </p>
+                )}
+                {type === 'ec' && (
+                    <p className="text-xs text-slate-500 mt-1">
+                        Comp. Específica: {(competenceId && competenceCodeById?.get(competenceId)) ?? competenceId ?? '—'}
+                    </p>
+                )}
             </div>
             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                 <IconButton label="Editar" size="sm" onClick={() => setIsEditing(true)}><PencilIcon className="w-4 h-4" /></IconButton>
