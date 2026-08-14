@@ -94,11 +94,16 @@ export interface BasicKnowledge {
     courseId: string;
     code: string;
     description: string;
+    // Nombre del bloque oficial (p.ej. "Proyecto científico") al que
+    // pertenece este saber básico según su letra de código -- null si no
+    // se conoce (currículos propios del profesor, saberes sueltos).
+    blockName: string | null;
 }
 
 export interface BasicKnowledgeInput {
     code: string;
     description: string;
+    blockName?: string | null;
 }
 
 export interface ProgrammingUnit {

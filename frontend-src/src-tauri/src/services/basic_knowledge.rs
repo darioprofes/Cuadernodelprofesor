@@ -6,7 +6,7 @@ use crate::error::ApiError;
 
 use super::merge_object;
 
-const COLUMNS: &str = "id, course_id, code, description";
+const COLUMNS: &str = "id, course_id, code, description, block_name";
 
 fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
     Ok(json!({
@@ -14,6 +14,7 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
         "courseId": row.get::<_, String>(1)?,
         "code": row.get::<_, String>(2)?,
         "description": row.get::<_, String>(3)?,
+        "blockName": row.get::<_, Option<String>>(4)?,
     }))
 }
 
@@ -38,11 +39,12 @@ pub fn create(conn: &Connection, course_id: &str, body: Value) -> Result<Value, 
         .ok_or_else(|| ApiError::bad_request("code es obligatorio"))?;
     let description = body.get("description").and_then(Value::as_str)
         .ok_or_else(|| ApiError::bad_request("description es obligatoria"))?;
+    let block_name = body.get("blockName").and_then(Value::as_str);
 
     let id = db::new_uuid();
     conn.execute(
-        "INSERT INTO basic_knowledge (id, course_id, code, description) VALUES (?,?,?,?)",
-        params![id, course_id, code, description],
+        "INSERT INTO basic_knowledge (id, course_id, code, description, block_name) VALUES (?,?,?,?,?)",
+        params![id, course_id, code, description, block_name],
     )?;
     get_one(conn, &id)?.ok_or_else(|| ApiError::internal("no se pudo releer el saber básico recién creado"))
 }
@@ -52,10 +54,11 @@ pub fn update(conn: &Connection, id: &str, body: Value) -> Result<Value, ApiErro
     let merged = merge_object(&current, &body);
     let code = merged.get("code").and_then(Value::as_str).unwrap_or_default();
     let description = merged.get("description").and_then(Value::as_str).unwrap_or_default();
+    let block_name = merged.get("blockName").and_then(Value::as_str);
 
     conn.execute(
-        "UPDATE basic_knowledge SET code = ?, description = ? WHERE id = ?",
-        params![code, description, id],
+        "UPDATE basic_knowledge SET code = ?, description = ?, block_name = ? WHERE id = ?",
+        params![code, description, block_name, id],
     )?;
     get_one(conn, id)?.ok_or_else(|| ApiError::internal("no se pudo releer el saber básico tras actualizar"))
 }

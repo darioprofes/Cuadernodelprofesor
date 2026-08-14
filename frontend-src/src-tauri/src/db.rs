@@ -19,6 +19,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0002_absences_and_student_import_tracking.sql",
         include_str!("migrations/0002_absences_and_student_import_tracking.sql"),
     ),
+    (
+        "0003_basic_knowledge_block_name.sql",
+        include_str!("migrations/0003_basic_knowledge_block_name.sql"),
+    ),
 ];
 
 pub fn open(app: &tauri::AppHandle) -> rusqlite::Result<Connection> {
@@ -98,7 +102,7 @@ mod tests {
         let migration_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 2);
+        assert_eq!(migration_count, 3);
 
         let table_count: i64 = conn
             .query_row(
@@ -108,6 +112,7 @@ mod tests {
             )
             .unwrap();
         // 24 tablas de dominio del baseline + absences (0002) + schema_migrations
+        // -- 0003 solo añade una columna (block_name), ninguna tabla nueva.
         assert_eq!(table_count, 26);
 
         // Comprobación de humo de una FK con ON DELETE CASCADE real (no solo

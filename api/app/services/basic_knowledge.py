@@ -4,17 +4,19 @@ from typing import Optional
 from services.db import get_conn
 from services.schemas import ApiModel
 
-_COLUMNS = "id, course_id, code, description"
+_COLUMNS = "id, course_id, code, description, block_name"
 
 
 class BasicKnowledgeInput(ApiModel):
     code: str
     description: str
+    block_name: Optional[str] = None
 
 
 class BasicKnowledgePatch(ApiModel):
     code: Optional[str] = None
     description: Optional[str] = None
+    block_name: Optional[str] = None
 
 
 class BasicKnowledge(BasicKnowledgeInput):
@@ -40,8 +42,8 @@ def create_basic_knowledge(course_id: str, data: BasicKnowledgeInput) -> BasicKn
         with conn.cursor() as cur:
 
             cur.execute(
-                f"INSERT INTO basic_knowledge (course_id, code, description) VALUES (%s, %s, %s) RETURNING {_COLUMNS}",
-                [course_id, data.code, data.description]
+                f"INSERT INTO basic_knowledge (course_id, code, description, block_name) VALUES (%s, %s, %s, %s) RETURNING {_COLUMNS}",
+                [course_id, data.code, data.description, data.block_name]
             )
 
             return BasicKnowledge.model_validate(cur.fetchone())

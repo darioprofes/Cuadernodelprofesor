@@ -322,6 +322,7 @@ export interface BasicKnowledge {
   courseId: string;
   code: string;
   description: string;
+  blockName: string | null;
 }
 
 export interface Holiday {

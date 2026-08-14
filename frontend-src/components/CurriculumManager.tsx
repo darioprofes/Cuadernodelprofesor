@@ -384,13 +384,21 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         
         // Mapa de CÓDIGOS de Competencias Específicas a sus IDs, priorizando las de ESTE ARCHIVO
         const localScCodeToIdMap = new Map<string, string>();
-        
-        // Pre-escaneo para construir el mapa local de Competencias Específicas del archivo
+        // Letra de bloque -> nombre real del bloque (fila BB, opcional — ver
+        // instrucciones de formato más abajo). Pre-escaneo igual que SC:
+        // hace falta conocido antes de procesar las filas SB, que pueden
+        // venir en cualquier orden respecto a las BB del mismo archivo.
+        const bloqueLetraToNombre = new Map<string, string>();
+
+        // Pre-escaneo para construir los mapas locales (Competencias Específicas y Bloques) del archivo
         lines.forEach(line => {
             const parts = parseCsvLine(line);
-            const [type, id, code] = parts;
+            const [type, id, code, description] = parts;
             if (type?.toUpperCase() === 'SC' && id && code) {
                 localScCodeToIdMap.set(code, id);
+            }
+            if (type?.toUpperCase() === 'BB' && code && description) {
+                bloqueLetraToNombre.set(code.toUpperCase(), description);
             }
         });
 
@@ -438,9 +446,14 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                     newECs.push({ ...commonData, courseId: courseId, competenceId: competenceId });
                     break;
                 }
-                case 'SB':
-                    newSBs.push({ ...commonData, courseId });
+                case 'SB': {
+                    // La letra de bloque es el prefijo del código (p.ej. "A" en
+                    // "A.1") — mismo criterio que usa el propio decreto oficial.
+                    const letraBloque = commonData.code.match(/^([A-Za-z]+)/)?.[1]?.toUpperCase();
+                    const blockName = letraBloque ? bloqueLetraToNombre.get(letraBloque) ?? null : null;
+                    newSBs.push({ ...commonData, courseId, blockName });
                     break;
+                }
             }
         }
         return { newKCs, newODs, newSCs, newECs, newSBs };
@@ -560,7 +573,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         }
 
         for (const sb of newSBs) {
-            await createBasicKnowledgeMutation.mutateAsync({ courseId, data: { code: sb.code, description: sb.description } });
+            await createBasicKnowledgeMutation.mutateAsync({ courseId, data: { code: sb.code, description: sb.description, blockName: sb.blockName } });
         }
     };
 
@@ -678,6 +691,25 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     const filteredBasicKnowledge = useMemo(() => {
         return [...(remoteBasicKnowledge.data ?? [])].sort((a, b) => compararCodigo(a.code, b.code));
     }, [remoteBasicKnowledge.data]);
+
+    // Agrupa los saberes básicos por el nombre real de su bloque oficial
+    // (p.ej. "A. Proyecto científico") en vez de mostrarlos en una lista
+    // plana — el nombre viene de las filas BB del CSV importado (ver
+    // parseCurriculumCsv). Los saberes sin bloque conocido (currículos
+    // propios, importaciones antiguas sin filas BB) van todos juntos al
+    // final bajo "Sin bloque asignado", nunca se pierden.
+    const SIN_BLOQUE = 'Sin bloque asignado';
+    const basicKnowledgeGroupedByBlock = useMemo(() => {
+        const orden: string[] = [];
+        const porBloque = new Map<string, BasicKnowledge[]>();
+        for (const sb of filteredBasicKnowledge) {
+            const clave = sb.blockName ?? SIN_BLOQUE;
+            if (!porBloque.has(clave)) { porBloque.set(clave, []); orden.push(clave); }
+            porBloque.get(clave)!.push(sb);
+        }
+        orden.sort((a, b) => a === SIN_BLOQUE ? 1 : b === SIN_BLOQUE ? -1 : a.localeCompare(b));
+        return orden.map(nombre => ({ nombre, items: porBloque.get(nombre)! }));
+    }, [filteredBasicKnowledge]);
 
     // Agrupa los criterios por competencia específica (los que no encajen en
     // ninguna, p.ej. por currículos importados con datos inconsistentes, van
@@ -884,9 +916,22 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                  </Accordion>
                  <Accordion title={`Saberes Básicos para ${courseName}`}>
                     <div className="space-y-2">
-                        {filteredBasicKnowledge.map((sb: BasicKnowledge) => (
-                            <EditableItem key={sb.id} item={sb} type="sb" onSave={handleUpdate} onDelete={handleDelete} />
-                        ))}
+                        {basicKnowledgeGroupedByBlock.length === 1 && basicKnowledgeGroupedByBlock[0].nombre === SIN_BLOQUE ? (
+                            // Sin ningún bloque conocido (currículo propio, o importado sin
+                            // filas BB) -- lista plana, agrupar bajo un único "Sin bloque
+                            // asignado" sería ruido puro.
+                            filteredBasicKnowledge.map((sb: BasicKnowledge) => (
+                                <EditableItem key={sb.id} item={sb} type="sb" onSave={handleUpdate} onDelete={handleDelete} />
+                            ))
+                        ) : (
+                            basicKnowledgeGroupedByBlock.map(grupo => (
+                                <CriterioGroup key={grupo.nombre} title={grupo.nombre} count={grupo.items.length}>
+                                    {grupo.items.map(sb => (
+                                        <EditableItem key={sb.id} item={sb} type="sb" onSave={handleUpdate} onDelete={handleDelete} />
+                                    ))}
+                                </CriterioGroup>
+                            ))
+                        )}
                     </div>
                  </Accordion>
             </div>
@@ -909,7 +954,8 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                                 <li><strong>OD:</strong> Descriptor Operativo. En la 5ª columna, poner el <code>id</code> de su Competencia Clave (el `id` de la fila KC en el mismo archivo).</li>
                                 <li><strong>SC:</strong> Competencia Específica. En las siguientes columnas, los <code>id</code> de sus Descriptores Operativos. Se asignará al curso seleccionado.</li>
                                 <li><strong>EC:</strong> Criterio de Evaluación. El sistema lo vinculará a la Competencia Específica (SC) que tenga el código correspondiente (ej. un criterio "1.2" se vincula a la CE "CEs 1") <strong>definida en el mismo archivo</strong>. Se asignará al curso seleccionado.</li>
-                                <li><strong>SB:</strong> Saber Básico. No necesita enlaces. Se asignará al curso seleccionado.</li>
+                                <li><strong>SB:</strong> Saber Básico. No necesita enlaces. Se asignará al curso seleccionado. Su bloque se resuelve por la letra inicial del código (p.ej. "A" en "A.1") contra las filas BB del mismo archivo.</li>
+                                <li><strong>BB:</strong> nombre del Bloque de saberes básicos (opcional). La columna <code>code</code> lleva la letra del bloque ("A", "B"...) y <code>description</code> su nombre real (p.ej. "Proyecto científico"). No crea ningún elemento por sí sola, solo agrupa los SB con esa letra bajo ese nombre en pantalla — sin filas BB, los saberes básicos se muestran en una lista plana como hasta ahora.</li>
                             </ul>
                         </li>
                     </ul>
