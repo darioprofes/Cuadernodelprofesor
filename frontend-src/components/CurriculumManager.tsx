@@ -695,20 +695,29 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     // Agrupa los saberes básicos por el nombre real de su bloque oficial
     // (p.ej. "A. Proyecto científico") en vez de mostrarlos en una lista
     // plana — el nombre viene de las filas BB del CSV importado (ver
-    // parseCurriculumCsv). Los saberes sin bloque conocido (currículos
-    // propios, importaciones antiguas sin filas BB) van todos juntos al
-    // final bajo "Sin bloque asignado", nunca se pierden.
+    // parseCurriculumCsv). Los grupos se ordenan por LETRA de bloque (A, B,
+    // D si ese curso no tiene C...), no alfabéticamente por nombre — igual
+    // que aparecen en el propio decreto. Dentro de cada bloque, los saberes
+    // ya vienen en orden natural por código (A.1, A.2, A.7, A.10...) porque
+    // filteredBasicKnowledge ya está ordenado así con compararCodigo. Los
+    // saberes sin bloque conocido (currículos propios, importaciones
+    // antiguas sin filas BB) van todos juntos al final bajo "Sin bloque
+    // asignado", nunca se pierden.
     const SIN_BLOQUE = 'Sin bloque asignado';
     const basicKnowledgeGroupedByBlock = useMemo(() => {
-        const orden: string[] = [];
-        const porBloque = new Map<string, BasicKnowledge[]>();
+        const porLetra = new Map<string, { nombre: string; items: BasicKnowledge[] }>();
+        const sinBloque: BasicKnowledge[] = [];
         for (const sb of filteredBasicKnowledge) {
-            const clave = sb.blockName ?? SIN_BLOQUE;
-            if (!porBloque.has(clave)) { porBloque.set(clave, []); orden.push(clave); }
-            porBloque.get(clave)!.push(sb);
+            const letra = sb.blockName ? sb.code.match(/^([A-Za-z]+)/)?.[1]?.toUpperCase() : undefined;
+            if (!letra) { sinBloque.push(sb); continue; }
+            if (!porLetra.has(letra)) porLetra.set(letra, { nombre: sb.blockName!, items: [] });
+            porLetra.get(letra)!.items.push(sb);
         }
-        orden.sort((a, b) => a === SIN_BLOQUE ? 1 : b === SIN_BLOQUE ? -1 : a.localeCompare(b));
-        return orden.map(nombre => ({ nombre, items: porBloque.get(nombre)! }));
+        const grupos = Array.from(porLetra.entries())
+            .sort((a, b) => compararCodigo(a[0], b[0]))
+            .map(([, grupo]) => grupo);
+        if (sinBloque.length > 0) grupos.push({ nombre: SIN_BLOQUE, items: sinBloque });
+        return grupos;
     }, [filteredBasicKnowledge]);
 
     // Agrupa los criterios por competencia específica (los que no encajen en
