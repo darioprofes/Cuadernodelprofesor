@@ -1,99 +1,109 @@
-# Requisitos del servidor nuevo — Cuaderno Docente + IA
+# Servidores: qué hay montado y qué falta
 
-Qué tiene que tener instalado/configurado el servidor nuevo (mini PC GMKtec,
-Ryzen 7 7735HS / 32 GB, sin GPU dedicada) para poder ejecutar Cuaderno Docente
-tal y como está hoy, más el módulo de IA diseñado en
-[ai-generacion-unidades.md](ai-generacion-unidades.md).
+> **Reescrito el 2026-08-15.** La versión anterior de este documento describía los
+> requisitos de un "servidor nuevo" al que se iba a migrar todo el stack. **Esa
+> migración se descartó.** `192.168.10.12` es el destino permanente de despliegue, y
+> el mini PC GMKtec quedó como máquina dedicada a IA local. El documento ahora
+> describe las dos máquinas tal y como están.
 
-## 1. Base del host (común a todo el stack Docker, no exclusivo de este proyecto)
+## 1. Servidor de producción — `192.168.10.12` (`Docker`)
 
-- **Docker + Docker Compose** (`docker compose`, plugin v2)
-- Red Docker **`proxy`** (externa) — la usa Nginx Proxy Manager para llegar a
-  los contenedores expuestos públicamente. Si se replica el despliegue actual
-  con dominio propio, hace falta también:
-  - **Nginx Proxy Manager** (u otro reverse proxy equivalente)
-  - **Authentik** en modo proxy — es lo que hoy protege `profe.lamarejada.es`
-    con SSO. Si en el servidor nuevo no se quiere/necesita SSO todavía, se
-    puede arrancar `profe` sin la red `proxy` y acceder solo por IP/puerto
-    mientras se decide.
-- Red Docker **`postgres_db-shared`** (externa) — la crea el compose de
-  Postgres, no el de `profe`
-- **Contenedor Postgres compartido** (`ghcr.io/immich-app/postgres` en el
-  servidor actual) con:
-  - base de datos `profe`
-  - rol `profe_app` con privilegios solo sobre esa base
-  - la migración del `DATABASE_URL` real (con la contraseña) vive en `.env`
-    en la raíz del repo — **no está en git** (gitignored), hay que
-    recrearlo/copiarlo a mano en el servidor nuevo, no regenerarlo desde
-    cero
+Ya montado y en uso. Aquí vive todo el stack de Cuaderno Docente y no se toca sin
+motivo. Acceso: `ssh 192.168.10.12` (usuario `root`, clave `~/.ssh/id_ed25519_lamarejada`).
 
-## 2. Específico de Cuaderno Docente (`profe`)
-
-Con el host de arriba ya listo, desde este repo:
-
-```bash
-cd /mnt/storage/docker/compose/profe   # o la ruta equivalente en el server nuevo
-docker compose up -d --build profe-api
-```
-
-- `.env` (TZ + `DATABASE_URL`) — copiarlo del servidor actual, no inventarlo
-- El frontend **no se sirve solo, hay que compilarlo y copiarlo a mano**:
+- Docker + Docker Compose v2
+- Redes: `proxy` (Nginx Proxy Manager), `postgres_db-shared`, `profe_profe-internal`
+- Postgres compartido (`ghcr.io/immich-app/postgres`), base `profe`, rol `profe_app`
+- Nginx Proxy Manager + Authentik en modo proxy (protege `profe.lamarejada.es`)
+- **Redis** (`redis:8-alpine`) en `/mnt/storage/docker/compose/redis/`:
+  `appendonly yes`, con `requirepass`, **sin `maxmemory`** (o sea sin política de
+  expulsión — apto para cola de trabajos). Solo en la red `proxy`. La contraseña está
+  en los `.env` de los servicios que lo usan, no en su propio compose.
+  `db0` está en uso (~90 claves, compartida por Authentik, Immich, Nextcloud y
+  panel); las otras 15 bases están libres.
+- `.env` del stack `profe` (TZ + `DATABASE_URL`) — no está en git, no regenerarlo
+- El frontend **no se sirve solo**: hay que compilarlo y copiarlo a mano
   ```bash
-  cd frontend-src
-  npm run build
+  cd frontend-src && npm run build
   cp -r dist/* /mnt/storage/docker/data/profe/
   ```
-  Requiere **Node.js** (versión que use `frontend-src/package.json`) instalado
-  en la máquina donde se compile — no necesariamente el propio servidor, se
-  puede compilar en local y copiar el resultado por scp/rsync
-- El contenedor `profe` (nginx:alpine) sirve ese bind mount tal cual, sin
-  build propio
 
-## 3. Nuevo para el módulo de IA
+## 2. Servidor de IA — `192.168.10.118` (`iaserver`)
 
-- **Servicio `ollama`** añadido a `compose.yaml`, en la red `profe-internal`
-  (no en `proxy` — no debe quedar expuesto a Internet ni a Authentik,
-  igual que `profe-api` hoy):
-  ```yaml
-  ollama:
-    image: ollama/ollama
-    container_name: profe-ollama
-    restart: unless-stopped
-    volumes:
-      - /mnt/storage/docker/data/profe-ollama:/root/.ollama
-    networks:
-      - profe-internal
-  ```
-- Descargar el modelo tras levantarlo:
+GMKtec Mini-PC, **Ryzen 7 7735HS + Radeon 680M (iGPU, sin GPU dedicada)**, 30 GB RAM,
+Ubuntu 26.04 LTS. Acceso: `ssh 192.168.10.118` (usuario `dario`, clave
+`~/.ssh/ia-server`). **No tiene Docker ni Ollama**, y no los necesita.
+
+### Ya montado
+
+- **Build propia de `llama.cpp`** compilada nativamente para `gfx1035` vía TheRock
+  (ROCm por pip en un venv). Script: `~/build_llama_therock.sh`. Compilar entero lleva
+  20-40 min.
+- **Lanzadores en `~/.local/bin`** (`llama-cli`, `llama-server`, `llama-bench`,
+  `llama-tokenize`, `llama-quantize`, `llama-perplexity`, `llama-embedding`,
+  `llama-mtmd-cli`). Son envoltorios que resuelven el `LD_LIBRARY_PATH` de ROCm desde
+  `~/.local/lib/llama-env.sh`; sin ellos los binarios no encuentran sus librerías.
+  `~/.profile` ya mete `~/.local/bin` en el `PATH`.
   ```bash
-  docker compose exec ollama ollama pull qwen3:14b
+  llama-server -m ~/models/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf -ngl 99 -c 16384 -b 512 -ub 512
   ```
-- Nueva dependencia en `api/requirements.txt`: **`docling`** — pesada,
-  arrastra `torch`; la imagen de `profe-api` (hoy muy ligera, `python:3.13-slim`
-  + fastapi/psycopg/pdfplumber) va a crecer bastante en tamaño y tiempo de
-  build. Vale la pena probar el build en el servidor nuevo antes de dar por
-  hecho que el `Dockerfile` actual (sin más cambios) es suficiente.
-- Ajuste en `nginx/default.conf`: subir `proxy_read_timeout` /
-  `proxy_send_timeout` en el `location /api/` (hoy sin valor propio → hereda
-  el default de nginx, 60s) para que una generación de varios minutos no
-  muera en 504.
+- **Modelo**: `Qwen3-30B-A3B-Instruct-2507-Q4_K_M` (17,28 GiB) en `~/models/`.
+- **Grupos de dispositivo**: `dario` está en `render` y `video`. Sin eso, `/dev/kfd`
+  (que es `root:render 660`) no es accesible y llama.cpp avisa de *"no usable GPU
+  found"* aunque la build sea correcta. Tras un reformateo hay que rehacerlo:
+  `sudo usermod -aG render,video dario` **+ sesión nueva**.
+- **Límite de GTT subido a 24 GiB** por línea de kernel. La iGPU no tiene VRAM
+  propia: usa RAM prestada (GTT), que el kernel limita por defecto a la mitad de la
+  RAM (15 GiB de 30), insuficiente para un modelo de 17,28 GiB.
+  ```
+  GRUB_CMDLINE_LINUX_DEFAULT="ttm.pages_limit=6291456 ttm.page_pool_size=6291456 amdgpu.gttsize=24576"
+  ```
+  Es un techo, no una reserva: no se pierde RAM.
 
-## 4. Presupuesto de recursos a vigilar
+### Rendimiento medido (Qwen3-30B-A3B, 48/48 capas en GPU)
 
-Todo esto — Postgres compartido, `profe-api`, Ollama con Qwen3 14B, más
-cualquier otro stack que también migre a este mini PC (p. ej. `panel`) —
-compite por los mismos 32 GB de RAM y una CPU sin GPU dedicada. Antes de dar
-por bueno el dimensionado, conviene medir con el servidor nuevo ya montado:
-uso de RAM de Ollama con el modelo cargado, y si el resto de servicios siguen
-respondiendo con holgura mientras hay una generación en curso.
+| | |
+|---|---|
+| Procesado de prompt | ~225 t/s (2.700 tokens en 12 s) |
+| Generación | 15-18 t/s |
+| Ejemplo real | respuesta de 3.650 tokens en 4,4 min |
 
-## 5. Orden recomendado de puesta en marcha
+Para comparar: la misma GPU con `-ngl 32` (descarga parcial) baja a 11,5 t/s, y en
+CPU pura ronda los 8.
 
-1. Docker + Compose en el host nuevo
-2. Redes `proxy` / `postgres_db-shared` (o recrear equivalentes)
-3. Postgres compartido migrado, con la base `profe` y su rol
-4. `profe` + `profe-api` arrancados y verificados contra ese Postgres (la app
-   tal y como funciona hoy, sin IA)
-5. Solo entonces: `ollama` + modelo descargado + `docling` en el backend +
-   ajuste de nginx — y retomar la implementación descrita en
-   `ai-generacion-unidades.md`
+### ⚠️ Nunca activar `GGML_CUDA_ENABLE_UNIFIED_MEMORY=1`
+
+Permite cargar modelos que no caben en la GTT y `llama-bench` da cifras
+estupendas… pero **la salida es basura corrupta** (se comprobó: 12.000 tokens de
+`z=z=z=zz=...`). `llama-bench` mide velocidad y nunca valida el contenido, así que no
+lo detecta. **Toda configuración nueva hay que validarla generando texto real.** El
+entorno de los lanzadores lleva un comentario avisando de esto.
+
+### Pendiente en el servidor de IA
+
+1. `llama-server` como **servicio systemd** (hoy hay que lanzarlo a mano).
+2. Escuchar en **`0.0.0.0`** en vez de `127.0.0.1`, para que `profe-api` lo alcance
+   desde `.12`.
+3. **Cortafuegos** que permita el puerto solo desde `192.168.10.12`. `llama-server`
+   no tiene autenticación: quien alcance ese puerto, manda.
+
+## 3. Pendiente para conectar ambos (módulo de IA)
+
+Detalle completo en [ai-generacion-unidades.md](ai-generacion-unidades.md).
+
+- **Red `redis-shared`** en el compose de Redis, siguiendo el patrón de
+  `postgres_db-shared`. Hoy Redis está solo en `proxy` y `profe-api` no está en
+  `proxy` — y **no debe meterse ahí**: esa separación es deliberada (`profe-api`
+  quedaría accesible desde Nextcloud, Immich y el resto saltándose Authentik). Se
+  puede conectar en caliente sin reiniciar y luego persistir en el compose. Toca un
+  stack compartido con otros servicios: avisar antes de hacerlo.
+- **Base Redis propia** para `profe` (una de las 15 libres) + prefijo `profe:`.
+- **Dependencias nuevas** en `api/requirements.txt`: `rq` + extracción de documentos.
+  Empezar con `pdfplumber` (ya está) + `python-pptx` + `python-docx`, que son
+  ligeros; Docling arrastra `torch` y engorda muchísimo la imagen de `profe-api`.
+
+## 4. Presupuesto de recursos
+
+El servidor de IA tiene 30 GB de RAM y **solo cabe un modelo cargado a la vez**
+(17,28 GB). Por eso el worker de la cola va con concurrencia 1: dos generaciones
+simultáneas no son posibles, no es una decisión de diseño sino una restricción física.
