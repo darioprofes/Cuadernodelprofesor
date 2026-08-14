@@ -1,12 +1,13 @@
 import type { ClassData, Course, EvaluationPeriod, View } from '../types';
-import { addDays, getMateria, periodoActivoEn, toYYYYMMDD } from '../utils';
+import type { Absence } from '../types/api';
+import { addDays, getMateria, getNombreCompleto, periodoActivoEn, toYYYYMMDD } from '../utils';
 
 // Avisos de la franja "Hoy" que van más allá de "próximos eventos": algo
 // excepcional que necesita atención, no estado normal (ver plan). Cada
 // detector es una función pura y testeable; HoyView decide el icono real
 // (aquí solo se referencia por si el llamante quiere renderizarlo, pero los
 // detectores de esta fase no fijan icono — HoyView lo elige según `kind`).
-export type DashboardNoticeKind = 'ungraded' | 'periodClosing';
+export type DashboardNoticeKind = 'ungraded' | 'periodClosing' | 'educasturBacklog' | 'absenceStreak';
 
 export interface DashboardNotice {
     id: string;
@@ -96,6 +97,85 @@ export const detectPeriodClosingSoon = (
             kind: 'periodClosing',
             label: `${period.name} cierra pronto, ${pendingAssignments} tareas sin calificar`,
             tone: 'warn',
+        });
+    });
+
+    return notices;
+};
+
+const DEFAULT_EDUCASTUR_BACKLOG_DAYS = 7;
+const DEFAULT_MIN_STREAK = 3;
+
+// Mismo criterio que `pendingSyncCount` en GradebookTable.tsx:321 (faltas
+// con `syncedAt` vacío), agregado entre todas las clases y filtrado por
+// antigüedad — no hace falta ningún "última sincronización" nuevo. En
+// escritorio nunca hay sincronización con Educastur (ver absences.rs), así
+// que el aviso se desactiva ahí para no dar un falso positivo permanente.
+export const detectAbsenceSyncBacklog = (
+    absencesByClass: Record<string, Absence[]>,
+    today: Date,
+    isDesktop: boolean,
+    minDaysOld: number = DEFAULT_EDUCASTUR_BACKLOG_DAYS,
+): DashboardNotice[] => {
+    if (isDesktop) return [];
+    const cutoff = toYYYYMMDD(addDays(today, -minDaysOld));
+    let count = 0;
+    Object.values(absencesByClass).forEach(absences => {
+        absences.forEach(a => {
+            if (!a.syncedAt && a.date < cutoff) count++;
+        });
+    });
+    if (count === 0) return [];
+
+    return [{
+        id: 'educastur-backlog',
+        kind: 'educasturBacklog',
+        label: `${count} faltas sin subir a Educastur`,
+        tone: 'alert',
+    }];
+};
+
+// Racha de faltas injustificadas seguidas de un alumno, POR MATERIA (no
+// cruzando sus otras clases — decisión explícita, más simple). Una falta =
+// una fila que existe (no hay fila para "presente"), así que la racha son
+// las N filas más recientes de esa matrícula con tipoFalta === 'I'.
+export const detectUnjustifiedAbsenceStreaks = (
+    classes: ClassData[],
+    absencesByClass: Record<string, Absence[]>,
+    minStreak: number = DEFAULT_MIN_STREAK,
+): DashboardNotice[] => {
+    const notices: DashboardNotice[] = [];
+
+    classes.forEach(classData => {
+        const absences = (absencesByClass[classData.id] ?? []).filter(a => a.tipoFalta !== '');
+        if (absences.length === 0) return;
+
+        const enrollmentToStudent = new Map(
+            classData.students.filter(s => s.enrollmentId).map(s => [s.enrollmentId!, s])
+        );
+        const byEnrollment = new Map<string, Absence[]>();
+        absences.forEach(a => {
+            if (!byEnrollment.has(a.enrollmentId)) byEnrollment.set(a.enrollmentId, []);
+            byEnrollment.get(a.enrollmentId)!.push(a);
+        });
+
+        byEnrollment.forEach((rows, enrollmentId) => {
+            const sorted = [...rows].sort((a, b) =>
+                a.date === b.date ? a.periodIndex - b.periodIndex : a.date.localeCompare(b.date)
+            );
+            let streak = 0;
+            for (let i = sorted.length - 1; i >= 0 && sorted[i].tipoFalta === 'I'; i--) streak++;
+            if (streak < minStreak) return;
+
+            const student = enrollmentToStudent.get(enrollmentId);
+            const nombre = student ? getNombreCompleto(student) : 'Un alumno';
+            notices.push({
+                id: `absence-streak-${classData.id}-${enrollmentId}`,
+                kind: 'absenceStreak',
+                label: `${nombre}: ${streak} faltas injustificadas seguidas`,
+                tone: 'alert',
+                target: { view: 'gradebook', classId: classData.id },
+            });
         });
     });
 

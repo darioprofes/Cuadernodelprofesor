@@ -4,7 +4,7 @@ import ClassLabel from './ClassLabel';
 import BannerCostero from './BannerCostero';
 import Input from './Input';
 import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange, formatFechaEs } from '../utils';
-import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon } from './Icons';
+import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon, ArrowUpTrayIcon, ExclamationTriangleIcon } from './Icons';
 import { PALETTE } from '../theme/palette';
 import DateNavButton from './DateNavButton';
 import { computeDashboardNotices, type DashboardNoticeKind } from '../services/dashboardNotices';
@@ -12,6 +12,8 @@ import { computeDashboardNotices, type DashboardNoticeKind } from '../services/d
 const NOTICE_ICON: Record<DashboardNoticeKind, React.FC<{ className?: string }>> = {
     ungraded: ClipboardDocumentCheckIcon,
     periodClosing: ClockIcon,
+    educasturBacklog: ArrowUpTrayIcon,
+    absenceStreak: ExclamationTriangleIcon,
 };
 
 // 'warn' reutiliza el dorado ya presente en PALETTE; 'alert' reutiliza el

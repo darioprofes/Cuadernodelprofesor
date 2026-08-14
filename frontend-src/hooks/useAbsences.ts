@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
 import type { Absence, AbsenceInput } from '../types/api';
 
@@ -9,6 +9,19 @@ export function useAbsences(classId: string, options?: { enabled?: boolean }) {
         queryKey: queryKey(classId),
         queryFn: () => api.get<Absence[]>(`/classes/${classId}/absences`),
         enabled: (options?.enabled ?? true) && !!classId,
+    });
+}
+
+// Para los avisos de "Hoy" (racha de faltas / backlog de Educastur), que
+// necesitan las faltas de TODAS las clases a la vez — mismo patrón que
+// useGradesForClasses (hooks/useGrades.ts).
+export function useAbsencesForClasses(classIds: string[], options?: { enabled?: boolean }) {
+    return useQueries({
+        queries: classIds.map(classId => ({
+            queryKey: queryKey(classId),
+            queryFn: () => api.get<Absence[]>(`/classes/${classId}/absences`),
+            enabled: (options?.enabled ?? true) && !!classId,
+        })),
     });
 }
 

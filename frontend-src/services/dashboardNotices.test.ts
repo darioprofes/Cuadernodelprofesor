@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ClassData, Course, EvaluationPeriod, Student, Assignment, Grade } from '../types';
-import { detectUngradedOverdueAssignments, detectPeriodClosingSoon } from './dashboardNotices';
+import type { Absence } from '../types/api';
+import { detectUngradedOverdueAssignments, detectPeriodClosingSoon, detectAbsenceSyncBacklog, detectUnjustifiedAbsenceStreaks } from './dashboardNotices';
 
 const today = new Date('2026-11-20');
 
@@ -32,6 +33,16 @@ const classData = (over: Partial<ClassData> = {}): ClassData => ({
     categories: [],
     assignments: [],
     grades: [],
+    ...over,
+});
+
+const absence = (over: Partial<Absence> = {}): Absence => ({
+    id: `abs-${Math.random()}`,
+    enrollmentId: 'enr1',
+    date: '2026-11-10',
+    periodIndex: 0,
+    tipoFalta: 'I',
+    updatedAt: '2026-11-10T00:00:00Z',
     ...over,
 });
 
@@ -112,5 +123,84 @@ describe('detectPeriodClosingSoon', () => {
         ];
         const cls = classData({ assignments: [assignment({ evaluationPeriodId: 'p1' })], grades: [] });
         expect(detectPeriodClosingSoon([cls], farPeriods, today)).toEqual([]);
+    });
+});
+
+describe('detectAbsenceSyncBacklog', () => {
+    it('flags unsynced absences older than the threshold', () => {
+        const absencesByClass = { class1: [absence({ date: '2026-11-01', syncedAt: undefined })] }; // 19 días
+        const notices = detectAbsenceSyncBacklog(absencesByClass, today, false);
+        expect(notices).toHaveLength(1);
+        expect(notices[0].label).toContain('1 faltas sin subir');
+    });
+
+    it('does not flag recent unsynced absences (within the grace window)', () => {
+        const absencesByClass = { class1: [absence({ date: '2026-11-19', syncedAt: undefined })] }; // ayer
+        expect(detectAbsenceSyncBacklog(absencesByClass, today, false)).toEqual([]);
+    });
+
+    it('does not flag absences that are already synced', () => {
+        const absencesByClass = { class1: [absence({ date: '2026-11-01', syncedAt: '2026-11-02T00:00:00Z' })] };
+        expect(detectAbsenceSyncBacklog(absencesByClass, today, false)).toEqual([]);
+    });
+
+    it('is disabled on desktop (never syncs with Educastur)', () => {
+        const absencesByClass = { class1: [absence({ date: '2026-11-01', syncedAt: undefined })] };
+        expect(detectAbsenceSyncBacklog(absencesByClass, today, true)).toEqual([]);
+    });
+});
+
+describe('detectUnjustifiedAbsenceStreaks', () => {
+    const cls = classData({
+        students: [{ id: 'st1', enrollmentId: 'enr1', acneae: [], nombre: 'Ana', primerApellido: 'García' }],
+    });
+
+    it('flags a student with a streak reaching the threshold', () => {
+        const absencesByClass = {
+            class1: [
+                absence({ date: '2026-11-10', periodIndex: 0, tipoFalta: 'I' }),
+                absence({ date: '2026-11-11', periodIndex: 0, tipoFalta: 'I' }),
+                absence({ date: '2026-11-12', periodIndex: 0, tipoFalta: 'I' }),
+            ],
+        };
+        const notices = detectUnjustifiedAbsenceStreaks([cls], absencesByClass);
+        expect(notices).toHaveLength(1);
+        expect(notices[0].label).toContain('Ana García');
+        expect(notices[0].label).toContain('3 faltas');
+    });
+
+    it('does not flag a streak broken by a justified absence', () => {
+        const absencesByClass = {
+            class1: [
+                absence({ date: '2026-11-10', periodIndex: 0, tipoFalta: 'I' }),
+                absence({ date: '2026-11-11', periodIndex: 0, tipoFalta: 'J' }),
+                absence({ date: '2026-11-12', periodIndex: 0, tipoFalta: 'I' }),
+                absence({ date: '2026-11-13', periodIndex: 0, tipoFalta: 'I' }),
+            ],
+        };
+        expect(detectUnjustifiedAbsenceStreaks([cls], absencesByClass)).toEqual([]);
+    });
+
+    it('does not flag a streak below the threshold', () => {
+        const absencesByClass = {
+            class1: [
+                absence({ date: '2026-11-11', periodIndex: 0, tipoFalta: 'I' }),
+                absence({ date: '2026-11-12', periodIndex: 0, tipoFalta: 'I' }),
+            ],
+        };
+        expect(detectUnjustifiedAbsenceStreaks([cls], absencesByClass)).toEqual([]);
+    });
+
+    it('ignores pending-delete marker rows (tipoFalta === "")', () => {
+        const absencesByClass = {
+            class1: [
+                absence({ date: '2026-11-10', periodIndex: 0, tipoFalta: 'I' }),
+                absence({ date: '2026-11-11', periodIndex: 0, tipoFalta: 'I' }),
+                absence({ date: '2026-11-12', periodIndex: 0, tipoFalta: 'I' }),
+                absence({ date: '2026-11-13', periodIndex: 0, tipoFalta: '' }),
+            ],
+        };
+        const notices = detectUnjustifiedAbsenceStreaks([cls], absencesByClass);
+        expect(notices).toHaveLength(1); // la fila '' se ignora, la racha de 3 'I' anteriores sigue contando
     });
 });
