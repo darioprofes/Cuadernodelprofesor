@@ -4,7 +4,7 @@ import ClassLabel from './ClassLabel';
 import BannerCostero from './BannerCostero';
 import Input from './Input';
 import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange, formatFechaEs } from '../utils';
-import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon } from './Icons';
+import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon } from './Icons';
 import { PALETTE } from '../theme/palette';
 import DateNavButton from './DateNavButton';
 
@@ -174,6 +174,44 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                 </div>
             </div>
 
+            <div className="bg-white rounded-xl shadow-sm border p-4">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-3">
+                    <CalendarDaysIcon className="w-4 h-4 text-slate-400" /> Próximos eventos
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                    {[
+                        { label: '24 h', dias: 1 },
+                        { label: '7 días', dias: 7 },
+                        { label: '1 mes', dias: 30 },
+                    ].map(tile => {
+                        const conteo = contarEventosEnVentana(tile.dias);
+                        return (
+                            <div key={tile.label} className="flex items-center gap-2 bg-slate-50 rounded-full pl-3 pr-2 py-1.5">
+                                <span className="text-xs text-slate-500 flex-shrink-0">{tile.label}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveView('exams')}
+                                    title="Tareas evaluables"
+                                    className="flex items-center gap-1 text-sm font-bold hover:opacity-70 transition-opacity"
+                                    style={{ color: PALETTE.green.header }}
+                                >
+                                    <ClipboardDocumentCheckIcon className="w-4 h-4" /> {conteo.tareasEvaluables}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveView('meetings')}
+                                    title="Reuniones"
+                                    className="flex items-center gap-1 text-sm font-bold hover:opacity-70 transition-opacity"
+                                    style={{ color: PALETTE.teal.header }}
+                                >
+                                    <UsersIcon className="w-4 h-4" /> {conteo.reuniones}
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                 <div className="bg-white rounded-xl shadow-sm border overflow-hidden h-full flex flex-col">
                     <div className="px-4 py-2 flex items-center justify-between text-white text-sm font-semibold" style={{ backgroundColor: PALETTE.green.header }}>
@@ -296,38 +334,6 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                         </div>
                     )}
                     </div>
-                </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                <div className="px-4 py-2 flex items-center gap-1.5 text-white text-sm font-semibold" style={{ backgroundColor: PALETTE.navy.header }}>
-                    <CalendarDaysIcon className="w-4 h-4" /> Próximos eventos
-                </div>
-                <div className="p-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {[
-                        { label: 'Próximas 24 horas', dias: 1 },
-                        { label: 'Próximos 7 días', dias: 7 },
-                        { label: 'Próximo mes', dias: 30 },
-                    ].map(tile => {
-                        const conteo = contarEventosEnVentana(tile.dias);
-                        return (
-                            <div key={tile.label} className="bg-slate-50 rounded-lg p-3">
-                                <p className="text-xs text-slate-500 text-center mb-2">{tile.label}</p>
-                                <div className="space-y-1">
-                                    <button onClick={() => setActiveView('exams')} className="w-full flex items-center justify-between gap-2 text-sm px-2 py-1 rounded hover:bg-white transition-colors">
-                                        <span className="text-slate-600">📝 Tareas evaluables</span>
-                                        <span className="font-bold" style={{ color: PALETTE.green.header }}>{conteo.tareasEvaluables}</span>
-                                    </button>
-                                    <button onClick={() => setActiveView('meetings')} className="w-full flex items-center justify-between gap-2 text-sm px-2 py-1 rounded hover:bg-white transition-colors">
-                                        <span className="text-slate-600">🤝 Reuniones</span>
-                                        <span className="font-bold" style={{ color: PALETTE.teal.header }}>{conteo.reuniones}</span>
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
                 </div>
             </div>
         </div>
