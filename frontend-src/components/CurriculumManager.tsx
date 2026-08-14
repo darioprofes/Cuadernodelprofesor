@@ -122,6 +122,14 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     const updateBasicKnowledgeMutation = useUpdateBasicKnowledge();
     const deleteBasicKnowledgeMutation = useDeleteBasicKnowledge();
 
+    // Al cambiar de materia (o la primera vez que se abre una), las tres
+    // consultas tardan un momento en traer datos nuevos y, mientras tanto,
+    // la vista se queda vacía sin ningún indicio de que está pasando algo —
+    // parece congelada aunque está cargando por detrás. isLoading (no
+    // isFetching) a propósito: solo cubre "sin datos todavía + cargando",
+    // no cada refresco silencioso en segundo plano de una materia ya vista.
+    const cargandoCurriculo = remoteSpecificCompetences.isLoading || remoteEvaluationCriteria.isLoading || remoteBasicKnowledge.isLoading;
+
     const handleAddCriterion = async (competenceId: string) => {
         const created = await createCriterionMutation.mutateAsync({ courseId: selectedCourseId, data: { competenceId, code: '', description: '' } });
         setNewlyAddedId(created.id);
@@ -765,6 +773,13 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                     Visualiza y edita las competencias específicas, criterios de evaluación y saberes básicos de esta materia.
                 </p>
             </div>
+
+            {cargandoCurriculo && (
+                <div className="flex items-center gap-2 text-sm text-slate-500 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <span className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin flex-shrink-0" />
+                    Cargando el currículo de esta materia…
+                </div>
+            )}
 
             <div className="space-y-3">
                 <Accordion title="Competencias Clave y Descriptores Operativos">
