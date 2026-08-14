@@ -27,7 +27,7 @@ import StudentPersonalDataModal from './StudentPersonalDataModal';
 import PlanoClaseModal from './PlanoClaseModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ClassLabel from './ClassLabel';
-import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getDayOfWeek1a7, parsePeriodRange } from '../utils';
+import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getDayOfWeek1a7, parsePeriodRange, periodoActivoEn } from '../utils';
 import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
 import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '../hooks/useAssignments';
 import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
@@ -410,20 +410,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   useEffect(() => {
       if (!hasAutoSelectedPeriod && evaluationPeriods.length > 0) {
           const today = toYYYYMMDD(new Date());
-          const currentPeriod = evaluationPeriods.find(p => today >= p.startDate && today <= p.endDate);
-          
-          if (currentPeriod) {
-              setActivePeriodId(currentPeriod.id);
-          } else {
-              // If not in any period range, check if year ended
-              const yearEnd = academicConfiguration.academicYearEnd;
-              if (yearEnd && today > yearEnd) {
-                  setActivePeriodId('final');
-              } else {
-                  // Default to first period or final if none match
-                  setActivePeriodId(evaluationPeriods[0]?.id || 'final');
-              }
-          }
+          setActivePeriodId(periodoActivoEn(evaluationPeriods, today, academicConfiguration.academicYearEnd) || 'final');
           setHasAutoSelectedPeriod(true);
       }
   }, [evaluationPeriods, academicConfiguration.academicYearEnd, hasAutoSelectedPeriod]);

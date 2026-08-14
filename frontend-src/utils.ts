@@ -229,6 +229,17 @@ export const formatFechaEs = (fecha: string): string => {
     return `${d}-${m}-${y}`;
 };
 
+// Qué periodo de evaluación está en curso hoy (o "final" tras acabar el
+// curso). Antes vivía duplicada como estado local en GradebookTable — único
+// punto de esta regla para que cualquier otro sitio (p.ej. los avisos de
+// "Hoy") decida "periodo activo" exactamente igual que el Cuaderno.
+export const periodoActivoEn = (periods: EvaluationPeriod[], today: string, academicYearEnd?: string): string | null => {
+    const currentPeriod = periods.find(p => today >= p.startDate && today <= p.endDate);
+    if (currentPeriod) return currentPeriod.id;
+    if (academicYearEnd && today > academicYearEnd) return 'final';
+    return periods[0]?.id ?? (academicYearEnd ? 'final' : null);
+};
+
 export const addDays = (date: Date, days: number): Date => {
     const d = new Date(date);
     d.setDate(d.getDate() + days);
