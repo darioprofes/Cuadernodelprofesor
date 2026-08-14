@@ -313,7 +313,14 @@ const App = () => {
         periods: currentYear.data?.periods ?? [],
         evaluationPeriods: (remoteEvaluationPeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate })),
         evaluationPeriodWeights: Object.fromEntries((remoteEvaluationPeriods.data ?? []).map(p => [p.id, p.weight])),
-        gradeScale: remotePreferences.data?.gradeScale,
+        // `grade_scale` en el backend por defecto es `[]` (fila de
+        // preferencias nunca guardada, ni siquiera existe todavía) — sin
+        // este fallback, el profesor veía la escala de calificaciones
+        // completamente vacía en vez de la de serie (Sobresaliente/
+        // Notable/Bien/Suficiente/Insuficiente), regresión real desde que
+        // gradeScale pasó del blob (donde INITIAL_ACADEMIC_CONFIGURATION
+        // sembraba el valor real desde el principio) a esta fila remota.
+        gradeScale: remotePreferences.data?.gradeScale?.length ? remotePreferences.data.gradeScale : INITIAL_ACADEMIC_CONFIGURATION.gradeScale,
         defaultCalendarView: remotePreferences.data?.defaultCalendarView,
     }), [currentYear.data, remoteEvaluationPeriods.data, remotePreferences.data]);
     const effectiveTasks: Task[] = useMemo(() => (

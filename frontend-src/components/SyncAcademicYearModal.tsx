@@ -7,7 +7,7 @@ import type { AcademicYearHoliday, EvaluationPeriod, Student as ApiStudent } fro
 import { useCreateCourse } from '../hooks/useCourses';
 import { useCreateClass, useUpdateClass, useDeleteClass } from '../hooks/useApiClasses';
 import {
-    useUpdateAcademicYear, useCreateEvaluationPeriod, useDeleteEvaluationPeriod,
+    useUpdateAcademicYear, useCreateEvaluationPeriod, useUpdateEvaluationPeriod,
     useAddAcademicYearCourse,
 } from '../hooks/useAcademicYears';
 import { useCreateCategory } from '../hooks/useCategories';
@@ -79,7 +79,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
 
     const updateAcademicYearMutation = useUpdateAcademicYear();
     const createEvaluationPeriodMutation = useCreateEvaluationPeriod();
-    const deleteEvaluationPeriodMutation = useDeleteEvaluationPeriod();
+    const updateEvaluationPeriodMutation = useUpdateEvaluationPeriod();
     const createCourseMutation = useCreateCourse();
     const addYearCourseMutation = useAddAcademicYearCourse();
     const createClassMutation = useCreateClass();
@@ -202,6 +202,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
     const handleConfirm = async () => {
         if (!plan || !parsed || !parsed.cursoAcademico) return;
         setApplying(true);
+        setErrorMsg(null);
         try {
             const cursoAcademico = parsed.cursoAcademico;
             const clasesCreadas = plan.clasesCreadas;
@@ -220,11 +221,26 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
                     holidays: cursoAcademico.holidays.map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin })),
                 },
             });
-            if (cursoAcademico.evaluationPeriods.length > 0) {
-                for (const p of evaluationPeriods) {
-                    await deleteEvaluationPeriodMutation.mutateAsync({ id: p.id, yearId });
-                }
-                for (const p of cursoAcademico.evaluationPeriods) {
+            // Los periodos de evaluación se EMPAREJAN por nombre y solo se
+            // actualizan o se crean los que faltan — nunca se borran desde
+            // aquí. evaluation_periods tiene categorías/tareas evaluables
+            // colgando con ON DELETE RESTRICT (una por cada clase real con
+            // alumnado), así que borrar y recrear sin más rompía la
+            // sincronización en cuanto el curso tenía datos reales: el
+            // primer borrado lanzaba un 409 que ni se capturaba, dejando
+            // todo lo posterior (materias/clases/alumnado/borrados
+            // marcados) sin aplicar y sin avisar (bug real, encontrado tras
+            // un aviso del profesor de que la sincronización se quedaba a
+            // medias). Un periodo que ya no aparece en el Excel se deja tal
+            // cual — se gestiona a mano en Ajustes si hace falta borrarlo.
+            for (const p of cursoAcademico.evaluationPeriods) {
+                const existente = evaluationPeriods.find(ep => ep.name.trim() === p.nombre.trim());
+                if (existente) {
+                    await updateEvaluationPeriodMutation.mutateAsync({
+                        id: existente.id, yearId,
+                        data: { name: p.nombre, startDate: p.fechaInicio, endDate: p.fechaFin, weight: p.peso },
+                    });
+                } else {
                     await createEvaluationPeriodMutation.mutateAsync({
                         yearId,
                         data: { name: p.nombre, startDate: p.fechaInicio, endDate: p.fechaFin, weight: p.peso },
@@ -338,6 +354,17 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
 
             setResumenAplicado({ clasesCreadas, clasesActualizadas, clasesBorradas, alumnadoNuevo, alumnadoMatriculado, alumnadoBorrado });
             setApplied(true);
+        } catch (e) {
+            // Sin esto, un fallo a mitad de camino (p.ej. un 409 de la API)
+            // dejaba lo ya aplicado hasta ese punto sin avisar de nada, con
+            // la ventana quieta como si no hubiera pasado nada (bug real).
+            // Los pasos ya completados (curso académico, materias/clases
+            // hasta el punto del fallo...) NO se deshacen — hay que revisar
+            // qué quedó aplicado y repetir la sincronización si hace falta.
+            setErrorMsg(
+                `Algo ha fallado a mitad de la sincronización: ${e instanceof Error ? e.message : String(e)}. ` +
+                'Lo aplicado hasta este punto (fechas/festivos, materias/clases, alumnado) ya está guardado; revisa el curso académico y vuelve a intentarlo si hace falta.'
+            );
         } finally {
             setApplying(false);
         }
