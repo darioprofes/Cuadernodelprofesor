@@ -1,3 +1,6 @@
+import type { MouseEvent } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import type { Category, ClassData, Course, EvaluationPeriod, Student } from './types';
 
 // Nombre para mostrar al usuario: orden natural "Nombre Apellido1 Apellido2"
@@ -54,6 +57,16 @@ export const buildDefaultCategories = (evaluationPeriods: EvaluationPeriod[]): C
             evaluationPeriodId: p.id,
         }))
     );
+
+// <a target="_blank"> no abre el navegador del sistema dentro del WebView de
+// Tauri (no hay gestor de "nueva ventana" registrado) -- hace falta el
+// plugin "opener" para lanzarlo explícitamente. En web se deja que el
+// navegador maneje el enlace con normalidad (no se llama a preventDefault).
+export const openExternalLink = (e: MouseEvent, url: string): void => {
+    if (!isTauri()) return;
+    e.preventDefault();
+    openUrl(url).catch(err => console.error('No se pudo abrir el enlace externo:', err));
+};
 
 // Patrón "subir imagen -> data URL" reutilizado por varios pickers de icono/
 // foto (clase, acceso directo, ficha de alumno...) que antes reimplementaban

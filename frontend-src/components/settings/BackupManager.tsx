@@ -7,6 +7,7 @@ import Alert from '../Alert';
 import Badge from '../Badge';
 import { TYPOGRAPHY } from '../../theme/typography';
 import type { SettingsModalProps } from '../SettingsModal';
+import { openExternalLink } from '../../utils';
 
 type BackupManagerProps = Pick<SettingsModalProps,
     | 'importDatabase' | 'exportDatabase' | 'resetDatabase' | 'onOpenExportModal'
@@ -165,11 +166,11 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
 
             <p className="text-xs text-slate-400 pt-4 border-t">
                 Basado en{' '}
-                <a href="https://github.com/elCordones/CuadernMestre-v1.0" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-600">
+                <a href="https://github.com/elCordones/CuadernMestre-v1.0" target="_blank" rel="noopener noreferrer" onClick={(e) => openExternalLink(e, 'https://github.com/elCordones/CuadernMestre-v1.0')} className="underline hover:text-slate-600">
                     CuadernMestre v1.0
                 </a>
                 {' '}de elCordones, licencia{' '}
-                <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-600">
+                <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener noreferrer" onClick={(e) => openExternalLink(e, 'https://creativecommons.org/licenses/by-nc/4.0/')} className="underline hover:text-slate-600">
                     CC BY-NC 4.0
                 </a>
                 . Modificado para guardar los datos en servidor propio e importar el horario desde PDF.

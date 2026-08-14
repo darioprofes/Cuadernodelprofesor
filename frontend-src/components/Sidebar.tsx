@@ -7,6 +7,7 @@ import {
 } from './Icons';
 import Logo from './Logo';
 import { PALETTE } from '../theme/palette';
+import { openExternalLink } from '../utils';
 
 interface NavItem {
     view: View;
@@ -127,6 +128,7 @@ const SidebarContent: React.FC<{
                 href="http://creativecommons.org/licenses/by-nc/4.0/"
                 rel="license"
                 target="_blank"
+                onClick={(e) => openExternalLink(e, 'http://creativecommons.org/licenses/by-nc/4.0/')}
                 className="text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition-colors"
             >
                 La Marejada · CC BY-NC

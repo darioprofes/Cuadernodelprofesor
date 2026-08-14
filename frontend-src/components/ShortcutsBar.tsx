@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Shortcut } from '../types';
 import { PlusIcon, PencilIcon, XMarkIcon, CheckCircleIcon } from './Icons';
 import ShortcutModal from './ShortcutModal';
+import { openExternalLink } from '../utils';
 
 interface ShortcutsBarProps {
     shortcuts: Shortcut[];
@@ -62,6 +63,7 @@ const ShortcutsBar: React.FC<ShortcutsBarProps> = ({ shortcuts, onCreate, onUpda
                             href={s.url}
                             target="_blank"
                             rel="noreferrer"
+                            onClick={(e) => openExternalLink(e, s.url)}
                             title={s.label}
                             className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 overflow-hidden"
                         >
