@@ -229,13 +229,22 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         return window.confirm(confirmationMessage);
     };
 
+    // Importar currículo (desde CSV o preset) hace decenas de llamadas
+    // secuenciales (borrar lo existente, crear cada competencia/criterio/
+    // saber básico uno a uno — ver updateCurriculumState) — sin ningún
+    // indicio en pantalla mientras tanto, parecía que el botón no había
+    // hecho nada aunque sí estaba trabajando por detrás.
+    const [importandoCurriculo, setImportandoCurriculo] = useState(false);
     const importarTexto = async (text: string) => {
+        setImportandoCurriculo(true);
         try {
             const parsedData = parseCurriculumCsv(text, selectedCourseId, filteredCompetences);
             await updateCurriculumState(parsedData, selectedCourseId);
         } catch (error) {
             console.error('Error parsing CSV:', error);
             alert('Error al procesar el archivo CSV. Comprueba el formato, el contenido y la codificación del archivo (UTF-8 o UTF-16).');
+        } finally {
+            setImportandoCurriculo(false);
         }
     };
 
@@ -1043,10 +1052,11 @@ SB,sb-bg3-1,"A.1","La célula como unidad estructural..."`}
                         </Select>
                         <button
                             onClick={handleCargarPreset}
-                            disabled={!selectedCourseId || !presetSeleccionado}
-                            className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed"
+                            disabled={!selectedCourseId || !presetSeleccionado || importandoCurriculo}
+                            className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed flex items-center gap-2"
                         >
-                            Cargar
+                            {importandoCurriculo && <span className="w-3.5 h-3.5 border-2 border-white/60 border-t-white rounded-full animate-spin" />}
+                            {importandoCurriculo ? 'Cargando…' : 'Cargar'}
                         </button>
                     </div>
                     <p className="text-xs text-slate-500">
@@ -1064,14 +1074,23 @@ SB,sb-bg3-1,"A.1","La célula como unidad estructural..."`}
                         className="hidden"
                         accept=".csv, text/csv"
                         onChange={handleFileChange}
+                        disabled={importandoCurriculo}
                     />
                     <label
                         htmlFor="csv-importer"
-                        className={`cursor-pointer w-full text-center bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors ${!selectedCourseId ? 'bg-blue-300 cursor-not-allowed' : ''}`}
+                        className={`cursor-pointer w-full text-center bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 ${(!selectedCourseId || importandoCurriculo) ? 'bg-blue-300 cursor-not-allowed pointer-events-none' : ''}`}
                     >
-                        O sube tu propio archivo CSV...
+                        {importandoCurriculo && <span className="w-3.5 h-3.5 border-2 border-white/60 border-t-white rounded-full animate-spin" />}
+                        {importandoCurriculo ? 'Cargando…' : 'O sube tu propio archivo CSV...'}
                     </label>
                 </div>
+
+                {importandoCurriculo && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600 p-3 bg-blue-50 border border-blue-200 rounded-lg mt-3">
+                        <span className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin flex-shrink-0" />
+                        Importando el currículo… puede tardar unos segundos, no cierres esta ventana.
+                    </div>
+                )}
             </div>
 
             <div className="pt-6 border-t border-red-200 mt-6">
