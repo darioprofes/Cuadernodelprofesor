@@ -732,7 +732,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         }
         const grupos = Array.from(porLetra.entries())
             .sort((a, b) => compararCodigo(a[0], b[0]))
-            .map(([, grupo]) => grupo);
+            .map(([letra, grupo]) => ({ ...grupo, nombre: `${letra}. ${grupo.nombre}` }));
         if (sinBloque.length > 0) grupos.push({ nombre: SIN_BLOQUE, items: sinBloque });
         return grupos;
     }, [filteredBasicKnowledge]);
