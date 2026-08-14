@@ -186,8 +186,12 @@ export const computeDashboardNotices = (
     classes: ClassData[],
     courses: Course[],
     evaluationPeriods: EvaluationPeriod[],
+    absencesByClass: Record<string, Absence[]>,
     today: Date,
+    isDesktop: boolean,
 ): DashboardNotice[] => [
     ...detectUngradedOverdueAssignments(classes, courses, today),
     ...detectPeriodClosingSoon(classes, evaluationPeriods, today),
+    ...detectAbsenceSyncBacklog(absencesByClass, today, isDesktop),
+    ...detectUnjustifiedAbsenceStreaks(classes, absencesByClass),
 ];

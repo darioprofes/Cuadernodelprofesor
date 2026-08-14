@@ -16,6 +16,8 @@ import { useEnrollmentsForClasses } from './hooks/useEnrollments';
 import { useCategoriesForClasses } from './hooks/useCategories';
 import { useAssignmentsForClasses, useCreateAssignment } from './hooks/useAssignments';
 import { useGradesForClasses } from './hooks/useGrades';
+import { useAbsencesForClasses } from './hooks/useAbsences';
+import type { Absence } from './types/api';
 import { useEvaluationCriteria, useEvaluationCriteriaForCourses } from './hooks/useEvaluationCriteria';
 import { useSpecificCompetences, useSpecificCompetencesForCourses } from './hooks/useSpecificCompetences';
 import { useBasicKnowledgeForCourses } from './hooks/useBasicKnowledge';
@@ -209,6 +211,9 @@ const App = () => {
     const categoryQueries = useCategoriesForClasses(remoteClassIds);
     const assignmentQueries = useAssignmentsForClasses(remoteClassIds);
     const gradeQueries = useGradesForClasses(remoteClassIds);
+    // Solo para los avisos de "Hoy" (backlog de Educastur, racha de faltas) —
+    // GradebookTable sigue pidiendo las suyas por separado con useAbsences(classId).
+    const absenceQueries = useAbsencesForClasses(remoteClassIds);
     const remoteEvaluationPeriods = useEvaluationPeriods(yearId, { enabled: !!yearId });
     const updateAcademicYearMutation = useUpdateAcademicYear();
     // journalEntries/tasks/meetings/agendaNotes: bloque 6, ya con comando
@@ -250,6 +255,12 @@ const App = () => {
     const categoriesUpdatedKey = categoryQueries.map(q => q.dataUpdatedAt).join(',');
     const assignmentsUpdatedKey = assignmentQueries.map(q => q.dataUpdatedAt).join(',');
     const gradesUpdatedKey = gradeQueries.map(q => q.dataUpdatedAt).join(',');
+    const absencesUpdatedKey = absenceQueries.map(q => q.dataUpdatedAt).join(',');
+    const absencesByClassId: Record<string, Absence[]> = useMemo(() => {
+        const map: Record<string, Absence[]> = {};
+        (remoteClasses.data ?? []).forEach((cls, i) => { map[cls.id] = absenceQueries[i]?.data ?? []; });
+        return map;
+    }, [remoteClasses.data, absencesUpdatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
     const hydratedClasses: ClassData[] = useMemo(() => (
         (remoteClasses.data ?? []).map((cls, i) => hydrateClassData(
             cls,
@@ -652,6 +663,7 @@ const App = () => {
                 tasks={effectiveTasks}
                 setTasks={setTasksCallback}
                 meetings={effectiveMeetings}
+                absencesByClassId={absencesByClassId}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
             />;

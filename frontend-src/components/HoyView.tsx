@@ -1,5 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import type { ClassData, Course, AcademicConfiguration, Task, Meeting, View } from '../types';
+import type { Absence } from '../types/api';
 import ClassLabel from './ClassLabel';
 import BannerCostero from './BannerCostero';
 import Input from './Input';
@@ -34,6 +36,7 @@ interface HoyViewProps {
     tasks: Task[];
     setTasks: (updater: React.SetStateAction<Task[]>) => void;
     meetings: Meeting[];
+    absencesByClassId: Record<string, Absence[]>;
     setActiveView: (view: View) => void;
     setActiveClassId: (id: string) => void;
 }
@@ -51,7 +54,7 @@ interface SlotHoy {
     aula?: string;
 }
 
-const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfiguration, tasks, setTasks, meetings, setActiveView, setActiveClassId }) => {
+const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfiguration, tasks, setTasks, meetings, absencesByClassId, setActiveView, setActiveClassId }) => {
     // `new Date()` solo se recalcularía en cada render: sin este tick, si no
     // hay ninguna otra interacción la vista se queda con la hora congelada
     // en el momento en que se montó (p.ej. tras cambiar la hora del sistema
@@ -173,8 +176,8 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     // de hoy, no la que se esté navegando en el selector — a diferencia de
     // "Próximos eventos", son estado accionable, no una consulta puntual.
     const notices = useMemo(
-        () => computeDashboardNotices(classes, courses, academicConfiguration.evaluationPeriods, now),
-        [classes, courses, academicConfiguration.evaluationPeriods, now]
+        () => computeDashboardNotices(classes, courses, academicConfiguration.evaluationPeriods, absencesByClassId, now, isTauri()),
+        [classes, courses, academicConfiguration.evaluationPeriods, absencesByClassId, now]
     );
 
     return (
