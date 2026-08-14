@@ -162,15 +162,37 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     // (fecha estrictamente futura, ni hoy ni pasada). Se cuenta desde el día
     // seleccionado en el selector, no siempre desde hoy — así "Próximos
     // eventos" también se ajusta al navegar a otro día.
-    const contarEventosEnVentana = (dias: number): { tareasEvaluables: number; reuniones: number } => {
-        const limite = toYYYYMMDD(addDays(viewDate, dias));
+    //
+    // Cada franja cuenta solo lo que no esté ya contado en la anterior (24h
+    // no se repite dentro de "7 días", ni "7 días" dentro de "1 mes") — de
+    // ahí el `desdeExclusive`: `null` para la primera franja (usa el mismo
+    // criterio de siempre, hoy inclusive para reuniones / estrictamente
+    // futuro para tareas), y el límite superior de la franja anterior para
+    // las siguientes (estrictamente posterior, para no solaparse con ella).
+    const contarEventosEnVentana = (desdeExclusive: string | null, hasta: string): { tareasEvaluables: number; reuniones: number } => {
         let tareasEvaluables = 0, reuniones = 0;
-        meetings.forEach(m => { if (m.fecha >= fechaSeleccionada && m.fecha <= limite) reuniones++; });
+        meetings.forEach(m => {
+            const enRango = desdeExclusive ? (m.fecha > desdeExclusive && m.fecha <= hasta) : (m.fecha >= fechaSeleccionada && m.fecha <= hasta);
+            if (enRango) reuniones++;
+        });
         classes.forEach(c => c.assignments.forEach(a => {
-            if (a.date && a.date > fechaSeleccionada && a.date <= limite) tareasEvaluables++;
+            if (!a.date) return;
+            const enRango = desdeExclusive ? (a.date > desdeExclusive && a.date <= hasta) : (a.date > fechaSeleccionada && a.date <= hasta);
+            if (enRango) tareasEvaluables++;
         }));
         return { tareasEvaluables, reuniones };
     };
+
+    // Límites de las 3 franjas de "Próximos eventos", encadenados: el
+    // superior de una es el "desdeExclusive" de la siguiente (ver más abajo).
+    const limite24h = toYYYYMMDD(addDays(viewDate, 1));
+    const limite7dias = toYYYYMMDD(addDays(viewDate, 7));
+    const limite30dias = toYYYYMMDD(addDays(viewDate, 30));
+    const ventanasEventos = [
+        { label: '24 h', desdeExclusive: null as string | null, hasta: limite24h },
+        { label: '7 días', desdeExclusive: limite24h, hasta: limite7dias },
+        { label: '1 mes', desdeExclusive: limite7dias, hasta: limite30dias },
+    ];
 
     // Avisos (tareas sin calificar, periodo cerrando...): sobre la fecha REAL
     // de hoy, no la que se esté navegando en el selector — a diferencia de
@@ -226,12 +248,8 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                         </button>
                     );
                 })}
-                {[
-                        { label: '24 h', dias: 1 },
-                        { label: '7 días', dias: 7 },
-                        { label: '1 mes', dias: 30 },
-                    ].map(tile => {
-                        const conteo = contarEventosEnVentana(tile.dias);
+                {ventanasEventos.map(tile => {
+                        const conteo = contarEventosEnVentana(tile.desdeExclusive, tile.hasta);
                         if (conteo.tareasEvaluables === 0 && conteo.reuniones === 0) return null;
                         return (
                             <div key={tile.label} className="flex items-center gap-2 bg-white shadow-sm rounded-full pl-3 pr-2 py-1.5">
