@@ -174,12 +174,11 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-3">
+            <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 flex-shrink-0">
                     <CalendarDaysIcon className="w-4 h-4 text-slate-400" /> Próximos eventos
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                    {[
+                {[
                         { label: '24 h', dias: 1 },
                         { label: '7 días', dias: 7 },
                         { label: '1 mes', dias: 30 },
@@ -209,7 +208,6 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                             </div>
                         );
                     })}
-                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
