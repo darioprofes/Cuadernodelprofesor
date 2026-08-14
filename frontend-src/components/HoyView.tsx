@@ -7,6 +7,23 @@ import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange, formatFechaEs }
 import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon } from './Icons';
 import { PALETTE } from '../theme/palette';
 import DateNavButton from './DateNavButton';
+import { computeDashboardNotices, type DashboardNoticeKind } from '../services/dashboardNotices';
+
+const NOTICE_ICON: Record<DashboardNoticeKind, React.FC<{ className?: string }>> = {
+    ungraded: ClipboardDocumentCheckIcon,
+    periodClosing: ClockIcon,
+};
+
+// 'warn' reutiliza el dorado ya presente en PALETTE; 'alert' reutiliza el
+// mismo rojo que ya usa el badge "Vencida" de Tareas pendientes, aquí abajo.
+const NOTICE_TONE_CLASS: Record<'warn' | 'alert', string> = {
+    warn: '',
+    alert: 'text-red-700',
+};
+const NOTICE_TONE_STYLE: Record<'warn' | 'alert', React.CSSProperties | undefined> = {
+    warn: { color: PALETTE.sand.header },
+    alert: undefined,
+};
 
 interface HoyViewProps {
     classes: ClassData[];
@@ -150,6 +167,14 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
         return { tareasEvaluables, reuniones };
     };
 
+    // Avisos (tareas sin calificar, periodo cerrando...): sobre la fecha REAL
+    // de hoy, no la que se esté navegando en el selector — a diferencia de
+    // "Próximos eventos", son estado accionable, no una consulta puntual.
+    const notices = useMemo(
+        () => computeDashboardNotices(classes, courses, academicConfiguration.evaluationPeriods, now),
+        [classes, courses, academicConfiguration.evaluationPeriods, now]
+    );
+
     return (
         <div className="space-y-6">
             <div className="relative overflow-hidden rounded-xl p-6 flex items-center justify-between flex-wrap gap-3 min-h-[9rem]" style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #e0f2fe 100%)' }}>
@@ -176,14 +201,33 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
 
             <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 flex-shrink-0 bg-white shadow-sm rounded-full pl-3 pr-4 py-1.5">
-                    <CalendarDaysIcon className="w-4 h-4 text-slate-400" /> Próximos eventos
+                    <CalendarDaysIcon className="w-4 h-4 text-slate-400" /> Avisos
                 </div>
+                {notices.map(notice => {
+                    const NoticeIcon = NOTICE_ICON[notice.kind];
+                    return (
+                        <button
+                            key={notice.id}
+                            type="button"
+                            onClick={notice.target ? () => {
+                                if (notice.target!.classId) setActiveClassId(notice.target!.classId);
+                                setActiveView(notice.target!.view);
+                            } : undefined}
+                            disabled={!notice.target}
+                            className={`flex items-center gap-1.5 bg-white shadow-sm rounded-full pl-3 pr-4 py-1.5 text-sm font-semibold transition-opacity ${notice.target ? 'hover:opacity-70' : ''} ${NOTICE_TONE_CLASS[notice.tone]}`}
+                            style={NOTICE_TONE_STYLE[notice.tone]}
+                        >
+                            <NoticeIcon className="w-4 h-4 flex-shrink-0" /> {notice.label}
+                        </button>
+                    );
+                })}
                 {[
                         { label: '24 h', dias: 1 },
                         { label: '7 días', dias: 7 },
                         { label: '1 mes', dias: 30 },
                     ].map(tile => {
                         const conteo = contarEventosEnVentana(tile.dias);
+                        if (conteo.tareasEvaluables === 0 && conteo.reuniones === 0) return null;
                         return (
                             <div key={tile.label} className="flex items-center gap-2 bg-white shadow-sm rounded-full pl-3 pr-2 py-1.5">
                                 <span className="text-xs text-slate-500 flex-shrink-0">{tile.label}</span>
