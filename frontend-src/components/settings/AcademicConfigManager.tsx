@@ -1,40 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import type { AcademicConfiguration, Holiday, EvaluationPeriod, GradeScaleRule } from '../../types';
 import { TrashIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
+import BufferedInput from '../BufferedInput';
 import { linkClassName } from '../../theme/components/Link';
 import { useCurrentAcademicYear, useUpdateAcademicYear, useEvaluationPeriods, useCreateEvaluationPeriod, useUpdateEvaluationPeriod, useDeleteEvaluationPeriod } from '../../hooks/useAcademicYears';
-
-// Bug real (2026-08-04): los campos de fecha/nombre/peso de esta vista
-// persisten en el servidor con una petición async por pulsación de tecla
-// (handleYearDateChange/handlePeriodFieldChange/handlePeriodWeightChange).
-// Con un <input> controlado normal, mientras esa petición está en vuelo el
-// valor sigue viniendo del último dato confirmado por el servidor — un
-// re-render de por medio (incluida la propia respuesta tardía de una
-// pulsación anterior) pisaba lo que se estaba tecleando. Para <input
-// type="date"> esto era especialmente grave: el navegador compone un valor
-// "válido" con cada dígito del año (p.ej. escribir solo "2" ya produce
-// "0002-07-05"), así que cada dígito disparaba su propio guardado y su
-// propio pisotón, dejando años tipo "0023" o el campo directamente vacío.
-// BufferedInput desacopla la escritura del guardado: solo llama a onCommit
-// al perder el foco (o con Enter), nunca en cada tecla.
-const BufferedInput: React.FC<
-    { value: string; onCommit: (value: string) => void }
-    & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onBlur'>
-> = ({ value, onCommit, ...rest }) => {
-    const [local, setLocal] = useState(value);
-    useEffect(() => { setLocal(value); }, [value]);
-    return (
-        <Input
-            {...rest}
-            value={local}
-            onChange={e => setLocal(e.target.value)}
-            onBlur={() => { if (local !== value) onCommit(local); }}
-            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-        />
-    );
-};
 
 const AcademicConfigManager: React.FC<{
     academicConfiguration: AcademicConfiguration;
@@ -136,41 +107,30 @@ const AcademicConfigManager: React.FC<{
         setAcademicConfiguration(prev => ({ ...prev, [field]: value }));
     };
 
-    const handleListItemChange = (type: 'holidays' | 'evaluationPeriods' | 'periods', index: number, field: string, value: string) => {
+    // Solo 'holidays' — 'periods' (franjas horarias) se gestiona ahora en
+    // Horario Semanal (ScheduleManager.tsx), 'evaluationPeriods' ya se
+    // gestionaba aparte (handlePeriodFieldChange/handleAddPeriod/
+    // handleRemovePeriod, contra el backend real).
+    const handleListItemChange = (type: 'holidays', index: number, field: string, value: string) => {
         setAcademicConfiguration(prev => {
-            if (type === 'periods') {
-                const newList = [...(prev.periods || [])];
-                newList[index] = value;
-                return { ...prev, periods: newList };
-            }
-            const newList = [...(prev[type] || [])] as (Holiday | EvaluationPeriod)[];
+            const newList = [...(prev[type] || [])] as Holiday[];
             newList[index] = { ...newList[index], [field]: value };
             return { ...prev, [type]: newList };
         });
     };
 
-    const handleAddListItem = (type: 'holidays' | 'evaluationPeriods' | 'periods') => {
+    const handleAddListItem = (type: 'holidays') => {
         setAcademicConfiguration(prev => {
             const currentList = prev[type] || [];
-            let newItem;
-            if (type === 'periods') {
-                newItem = `Nueva Franja ${currentList.length + 1}`;
-            } else {
-                newItem = { id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, name: 'Nuevo', startDate: '', endDate: '' };
-            }
+            const newItem = { id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, name: 'Nuevo', startDate: '', endDate: '' };
             return { ...prev, [type]: [...currentList, newItem] };
         });
     };
 
-    const handleRemoveListItem = (type: 'holidays' | 'evaluationPeriods' | 'periods', idOrIndex: string | number) => {
+    const handleRemoveListItem = (type: 'holidays', idOrIndex: string) => {
         setAcademicConfiguration(prev => {
             const currentList = prev[type] || [];
-            let newList;
-            if (type === 'periods') {
-                 newList = currentList.filter((_, index) => index !== idOrIndex);
-            } else {
-                 newList = (currentList as (Holiday | EvaluationPeriod)[]).filter(item => item.id !== idOrIndex);
-            }
+            const newList = (currentList as Holiday[]).filter(item => item.id !== idOrIndex);
             return { ...prev, [type]: newList };
         });
     };
@@ -231,7 +191,7 @@ const AcademicConfigManager: React.FC<{
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                     <h4 className="font-semibold text-slate-700 mb-2">Ponderación de Evaluaciones</h4>
                     <p className="text-xs text-slate-500 mb-2">Asigna un peso proporcional a cada evaluación. El porcentaje se calcula automáticamente.</p>
@@ -271,22 +231,6 @@ const AcademicConfigManager: React.FC<{
                             </div>
                         ))}
                         <button onClick={() => handleAddListItem('holidays')} className={`text-xs ${linkClassName}`}>+ Añadir Festivo</button>
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <h4 className="font-semibold text-slate-700 mb-2">Franjas Horarias</h4>
-                    <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                        {(academicConfiguration.periods || []).map((period, index) => (
-                            <div key={index} className="flex gap-2 items-center">
-                                <span className="text-xs text-slate-400 w-4">{index + 1}</span>
-                                <Input type="text" value={period} onChange={e => handleListItemChange('periods', index, '', e.target.value)} className="flex-grow text-sm"/>
-                                <button onClick={() => handleRemoveListItem('periods', index)} className="p-1 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="w-3 h-3"/></button>
-                            </div>
-                        ))}
-                        <button onClick={() => handleAddListItem('periods')} className={`text-xs ${linkClassName}`}>+ Añadir Franja</button>
                     </div>
                 </div>
 

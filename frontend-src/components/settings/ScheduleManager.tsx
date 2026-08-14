@@ -5,9 +5,12 @@ import Modal from '../Modal';
 import Button from '../Button';
 import Input from '../Input';
 import Select from '../Select';
+import BufferedInput from '../BufferedInput';
 import ClassLabel from '../ClassLabel';
 import ImportScheduleModal from '../ImportScheduleModal';
+import { TrashIcon, ChevronDownIcon } from '../Icons';
 import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../../theme/components/Table';
+import { linkClassName } from '../../theme/components/Link';
 import { useCurrentAcademicYear } from '../../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../../hooks/useApiClasses';
 import { apiClassToLocal } from '../../services/apiAdapters';
@@ -120,6 +123,64 @@ const ScheduleManager: React.FC<{
         return grid;
     }, [effectiveClasses]);
 
+    // Gestión de franjas horarias directamente en la tabla (antes vivía en
+    // Configuración del Curso Académico, separada de dónde se usa — petición
+    // explícita del profesor de tenerlo aquí, "mucho más intuitivo"). Cada
+    // clase referencia su franja por ÍNDICE (ClassData.schedule[].periodIndex),
+    // así que borrar o mover una franja tiene que recalcular ese índice en
+    // TODAS las clases afectadas — sin esto, borrar la franja 3 dejaría
+    // cualquier clase de la franja 4 en adelante apuntando a la hora
+    // equivocada (mismo tipo de desincronización que el bug real ya
+    // encontrado y arreglado en la sincronización desde Excel).
+    const handleRenameFranja = (index: number, value: string) => {
+        setAcademicConfiguration(prev => {
+            const next = [...(prev.periods || [])];
+            next[index] = value;
+            return { ...prev, periods: next };
+        });
+    };
+
+    const handleAddFranja = () => {
+        setAcademicConfiguration(prev => ({
+            ...prev,
+            periods: [...(prev.periods || []), `Nueva Franja ${(prev.periods?.length ?? 0) + 1}`],
+        }));
+    };
+
+    const handleDeleteFranja = async (index: number) => {
+        const enUso = effectiveClasses.some(c => (c.schedule || []).some(slot => slot.periodIndex === index));
+        if (enUso && !window.confirm('Esta franja tiene clases asignadas — se les quitará esa hora del horario. ¿Borrar de todas formas?')) return;
+        for (const cls of effectiveClasses) {
+            const schedule = cls.schedule || [];
+            if (!schedule.some(slot => slot.periodIndex >= index)) continue;
+            const newSchedule = schedule
+                .filter(slot => slot.periodIndex !== index)
+                .map(slot => (slot.periodIndex > index ? { ...slot, periodIndex: slot.periodIndex - 1 } : slot));
+            await updateClassMutation.mutateAsync({ id: cls.id, yearId, data: { schedule: newSchedule } });
+        }
+        setAcademicConfiguration(prev => ({ ...prev, periods: (prev.periods || []).filter((_, i) => i !== index) }));
+    };
+
+    const handleMoveFranja = async (index: number, direction: -1 | 1) => {
+        const target = index + direction;
+        if (target < 0 || target >= periods.length) return;
+        for (const cls of effectiveClasses) {
+            const schedule = cls.schedule || [];
+            if (!schedule.some(slot => slot.periodIndex === index || slot.periodIndex === target)) continue;
+            const newSchedule = schedule.map(slot => {
+                if (slot.periodIndex === index) return { ...slot, periodIndex: target };
+                if (slot.periodIndex === target) return { ...slot, periodIndex: index };
+                return slot;
+            });
+            await updateClassMutation.mutateAsync({ id: cls.id, yearId, data: { schedule: newSchedule } });
+        }
+        setAcademicConfiguration(prev => {
+            const next = [...(prev.periods || [])];
+            [next[index], next[target]] = [next[target], next[index]];
+            return { ...prev, periods: next };
+        });
+    };
+
     return (
         <div>
             <div className="flex items-start justify-between gap-4 mb-2">
@@ -147,7 +208,7 @@ const ScheduleManager: React.FC<{
                 <table className={tableBaseClassName}>
                     <thead>
                         <tr className={tableHeadRowClassName}>
-                            <th className={`${tableHeadCellClassName} text-left border-r`}>Franja Horaria</th>
+                            <th className={`${tableHeadCellClassName} text-left border-r w-40 min-w-[10rem]`}>Franja Horaria</th>
                             {daysOfWeek.map(day => (
                                 <th key={day.value} className={`${tableHeadCellClassName} text-center border-r`}>{day.label}</th>
                             ))}
@@ -156,7 +217,43 @@ const ScheduleManager: React.FC<{
                     <tbody>
                         {periods.map((periodName, periodIndex) => (
                             <tr key={periodIndex} className={tableRowClassName}>
-                                <td className="p-2 font-medium text-slate-600 border-r">{periodName}</td>
+                                <td className="p-1 border-r">
+                                    <div className="flex items-center gap-1">
+                                        <BufferedInput
+                                            value={periodName}
+                                            onCommit={v => handleRenameFranja(periodIndex, v)}
+                                            className="flex-grow text-sm font-medium text-slate-600"
+                                        />
+                                        <div className="flex flex-col flex-shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleMoveFranja(periodIndex, -1)}
+                                                disabled={periodIndex === 0}
+                                                className="text-slate-400 hover:text-slate-700 disabled:opacity-20 disabled:hover:text-slate-400"
+                                                title="Mover arriba"
+                                            >
+                                                <ChevronDownIcon className="w-3 h-3 rotate-180" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleMoveFranja(periodIndex, 1)}
+                                                disabled={periodIndex === periods.length - 1}
+                                                className="text-slate-400 hover:text-slate-700 disabled:opacity-20 disabled:hover:text-slate-400"
+                                                title="Mover abajo"
+                                            >
+                                                <ChevronDownIcon className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteFranja(periodIndex)}
+                                            className="flex-shrink-0 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                            title="Borrar franja"
+                                        >
+                                            <TrashIcon className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                </td>
                                 {daysOfWeek.map(day => {
                                     const slotInfo = scheduleGrid.get(`${day.value}-${periodIndex}`);
                                     const classInSlot = slotInfo ? effectiveClasses.find(c => c.id === slotInfo.classId) : undefined;
@@ -182,6 +279,13 @@ const ScheduleManager: React.FC<{
                                 })}
                             </tr>
                         ))}
+                        <tr>
+                            <td colSpan={daysOfWeek.length + 1} className="p-2">
+                                <button type="button" onClick={handleAddFranja} className={`text-sm ${linkClassName}`}>
+                                    + Añadir franja horaria
+                                </button>
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
