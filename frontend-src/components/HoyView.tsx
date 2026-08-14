@@ -175,7 +175,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 flex-shrink-0">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 flex-shrink-0 bg-white shadow-sm rounded-full pl-3 pr-4 py-1.5">
                     <CalendarDaysIcon className="w-4 h-4 text-slate-400" /> Próximos eventos
                 </div>
                 {[
@@ -185,7 +185,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                     ].map(tile => {
                         const conteo = contarEventosEnVentana(tile.dias);
                         return (
-                            <div key={tile.label} className="flex items-center gap-2 bg-slate-50 rounded-full pl-3 pr-2 py-1.5">
+                            <div key={tile.label} className="flex items-center gap-2 bg-white shadow-sm rounded-full pl-3 pr-2 py-1.5">
                                 <span className="text-xs text-slate-500 flex-shrink-0">{tile.label}</span>
                                 <button
                                     type="button"
