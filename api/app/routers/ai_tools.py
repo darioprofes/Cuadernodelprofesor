@@ -1,10 +1,11 @@
+import base64
 import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from services.auth import require_auth
-from services.anonimizador import anonimizar, reintegrar_docx
+from services.anonimizador import anonimizar, anonimizar_docx, reintegrar_docx
 from services.extraccion_docx import extraer_markdown_docx
 
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -39,6 +40,25 @@ async def extraer_docx(archivo: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"No se ha podido leer el documento: {exc}")
 
     return {"texto": texto}
+
+
+@router.post("/anonimizar-docx")
+async def anonimizar_docx_endpoint(archivo: UploadFile = File(...)):
+
+    contenido_bytes = await archivo.read()
+
+    try:
+        contenido_final, mapa = anonimizar_docx(contenido_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"No se ha podido procesar el documento: {exc}")
+
+    # Base64 en JSON, no Response binaria como /reintegrar-docx: aquí el
+    # mapa puede tener muchas más entradas (todo lo detectado en el
+    # documento entero) y no cabe con garantías en una cabecera HTTP.
+    return {
+        "anonimizado_docx_base64": base64.b64encode(contenido_final).decode("ascii"),
+        "mapa": mapa,
+    }
 
 
 @router.post("/reintegrar-docx")

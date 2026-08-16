@@ -136,10 +136,13 @@ def _resolver_solapamientos(candidatos):
     return resueltos
 
 
-def anonimizar(texto):
-    """Devuelve (documento_para_pegar, mapa) donde `mapa` es código -> dato
-    real. `documento_para_pegar` incluye ya la instrucción para la IA online
-    delante del texto anonimizado."""
+def _generar_codigos(texto):
+    """Detecta datos personales en `texto` y genera un código aleatorio por
+    cada texto único detectado (no por aparición). Devuelve
+    (candidatos, codigo_de, mapa_real) -- `candidatos` conserva las
+    posiciones (para sustituir por offset en texto plano), `codigo_de`/
+    `mapa_real` son el mismo mapeo en las dos direcciones (para sustituir
+    por texto literal, como necesita la variante .docx más abajo)."""
 
     candidatos, niveles_detectados = _detectar_candidatos(texto)
     candidatos = _recortar_saltos_de_linea(candidatos)
@@ -169,6 +172,16 @@ def anonimizar(texto):
             codigo = "%s_%s" % (prefijo, secrets.token_hex(3).upper())
             codigo_de[texto_candidato] = codigo
             mapa_real[codigo] = texto_candidato
+
+    return candidatos, codigo_de, mapa_real
+
+
+def anonimizar(texto):
+    """Devuelve (documento_para_pegar, mapa) donde `mapa` es código -> dato
+    real. `documento_para_pegar` incluye ya la instrucción para la IA online
+    delante del texto anonimizado."""
+
+    candidatos, codigo_de, mapa_real = _generar_codigos(texto)
 
     anonimizado = texto
     for inicio, fin, texto_candidato in sorted(candidatos, key=lambda c: -c[0]):
@@ -200,6 +213,72 @@ def _sustituir_codigos_en_parrafo(paragraph, patron, mapa):
     for run in paragraph.runs:
         if run.text:
             run.text = patron.sub(lambda m: mapa[m.group(0)], run.text)
+
+
+def _sustituir_textos_en_parrafo(paragraph, pares_texto_codigo):
+
+    # Mismo criterio que _sustituir_codigos_en_parrafo: run por run, no en
+    # el texto completo del párrafo, para conservar negrita/cursiva/tablas
+    # tal cual estaban. Un dato detectado que quede partido entre dos runs
+    # (p.ej. un nombre con un cambio de estilo a mitad) no se anonimizaría
+    # -- limitación aceptada, igual que en reintegrar_docx.
+    for run in paragraph.runs:
+        if not run.text:
+            continue
+        for texto_candidato, codigo in pares_texto_codigo:
+            if texto_candidato in run.text:
+                run.text = run.text.replace(texto_candidato, codigo)
+
+
+def anonimizar_docx(contenido_bytes):
+    """Recibe un .docx con datos personales (acta, informe...) y devuelve
+    (bytes_docx, mapa) con los datos sustituidos por códigos SIN tocar el
+    formato original -- útil para poder pegar/adjuntar el propio .docx en
+    una IA online (p.ej. Claude generando su respuesta también en .docx)
+    en vez de convertirlo antes a texto plano."""
+
+    import io
+
+    from docx import Document
+
+    documento = Document(io.BytesIO(contenido_bytes))
+
+    bloques_texto = [p.text for p in documento.paragraphs]
+    bloques_texto += [
+        celda.text
+        for tabla in documento.tables
+        for fila in tabla.rows
+        for celda in fila.cells
+    ]
+    texto_completo = "\n".join(bloques_texto)
+
+    _, codigo_de, mapa_real = _generar_codigos(texto_completo)
+
+    if codigo_de:
+        # Más largo primero: si un texto detectado es substring de otro
+        # más largo (p.ej. un nombre de pila que coincide con el inicio
+        # del nombre completo), sustituir el más largo antes evita dejarlo
+        # a medio anonimizar.
+        pares = sorted(codigo_de.items(), key=lambda x: -len(x[0]))
+
+        for parrafo in documento.paragraphs:
+            _sustituir_textos_en_parrafo(parrafo, pares)
+
+        for tabla in documento.tables:
+            for fila in tabla.rows:
+                for celda in fila.cells:
+                    for parrafo in celda.paragraphs:
+                        _sustituir_textos_en_parrafo(parrafo, pares)
+
+    if documento.paragraphs:
+        documento.paragraphs[0].insert_paragraph_before(INSTRUCCION_IA_ONLINE)
+    else:
+        documento.add_paragraph(INSTRUCCION_IA_ONLINE)
+
+    buffer = io.BytesIO()
+    documento.save(buffer)
+
+    return buffer.getvalue(), mapa_real
 
 
 def reintegrar_docx(contenido_bytes, mapa):

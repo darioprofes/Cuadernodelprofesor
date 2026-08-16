@@ -75,12 +75,12 @@ const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
     );
 };
 
-const DownloadDocxButton: React.FC<{ blob: Blob }> = ({ blob }) => {
+const DownloadDocxButton: React.FC<{ blob: Blob; filename?: string }> = ({ blob, filename = 'documento-final.docx' }) => {
     const descargar = () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'documento-final.docx';
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -93,6 +93,15 @@ const DownloadDocxButton: React.FC<{ blob: Blob }> = ({ blob }) => {
     );
 };
 
+const base64ToBlob = (base64: string, mimeType: string): Blob => {
+    const bytes = atob(base64);
+    const array = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) array[i] = bytes.charCodeAt(i);
+    return new Blob([array], { type: mimeType });
+};
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
 // Anonimizador de documentos: pide el texto, lo anonimiza en el backend
 // (spaCy + regex, sin IA), espera a que el profesor pegue la respuesta de
 // una IA online (Claude, ChatGPT...) y reintegra los datos reales -- todo en
@@ -103,17 +112,26 @@ const AiToolsView: React.FC = () => {
     const [paso, setPaso] = useState<Paso>(1);
     const [documentoOriginal, setDocumentoOriginal] = useState('');
     const [resultado, setResultado] = useState<{ anonimizado: string; mapa: Record<string, string> } | null>(null);
+    const [resultadoDocxOriginal, setResultadoDocxOriginal] = useState<{ blob: Blob; mapa: Record<string, string> } | null>(null);
     const [respuestaIA, setRespuestaIA] = useState('');
     const [documentoFinal, setDocumentoFinal] = useState('');
     const [docxFinal, setDocxFinal] = useState<{ blob: Blob; sobrantes: string[] } | null>(null);
     const [extrayendoDocx, setExtrayendoDocx] = useState(false);
     const [errorExtraccion, setErrorExtraccion] = useState<string | null>(null);
+    const [anonimizandoDocx, setAnonimizandoDocx] = useState(false);
+    const [errorAnonimizacionDocx, setErrorAnonimizacionDocx] = useState<string | null>(null);
     const [restituyendoDocx, setRestituyendoDocx] = useState(false);
     const [errorRestitucionDocx, setErrorRestitucionDocx] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const docxOriginalInputRef = useRef<HTMLInputElement>(null);
     const docxRespuestaInputRef = useRef<HTMLInputElement>(null);
 
     const anonimizarMutation = useAnonimizar();
+
+    // Mapa código -> dato real activo, venga del camino de texto o del de
+    // .docx (los dos son mutuamente excluyentes: solo uno de los dos
+    // resultados de paso 2 está poblado a la vez).
+    const mapaActivo = resultado?.mapa ?? resultadoDocxOriginal?.mapa ?? null;
 
     // Extracción de .docx a Markdown (services/extraccion_docx.py): las
     // tablas llegan como tabla Markdown, no como texto suelto, para que la
@@ -147,14 +165,42 @@ const AiToolsView: React.FC = () => {
 
     const handleAnonimizar = async () => {
         const data = await anonimizarMutation.mutateAsync(documentoOriginal);
+        setResultadoDocxOriginal(null);
         setResultado(data);
         setPaso(2);
     };
 
+    // Anonimiza el propio .docx sin pasar por texto en ningún momento --
+    // sustitución run por run en services/anonimizador.py::anonimizar_docx,
+    // igual que reintegrar_docx pero en sentido contrario. El paso 2 pasa a
+    // ofrecer descargar el .docx en vez de una vista previa de texto: no
+    // tiene sentido "editar" un documento con formato en una textarea.
+    const handleAnonimizarDocxOriginal = async (file: File) => {
+        setAnonimizandoDocx(true);
+        setErrorAnonimizacionDocx(null);
+        try {
+            const formData = new FormData();
+            formData.append('archivo', file);
+            const response = await fetch('/api/ai-tools/anonimizar-docx', { method: 'POST', body: formData });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.detail || `Error HTTP ${response.status}`);
+            }
+            const data: { anonimizado_docx_base64: string; mapa: Record<string, string> } = await response.json();
+            setResultado(null);
+            setResultadoDocxOriginal({ blob: base64ToBlob(data.anonimizado_docx_base64, DOCX_MIME), mapa: data.mapa });
+            setPaso(2);
+        } catch (err) {
+            setErrorAnonimizacionDocx(err instanceof Error ? err.message : String(err));
+        } finally {
+            setAnonimizandoDocx(false);
+        }
+    };
+
     const handleRestituir = () => {
-        if (!resultado) return;
+        if (!mapaActivo) return;
         let texto = respuestaIA;
-        for (const [codigo, real] of Object.entries(resultado.mapa)) {
+        for (const [codigo, real] of Object.entries(mapaActivo)) {
             texto = texto.split(codigo).join(real);
         }
         setDocxFinal(null);
@@ -168,13 +214,13 @@ const AiToolsView: React.FC = () => {
     // para conservar el formato que le haya dado la IA -- un find/replace
     // en texto plano perdería negrita, tablas, etc.
     const handleSubirRespuestaDocx = async (file: File) => {
-        if (!resultado) return;
+        if (!mapaActivo) return;
         setRestituyendoDocx(true);
         setErrorRestitucionDocx(null);
         try {
             const formData = new FormData();
             formData.append('archivo', file);
-            formData.append('mapa', JSON.stringify(resultado.mapa));
+            formData.append('mapa', JSON.stringify(mapaActivo));
             const response = await fetch('/api/ai-tools/reintegrar-docx', { method: 'POST', body: formData });
             if (!response.ok) {
                 const body = await response.json().catch(() => ({}));
@@ -196,10 +242,12 @@ const AiToolsView: React.FC = () => {
         setPaso(1);
         setDocumentoOriginal('');
         setResultado(null);
+        setResultadoDocxOriginal(null);
         setRespuestaIA('');
         setDocumentoFinal('');
         setDocxFinal(null);
         setErrorExtraccion(null);
+        setErrorAnonimizacionDocx(null);
         setErrorRestitucionDocx(null);
         anonimizarMutation.reset();
     };
@@ -223,7 +271,7 @@ const AiToolsView: React.FC = () => {
                             un .docx. Se detectarán nombres, DNI, direcciones, centro, cargos y nivel/grupo, y
                             se sustituirán por códigos antes de que salga de este servidor.
                         </p>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <input
                                 ref={fileInputRef}
                                 type="file"
@@ -242,10 +290,34 @@ const AiToolsView: React.FC = () => {
                                 disabled={extrayendoDocx}
                             >
                                 <ArrowUpTrayIcon className="w-4 h-4" />
-                                {extrayendoDocx ? 'Extrayendo texto...' : 'Subir .docx'}
+                                {extrayendoDocx ? 'Extrayendo texto...' : 'Subir .docx (editar texto)'}
                             </Button>
-                            <span className="text-xs text-slate-400">Las tablas se convierten a tabla, para que la IA las entienda como tal.</span>
+                            <input
+                                ref={docxOriginalInputRef}
+                                type="file"
+                                accept=".docx"
+                                className="hidden"
+                                onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleAnonimizarDocxOriginal(file);
+                                    e.target.value = '';
+                                }}
+                            />
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => docxOriginalInputRef.current?.click()}
+                                disabled={anonimizandoDocx}
+                            >
+                                <ArrowUpTrayIcon className="w-4 h-4" />
+                                {anonimizandoDocx ? 'Anonimizando...' : 'Subir .docx (mantener formato)'}
+                            </Button>
                         </div>
+                        <p className="text-xs text-slate-400 -mt-1">
+                            "Editar texto" extrae el contenido para revisarlo abajo antes de anonimizar (las tablas
+                            se convierten a tabla, para que la IA las entienda como tal). "Mantener formato" anonimiza
+                            el propio .docx sin pasar por texto, para descargarlo igual que estaba.
+                        </p>
                         <Textarea
                             value={documentoOriginal}
                             onChange={e => setDocumentoOriginal(e.target.value)}
@@ -257,6 +329,12 @@ const AiToolsView: React.FC = () => {
                             <p className="text-sm text-red-600 flex items-center gap-1.5">
                                 <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
                                 {errorExtraccion}
+                            </p>
+                        )}
+                        {errorAnonimizacionDocx && (
+                            <p className="text-sm text-red-600 flex items-center gap-1.5">
+                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                                {errorAnonimizacionDocx}
                             </p>
                         )}
                         {anonimizarMutation.isError && (
@@ -277,23 +355,32 @@ const AiToolsView: React.FC = () => {
                     </div>
                 )}
 
-                {paso === 2 && resultado && (
+                {paso === 2 && (resultado || resultadoDocxOriginal) && (
                     <div className="flex flex-col gap-3 flex-1">
                         <p className="text-sm text-slate-600">
-                            Se han detectado y sustituido <strong>{Object.keys(resultado.mapa).length}</strong> dato(s).
-                            Revisa el texto antes de enviarlo: una combinación de datos (p.ej. curso + fecha + número
+                            Se han detectado y sustituido <strong>{Object.keys(mapaActivo ?? {}).length}</strong> dato(s).
+                            Revisa el documento antes de enviarlo: una combinación de datos (p.ej. curso + fecha + número
                             de incidencias) puede seguir identificando a alguien aunque no aparezca ningún nombre.
                         </p>
-                        <Textarea
-                            value={resultado.anonimizado}
-                            readOnly
-                            rows={16}
-                            className="font-mono text-sm flex-1 bg-slate-50"
-                        />
+                        {resultadoDocxOriginal ? (
+                            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-sm text-slate-500 border rounded-lg p-4 bg-slate-50">
+                                <ArrowDownTrayIcon className="w-8 h-8 text-slate-400" />
+                                Documento .docx anonimizado, con el formato original conservado.
+                            </div>
+                        ) : (
+                            <Textarea
+                                value={resultado!.anonimizado}
+                                readOnly
+                                rows={16}
+                                className="font-mono text-sm flex-1 bg-slate-50"
+                            />
+                        )}
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
                             <div className="flex gap-2">
-                                <CopyButton texto={resultado.anonimizado} />
+                                {resultadoDocxOriginal
+                                    ? <DownloadDocxButton blob={resultadoDocxOriginal.blob} filename="documento-anonimizado.docx" />
+                                    : <CopyButton texto={resultado!.anonimizado} />}
                                 <Button type="button" onClick={() => setPaso(3)}>Siguiente</Button>
                             </div>
                         </div>
