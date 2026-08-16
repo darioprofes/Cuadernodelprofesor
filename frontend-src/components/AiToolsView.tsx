@@ -1,10 +1,23 @@
 import React, { useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import PageHeader from './PageHeader';
 import Button from './Button';
 import Textarea from './Textarea';
 import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon } from './Icons';
 import { useAnonimizar } from '../hooks/useAnonimizar';
 import { PALETTE } from '../theme/palette';
+
+// La respuesta de la IA online suele venir en Markdown (negrita, títulos,
+// listas). El botón "Copiar" sigue copiando el texto fuente tal cual (por si
+// se pega en un sitio que también entiende Markdown); esto es solo para que
+// no se vean asteriscos y almohadillas sueltos en la vista previa.
+const markdownClassName =
+    '[&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1 ' +
+    '[&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1 ' +
+    '[&_h3]:text-sm [&_h3]:font-bold [&_h3]:mt-2 [&_h3]:mb-1 ' +
+    '[&_p]:mb-2 [&_strong]:font-semibold [&_em]:italic ' +
+    '[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2 ' +
+    '[&_li]:mb-0.5 [&_hr]:my-3 [&_hr]:border-slate-200';
 
 type Paso = 1 | 2 | 3 | 4;
 
@@ -204,12 +217,9 @@ const AiToolsView: React.FC = () => {
                                 Todos los códigos se han resuelto correctamente.
                             </p>
                         )}
-                        <Textarea
-                            value={documentoFinal}
-                            readOnly
-                            rows={16}
-                            className="font-mono text-sm flex-1 bg-slate-50"
-                        />
+                        <div className={`flex-1 overflow-y-auto text-sm border rounded-lg p-4 bg-slate-50 ${markdownClassName}`}>
+                            <ReactMarkdown>{documentoFinal}</ReactMarkdown>
+                        </div>
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
                             <div className="flex gap-2">
