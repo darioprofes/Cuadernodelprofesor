@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import json
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from services.auth import require_auth
-from services.anonimizador import anonimizar
+from services.anonimizador import anonimizar, reintegrar_docx
 from services.extraccion_docx import extraer_markdown_docx
+
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 router = APIRouter(prefix="/ai-tools", tags=["Herramientas IA"], dependencies=[Depends(require_auth)])
 
@@ -35,3 +39,28 @@ async def extraer_docx(archivo: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"No se ha podido leer el documento: {exc}")
 
     return {"texto": texto}
+
+
+@router.post("/reintegrar-docx")
+async def reintegrar_docx_endpoint(archivo: UploadFile = File(...), mapa: str = Form(...)):
+
+    contenido_bytes = await archivo.read()
+
+    try:
+        mapa_dict = json.loads(mapa)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="El mapa de reidentificación no es JSON válido.")
+
+    try:
+        contenido_final, sobrantes = reintegrar_docx(contenido_bytes, mapa_dict)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"No se ha podido procesar el documento: {exc}")
+
+    # Sin estado en servidor, igual que /anonimizar: el mapa llega en la
+    # propia petición (el frontend lo tenía en memoria desde el paso 1) y se
+    # olvida en cuanto termina de responder.
+    return Response(
+        content=contenido_final,
+        media_type=DOCX_MEDIA_TYPE,
+        headers={"X-Codigos-Sin-Resolver": ",".join(sobrantes)},
+    )

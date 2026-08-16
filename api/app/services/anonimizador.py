@@ -183,3 +183,60 @@ def anonimizar(texto):
     documento_para_pegar = INSTRUCCION_IA_ONLINE + "\n\n" + anonimizado
 
     return documento_para_pegar, mapa_real
+
+
+_PATRON_CODIGO_GENERICO = re.compile(r"\b(?:PERS|GRUPO)_[0-9A-F]{6}\b")
+
+
+def _sustituir_codigos_en_parrafo(paragraph, patron, mapa):
+
+    # Se sustituye run por run, no en el texto completo del párrafo, para no
+    # perder el formato (negrita, cursiva...) que la IA online le haya dado
+    # a lo que rodea el código: cambiar run.text conserva su estilo, un
+    # find-replace sobre el texto completo del párrafo lo destruiría. Un
+    # código partido entre dos runs (p.ej. por un cambio de estilo a mitad)
+    # no se detecta aquí -- se queda sin resolver y se avisa en el resultado,
+    # en vez de intentar fusionar runs con el riesgo de romper el documento.
+    for run in paragraph.runs:
+        if run.text:
+            run.text = patron.sub(lambda m: mapa[m.group(0)], run.text)
+
+
+def reintegrar_docx(contenido_bytes, mapa):
+    """Recibe el .docx que ha devuelto la IA online (con los códigos
+    PERS_/GRUPO_ intactos) y un .docx con los mismos datos reales, sin
+    tocar el formato que le haya dado la IA. Devuelve (bytes_docx, sobrantes)
+    donde `sobrantes` son códigos que no se han podido resolver (normalmente
+    porque quedaron partidos entre dos runs de estilo distinto)."""
+
+    import io
+
+    from docx import Document
+
+    documento = Document(io.BytesIO(contenido_bytes))
+
+    if mapa:
+        patron = re.compile("|".join(re.escape(codigo) for codigo in mapa))
+
+        for parrafo in documento.paragraphs:
+            _sustituir_codigos_en_parrafo(parrafo, patron, mapa)
+
+        for tabla in documento.tables:
+            for fila in tabla.rows:
+                for celda in fila.cells:
+                    for parrafo in celda.paragraphs:
+                        _sustituir_codigos_en_parrafo(parrafo, patron, mapa)
+
+    buffer = io.BytesIO()
+    documento.save(buffer)
+
+    texto_completo = "\n".join(p.text for p in documento.paragraphs)
+    texto_completo += "\n".join(
+        celda.text
+        for tabla in documento.tables
+        for fila in tabla.rows
+        for celda in fila.cells
+    )
+    sobrantes = sorted(set(_PATRON_CODIGO_GENERICO.findall(texto_completo)))
+
+    return buffer.getvalue(), sobrantes

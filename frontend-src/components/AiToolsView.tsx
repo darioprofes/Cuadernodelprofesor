@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import PageHeader from './PageHeader';
 import Button from './Button';
 import Textarea from './Textarea';
-import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon, ArrowUpTrayIcon } from './Icons';
+import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './Icons';
 import { useAnonimizar } from '../hooks/useAnonimizar';
 import { PALETTE } from '../theme/palette';
 
@@ -75,6 +75,24 @@ const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
     );
 };
 
+const DownloadDocxButton: React.FC<{ blob: Blob }> = ({ blob }) => {
+    const descargar = () => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'documento-final.docx';
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <Button type="button" onClick={descargar}>
+            <ArrowDownTrayIcon className="w-4 h-4" />
+            Descargar .docx
+        </Button>
+    );
+};
+
 // Anonimizador de documentos: pide el texto, lo anonimiza en el backend
 // (spaCy + regex, sin IA), espera a que el profesor pegue la respuesta de
 // una IA online (Claude, ChatGPT...) y reintegra los datos reales -- todo en
@@ -87,9 +105,13 @@ const AiToolsView: React.FC = () => {
     const [resultado, setResultado] = useState<{ anonimizado: string; mapa: Record<string, string> } | null>(null);
     const [respuestaIA, setRespuestaIA] = useState('');
     const [documentoFinal, setDocumentoFinal] = useState('');
+    const [docxFinal, setDocxFinal] = useState<{ blob: Blob; sobrantes: string[] } | null>(null);
     const [extrayendoDocx, setExtrayendoDocx] = useState(false);
     const [errorExtraccion, setErrorExtraccion] = useState<string | null>(null);
+    const [restituyendoDocx, setRestituyendoDocx] = useState(false);
+    const [errorRestitucionDocx, setErrorRestitucionDocx] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const docxRespuestaInputRef = useRef<HTMLInputElement>(null);
 
     const anonimizarMutation = useAnonimizar();
 
@@ -119,9 +141,9 @@ const AiToolsView: React.FC = () => {
     };
 
     const codigosSinResolver = useMemo(() => {
-        if (paso !== 4) return [];
+        if (paso !== 4 || docxFinal) return [];
         return Array.from(new Set(documentoFinal.match(PATRON_CODIGO) ?? []));
-    }, [paso, documentoFinal]);
+    }, [paso, documentoFinal, docxFinal]);
 
     const handleAnonimizar = async () => {
         const data = await anonimizarMutation.mutateAsync(documentoOriginal);
@@ -135,8 +157,39 @@ const AiToolsView: React.FC = () => {
         for (const [codigo, real] of Object.entries(resultado.mapa)) {
             texto = texto.split(codigo).join(real);
         }
+        setDocxFinal(null);
         setDocumentoFinal(texto);
         setPaso(4);
+    };
+
+    // La respuesta en .docx no pasa por texto en ningún momento: se manda
+    // tal cual al backend junto con el mapa (services/anonimizador.py::
+    // reintegrar_docx), que sustituye run por run dentro del propio .docx
+    // para conservar el formato que le haya dado la IA -- un find/replace
+    // en texto plano perdería negrita, tablas, etc.
+    const handleSubirRespuestaDocx = async (file: File) => {
+        if (!resultado) return;
+        setRestituyendoDocx(true);
+        setErrorRestitucionDocx(null);
+        try {
+            const formData = new FormData();
+            formData.append('archivo', file);
+            formData.append('mapa', JSON.stringify(resultado.mapa));
+            const response = await fetch('/api/ai-tools/reintegrar-docx', { method: 'POST', body: formData });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.detail || `Error HTTP ${response.status}`);
+            }
+            const sobrantesHeader = response.headers.get('X-Codigos-Sin-Resolver') ?? '';
+            const blob = await response.blob();
+            setDocxFinal({ blob, sobrantes: sobrantesHeader ? sobrantesHeader.split(',') : [] });
+            setDocumentoFinal('');
+            setPaso(4);
+        } catch (err) {
+            setErrorRestitucionDocx(err instanceof Error ? err.message : String(err));
+        } finally {
+            setRestituyendoDocx(false);
+        }
     };
 
     const empezarDeNuevo = () => {
@@ -145,7 +198,9 @@ const AiToolsView: React.FC = () => {
         setResultado(null);
         setRespuestaIA('');
         setDocumentoFinal('');
+        setDocxFinal(null);
         setErrorExtraccion(null);
+        setErrorRestitucionDocx(null);
         anonimizarMutation.reset();
     };
 
@@ -248,13 +303,43 @@ const AiToolsView: React.FC = () => {
                 {paso === 3 && (
                     <div className="flex flex-col gap-3 flex-1">
                         <p className="text-sm text-slate-600">
-                            Pega aquí la respuesta de la IA online, con los códigos PERS_/GRUPO_ intactos.
+                            Si la IA te ha dado la respuesta como archivo .docx, súbelo aquí para conservar su
+                            formato (negrita, tablas...). Si prefieres, pega el texto abajo -- los códigos
+                            PERS_/GRUPO_ deben quedar intactos en cualquiera de los dos casos.
                         </p>
+                        <div className="flex items-center gap-2">
+                            <input
+                                ref={docxRespuestaInputRef}
+                                type="file"
+                                accept=".docx"
+                                className="hidden"
+                                onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleSubirRespuestaDocx(file);
+                                    e.target.value = '';
+                                }}
+                            />
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => docxRespuestaInputRef.current?.click()}
+                                disabled={restituyendoDocx}
+                            >
+                                <ArrowUpTrayIcon className="w-4 h-4" />
+                                {restituyendoDocx ? 'Procesando .docx...' : 'Subir .docx de la respuesta'}
+                            </Button>
+                        </div>
+                        {errorRestitucionDocx && (
+                            <p className="text-sm text-red-600 flex items-center gap-1.5">
+                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                                {errorRestitucionDocx}
+                            </p>
+                        )}
                         <Textarea
                             value={respuestaIA}
                             onChange={e => setRespuestaIA(e.target.value)}
-                            rows={16}
-                            placeholder="Pega aquí la respuesta de la IA..."
+                            rows={14}
+                            placeholder="...o pega aquí la respuesta de la IA en texto"
                             className="font-mono text-sm flex-1"
                         />
                         <div className="flex justify-between">
@@ -266,32 +351,43 @@ const AiToolsView: React.FC = () => {
                     </div>
                 )}
 
-                {paso === 4 && (
-                    <div className="flex flex-col gap-3 flex-1">
-                        {codigosSinResolver.length > 0 ? (
-                            <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                                Quedan códigos sin resolver ({codigosSinResolver.join(', ')}): puede que la IA los
-                                haya alterado. Revisa el texto antes de usarlo.
-                            </p>
-                        ) : (
-                            <p className="text-sm text-emerald-700 flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                                <CheckCircleIcon className="w-4 h-4 flex-shrink-0" />
-                                Todos los códigos se han resuelto correctamente.
-                            </p>
-                        )}
-                        <div className={`flex-1 overflow-auto text-sm border rounded-lg p-4 bg-slate-50 ${markdownClassName}`}>
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentoFinal}</ReactMarkdown>
-                        </div>
-                        <div className="flex justify-between">
-                            <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
-                            <div className="flex gap-2">
-                                <CopyButton texto={documentoFinal} />
-                                <Button type="button" onClick={empezarDeNuevo}>Empezar de nuevo</Button>
+                {paso === 4 && (() => {
+                    const sobrantes = docxFinal ? docxFinal.sobrantes : codigosSinResolver;
+                    return (
+                        <div className="flex flex-col gap-3 flex-1">
+                            {sobrantes.length > 0 ? (
+                                <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                    <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                    Quedan códigos sin resolver ({sobrantes.join(', ')}): puede que la IA los haya
+                                    alterado{docxFinal ? ', o hayan quedado partidos entre dos estilos distintos dentro del .docx' : ''}.
+                                    Revisa el documento antes de usarlo.
+                                </p>
+                            ) : (
+                                <p className="text-sm text-emerald-700 flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                                    <CheckCircleIcon className="w-4 h-4 flex-shrink-0" />
+                                    Todos los códigos se han resuelto correctamente.
+                                </p>
+                            )}
+                            {docxFinal ? (
+                                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-sm text-slate-500 border rounded-lg p-4 bg-slate-50">
+                                    <ArrowDownTrayIcon className="w-8 h-8 text-slate-400" />
+                                    Documento .docx listo, con el formato de la IA conservado.
+                                </div>
+                            ) : (
+                                <div className={`flex-1 overflow-auto text-sm border rounded-lg p-4 bg-slate-50 ${markdownClassName}`}>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentoFinal}</ReactMarkdown>
+                                </div>
+                            )}
+                            <div className="flex justify-between">
+                                <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
+                                <div className="flex gap-2">
+                                    {docxFinal ? <DownloadDocxButton blob={docxFinal.blob} /> : <CopyButton texto={documentoFinal} />}
+                                    <Button type="button" onClick={empezarDeNuevo}>Empezar de nuevo</Button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
             </div>
         </div>
     );
