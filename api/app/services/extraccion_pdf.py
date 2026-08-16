@@ -7,6 +7,7 @@
 # no texto libre. Aquí el documento es de teoría, no tiene estructura fija.
 
 import io
+import re
 
 import pdfplumber
 
@@ -16,6 +17,18 @@ import pdfplumber
 # parte notable de la RAM del servidor (4 GiB compartidos entre 13
 # contenedores) antes de que nginx cortara la petición por timeout.
 _MAX_PAGINAS = 150
+
+# Cuando la fuente del PDF no mapea un glifo a Unicode (típicamente viñetas
+# de lista, "•"), pdfplumber lo deja tal cual como "(cid:114)(cid:1)" en vez
+# del carácter real -- no hay forma de recuperar qué símbolo era sin el mapa
+# de la fuente. Se normaliza a un guion de viñeta en vez de mandarle a la IA
+# ese texto sin sentido.
+_PATRON_CID = re.compile(r"(?:\(cid:\d+\))+")
+
+
+def _limpiar_glifos_no_mapeados(texto):
+
+    return _PATRON_CID.sub("- ", texto)
 
 
 def extraer_texto_pdf(contenido_bytes):
@@ -37,7 +50,7 @@ def extraer_texto_pdf(contenido_bytes):
             )
 
         for i, pagina in enumerate(pdf.pages, start=1):
-            texto = (pagina.extract_text() or "").strip()
+            texto = _limpiar_glifos_no_mapeados((pagina.extract_text() or "").strip())
             bloques.append(f"### Página {i}\n{texto}")
 
     return "\n\n".join(bloques), num_paginas
