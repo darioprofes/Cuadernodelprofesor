@@ -8,10 +8,20 @@
 # nunca se deja que la IA invente nada. La respuesta se valida siempre contra
 # lo que existe de verdad en el curso -- cualquier código inventado se
 # descarta, no se guarda a ciegas.
+#
+# NO pasa por anonimizar(): probado con un curso real, el NER de spaCy (ver
+# services/anonimizador.py, entrenado/afinado para actas en prosa) dispara
+# muchísimos falsos positivos sobre texto de diapositivas en viñetas cortas
+# -- llegó a anonimizar términos científicos ("Termosfera", "Ozono") e
+# incluso códigos de currículo reales dentro del propio prompt ("F.1" ->
+# "PERS_37414E"), corrompiendo el prompt en vez de protegerlo. Un documento
+# de teoría normalmente no tiene datos personales; la responsabilidad de
+# revisarlo antes de copiarlo queda en el profesor (mismo criterio que ya se
+# aplica al riesgo de reidentificación por combinación de datos en el
+# Anonimizador).
 
 import re
 
-from services.anonimizador import anonimizar
 from services.basic_knowledge import list_basic_knowledge
 from services.courses import get_course
 from services.criteria import list_criteria
@@ -132,7 +142,10 @@ Devuelve ÚNICAMENTE un JSON con esta forma exacta, sin texto antes ni después:
 }}
 </formato_de_salida>"""
 
-    return anonimizar(prompt)
+    # Mapa vacío siempre (ver nota de cabecera) -- se mantiene la misma
+    # forma (texto, mapa) que el resto de Herramientas IA para que el
+    # frontend/reintegración funcionen igual, sin ninguna sustitución real.
+    return prompt, {}
 
 
 _PATRON_CERCA_JSON = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL)

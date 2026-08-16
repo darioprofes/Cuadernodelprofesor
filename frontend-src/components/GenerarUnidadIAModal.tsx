@@ -44,7 +44,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     const [avisoExtraccion, setAvisoExtraccion] = useState<string | null>(null);
     const [errorPaso1, setErrorPaso1] = useState<string | null>(null);
     const [generando, setGenerando] = useState(false);
-    const [resultado, setResultado] = useState<{ anonimizado: string; mapa: Record<string, string> } | null>(null);
+    const [resultado, setResultado] = useState<{ prompt: string; mapa: Record<string, string> } | null>(null);
     const [respuestaIA, setRespuestaIA] = useState('');
     const [procesando, setProcesando] = useState(false);
     const [errorPaso3, setErrorPaso3] = useState<string | null>(null);
@@ -100,7 +100,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                 const body = await response.json().catch(() => ({}));
                 throw new Error(body.detail || `Error HTTP ${response.status}`);
             }
-            const data: { anonimizado: string; mapa: Record<string, string> } = await response.json();
+            const data: { prompt: string; mapa: Record<string, string> } = await response.json();
             setResultado(data);
             setPaso(2);
         } catch (err) {
@@ -181,6 +181,12 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                             el documento y el currículo real de este curso, para pegar en una IA online (Claude,
                             ChatGPT...).
                         </p>
+                        <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                            <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                            Este documento NO pasa por el Anonimizador (los términos científicos le confundían y
+                            corrompía el propio currículo). Revisa que no mencione a ningún alumno antes de
+                            copiarlo a la IA online.
+                        </p>
                         <div className="flex items-center gap-2">
                             <input
                                 ref={fileInputRef}
@@ -234,15 +240,12 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                     <div className="flex flex-col gap-3">
                         <p className="text-sm text-slate-600">
                             Copia este prompt y pégalo en tu IA online de confianza.
-                            {Object.keys(resultado.mapa).length > 0 && (
-                                <> Se han anonimizado {Object.keys(resultado.mapa).length} dato(s) personal(es) detectado(s) en el documento.</>
-                            )}
                         </p>
-                        <Textarea value={resultado.anonimizado} readOnly rows={14} className="font-mono text-sm bg-slate-50" />
+                        <Textarea value={resultado.prompt} readOnly rows={14} className="font-mono text-sm bg-slate-50" />
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
                             <div className="flex gap-2">
-                                <CopyButton texto={resultado.anonimizado} />
+                                <CopyButton texto={resultado.prompt} />
                                 <Button type="button" onClick={() => setPaso(3)}>Siguiente</Button>
                             </div>
                         </div>

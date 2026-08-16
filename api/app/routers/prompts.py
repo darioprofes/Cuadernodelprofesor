@@ -85,11 +85,14 @@ class GenerarUnidadRequest(BaseModel):
 async def generar_prompt_unidad(datos: GenerarUnidadRequest):
 
     try:
-        anonimizado, mapa = construir_prompt(datos.course_id, datos.documento)
+        prompt, mapa = construir_prompt(datos.course_id, datos.documento)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    return {"anonimizado": anonimizado, "mapa": mapa}
+    # "mapa" siempre vacío hoy (ver nota en construir_prompt) -- se
+    # mantiene en la respuesta por si esta decisión se revisa más adelante,
+    # no porque se use ahora mismo.
+    return {"prompt": prompt, "mapa": mapa}
 
 
 class ValidarUnidadRequest(BaseModel):
