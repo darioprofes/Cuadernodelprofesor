@@ -1,4 +1,9 @@
-FROM python:3.13-slim
+# 3.12, no 3.13: thinc (dependencia de spaCy, ver requirements.txt) fija
+# numpy<2.1, que no publica wheel para cp313 -- pip intentaría compilarlo
+# desde fuente y esta imagen "slim" no trae compilador. 3.12 sí tiene wheels
+# precompiladas para toda la cadena (numpy/thinc/spacy), sin tocar el
+# Dockerfile con build-essential.
+FROM python:3.12-slim
 
 WORKDIR /app
 

@@ -371,5 +371,6 @@ export type View =
   | 'key-competences'
   | 'descriptors'
   | 'curriculum'
-  | 'planner';
+  | 'planner'
+  | 'ai-tools';
 

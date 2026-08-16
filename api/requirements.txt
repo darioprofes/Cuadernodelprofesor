@@ -4,3 +4,8 @@ psycopg[binary]==3.2.3
 python-multipart
 pdfplumber==0.11.4
 requests==2.32.3
+# NER en español para el anonimizador de Herramientas IA (services/anonimizador.py).
+# El modelo se instala como wheel directo en vez de "spacy download" para no
+# depender de una descarga en tiempo de build sin pinning de versión.
+spacy==3.8.2
+es_core_news_md @ https://github.com/explosion/spacy-models/releases/download/es_core_news_md-3.8.0/es_core_news_md-3.8.0-py3-none-any.whl

@@ -39,6 +39,7 @@ export const SECTION_ACCENT: Record<string, PaletteKey> = {
     competences: 'teal',
     'key-competences': 'teal',
     descriptors: 'teal',
+    'ai-tools': 'sand',
 };
 
 // ==========================================================

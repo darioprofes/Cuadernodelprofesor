@@ -46,6 +46,10 @@ const DescriptorAchievement = React.lazy(() => import('./components/DescriptorAc
 // Vista de Materia (Fase 8) — antes solo se cargaban dentro de Ajustes.
 const CurriculumManager = React.lazy(() => import('./components/CurriculumManager'));
 const ProgrammingManager = React.lazy(() => import('./components/ProgrammingManager'));
+// Herramientas IA depende del backend Python (spaCy) -- solo se enlaza desde
+// el Sidebar en web (ver Sidebar.tsx), pero se carga bajo demanda igual que
+// el resto de vistas poco visitadas.
+const AiToolsView = React.lazy(() => import('./components/AiToolsView'));
 import ClassJournal from './components/ClassJournal';
 import { Cog8ToothIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon } from './components/Icons';
 import PageHeader from './components/PageHeader';
@@ -696,6 +700,14 @@ const App = () => {
                 setActiveClassId={setActiveClassId}
                 onOpenAddTask={() => setIsFavoritoAssignmentOpen(true)}
             />;
+        }
+
+        if (activeView === 'ai-tools') {
+            return (
+                <React.Suspense fallback={<ViewLoadingFallback />}>
+                    <AiToolsView />
+                </React.Suspense>
+            );
         }
 
         if (!activeClass && activeView !== 'calendar') {

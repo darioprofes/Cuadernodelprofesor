@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import type { View } from '../types';
 import {
     HomeIcon, ClockIcon, CalendarDaysIcon, BookOpenIcon, ClipboardDocumentIcon,
-    UsersIcon, ClipboardDocumentCheckIcon, ChartBarIcon,
+    UsersIcon, ClipboardDocumentCheckIcon, ChartBarIcon, SparklesIcon,
     StarIcon, ChevronRightIcon, Bars3Icon, XMarkIcon,
 } from './Icons';
 import Logo from './Logo';
@@ -46,6 +47,15 @@ const NAV_SECTIONS: NavSection[] = [
             { view: 'criteria', label: 'Informes', icon: ChartBarIcon },
         ],
     },
+    // Herramientas IA depende del backend Python (services/anonimizador.py) --
+    // sin equivalente en escritorio (Tauri/Rust), mismo criterio ya aplicado a
+    // la importación de horario en PDF (ImportScheduleModal.tsx::PDF_IMPORT_AVAILABLE).
+    ...(isTauri() ? [] : [{
+        label: null,
+        items: [
+            { view: 'ai-tools' as View, label: 'Herramientas IA', icon: SparklesIcon },
+        ],
+    }]),
 ];
 
 // Un mismo item del sidebar puede corresponder a varias "View" internas
