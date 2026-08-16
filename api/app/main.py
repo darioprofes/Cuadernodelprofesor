@@ -31,6 +31,7 @@ from routers.meetings import router as meetings_router, item_router as meetings_
 from routers.agenda_notes import router as agenda_notes_router, item_router as agenda_notes_item_router
 from routers.backup import router as backup_router
 from routers.ai_tools import router as ai_tools_router
+from routers.prompts import router as prompts_router
 
 from services.db import apply_migrations
 
@@ -111,3 +112,4 @@ app.include_router(agenda_notes_router)
 app.include_router(agenda_notes_item_router)
 app.include_router(backup_router)
 app.include_router(ai_tools_router)
+app.include_router(prompts_router)

@@ -1,9 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
 import type { ProgrammingUnit, Course, SessionDetail, EvaluationCriterion, BasicKnowledge, ClassData, AcademicConfiguration } from '../types';
-import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon } from './Icons';
+import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon, SparklesIcon } from './Icons';
 import Modal from './Modal';
 import Input from './Input';
+import GenerarUnidadIAModal from './GenerarUnidadIAModal';
 import { TYPOGRAPHY } from '../theme/typography';
 import { checkboxClassName } from '../theme/components/Input';
 import { formatFechaEs } from '../utils';
@@ -18,6 +19,11 @@ interface ProgrammingManagerProps {
     courses: Course[];
     classes: ClassData[];
     academicConfiguration: AcademicConfiguration;
+    // Atajo desde Herramientas IA (AiToolsView): App.tsx navega aquí y pide
+    // abrir GenerarUnidadIAModal directamente, sin que el profesor tenga que
+    // pulsar el botón otra vez.
+    autoOpenGenerarIA?: boolean;
+    onAutoOpenGenerarIAHandled?: () => void;
 }
 
 const toYYYYMMDD = (date: Date): string => {
@@ -34,10 +40,22 @@ const addDays = (date: Date, days: number): Date => {
 };
 
 
-const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, classes, academicConfiguration }) => {
+const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, classes, academicConfiguration, autoOpenGenerarIA, onAutoOpenGenerarIAHandled }) => {
     const selectedCourseId = courseId;
-    const [unitEditorState, setUnitEditorState] = useState<{ mode: 'create' } | { mode: 'edit', unit: ProgrammingUnit } | null>(null);
+    // "create" admite un `draft` opcional -- el borrador que entrega
+    // GenerarUnidadIAModal para revisar en el mismo formulario que ya usa la
+    // creación manual, en vez de tener un formulario de revisión aparte.
+    const [unitEditorState, setUnitEditorState] = useState<{ mode: 'create', draft?: ProgrammingUnit } | { mode: 'edit', unit: ProgrammingUnit } | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
+    const [showGenerarIA, setShowGenerarIA] = useState(false);
+
+    React.useEffect(() => {
+        if (autoOpenGenerarIA) {
+            setShowGenerarIA(true);
+            onAutoOpenGenerarIAHandled?.();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoOpenGenerarIA]);
 
     const remoteUnits = useProgrammingUnits(selectedCourseId);
     const createUnitMutation = useCreateProgrammingUnit();
@@ -330,6 +348,10 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                                     <PlusIcon className="w-4 h-4 mr-1"/>
                                     Nueva Unidad
                                 </button>
+                                <button onClick={() => setShowGenerarIA(true)} disabled={!!unitEditorState || showGenerarIA} className="inline-flex items-center justify-center py-2 px-3 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 disabled:cursor-not-allowed">
+                                    <SparklesIcon className="w-4 h-4 mr-1"/>
+                                    Generar con IA
+                                </button>
                             </div>
                         </div>
 
@@ -394,7 +416,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                 >
                      <UnitEditor
                         key={unitEditorState.mode === 'edit' ? unitEditorState.unit.id : 'create-new'}
-                        unit={unitEditorState.mode === 'edit' ? unitEditorState.unit : {
+                        unit={unitEditorState.mode === 'edit' ? unitEditorState.unit : unitEditorState.draft ?? {
                             id: 'new', courseId: selectedCourseId, name: '', sessions: 1,
                             sessionDetails: [{ description: '' }], linkedCriteriaIds: [], linkedBasicKnowledgeIds: [], startDate: ''
                         }}
@@ -405,6 +427,12 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                     />
                 </Modal>
             )}
+            <GenerarUnidadIAModal
+                isOpen={showGenerarIA}
+                courseId={selectedCourseId}
+                onClose={() => setShowGenerarIA(false)}
+                onDraftReady={draft => setUnitEditorState({ mode: 'create', draft })}
+            />
         </>
     );
 };

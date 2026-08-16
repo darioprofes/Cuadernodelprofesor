@@ -1,8 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import type { Course } from '../types';
 import PageHeader from './PageHeader';
 import Button from './Button';
+import Select from './Select';
 import Textarea from './Textarea';
 import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './Icons';
 import { useAnonimizar } from '../hooks/useAnonimizar';
@@ -102,13 +104,55 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+interface AiToolsViewProps {
+    courses: Course[];
+    // Navega a Materia → Planificación UD para ese curso y abre allí
+    // GenerarUnidadIAModal -- el formulario de revisión final vive en
+    // ProgrammingManager.tsx (reutiliza el mismo UnitEditor que la creación
+    // manual), no aquí. Este es solo un atajo para no tener que ir a elegir
+    // la materia primero "a mano".
+    onGenerarUnidadIA: (courseId: string) => void;
+}
+
+// Tarjeta de acceso rápido al generador de Unidad de programación (vive de
+// verdad en ProgrammingManager.tsx) -- aquí solo pide qué curso, porque
+// Herramientas IA no parte de una materia ya abierta como sí lo hace el
+// botón equivalente en Planificación UD.
+const GenerarUnidadCard: React.FC<{ courses: Course[]; onGenerar: (courseId: string) => void }> = ({ courses, onGenerar }) => {
+    const [courseId, setCourseId] = useState('');
+
+    return (
+        <div className="bg-white rounded-xl shadow-sm border p-6 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+                <SparklesIcon className="w-5 h-5 text-amber-500" />
+                <h3 className="font-semibold text-slate-800">Unidad de programación</h3>
+            </div>
+            <p className="text-sm text-slate-600">
+                Genera una unidad de programación a partir de tu material de teoría y el currículo real
+                de una materia.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+                <Select value={courseId} onChange={e => setCourseId(e.target.value)} className="max-w-xs">
+                    <option value="">Elige una materia...</option>
+                    {courses.map(c => (
+                        <option key={c.id} value={c.id}>{c.level} - {c.subject}</option>
+                    ))}
+                </Select>
+                <Button type="button" onClick={() => onGenerar(courseId)} disabled={!courseId}>
+                    Generar con IA
+                </Button>
+            </div>
+        </div>
+    );
+};
+
 // Anonimizador de documentos: pide el texto, lo anonimiza en el backend
 // (spaCy + regex, sin IA), espera a que el profesor pegue la respuesta de
 // una IA online (Claude, ChatGPT...) y reintegra los datos reales -- todo en
 // memoria del navegador. El mapa código -> dato real NUNCA se persiste (ni
 // en Postgres ni en localStorage): si se recarga la página o se pulsa
 // "Empezar de nuevo", se pierde para siempre, a propósito.
-const AiToolsView: React.FC = () => {
+const AiToolsView: React.FC<AiToolsViewProps> = ({ courses, onGenerarUnidadIA }) => {
     const [paso, setPaso] = useState<Paso>(1);
     const [documentoOriginal, setDocumentoOriginal] = useState('');
     const [resultado, setResultado] = useState<{ anonimizado: string; mapa: Record<string, string> } | null>(null);
@@ -232,10 +276,12 @@ const AiToolsView: React.FC = () => {
         <div className="flex flex-col gap-4 h-full">
             <PageHeader
                 title="Herramientas IA"
-                subtitle="Anonimizador de documentos"
+                subtitle="Anonimizador de documentos y generadores de prompts"
                 accent="sand"
                 icon={<SparklesIcon className="w-6 h-6" />}
             />
+
+            <GenerarUnidadCard courses={courses} onGenerar={onGenerarUnidadIA} />
 
             <div className="bg-white rounded-xl shadow-sm border p-6 flex flex-col gap-5 flex-1 overflow-y-auto">
                 <StepBar pasoActual={paso} />
