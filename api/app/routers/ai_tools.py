@@ -29,19 +29,6 @@ async def anonimizar_documento(datos: AnonimizarRequest):
     return {"anonimizado": anonimizado, "mapa": mapa}
 
 
-@router.post("/extraer-docx")
-async def extraer_docx(archivo: UploadFile = File(...)):
-
-    contenido_bytes = await archivo.read()
-
-    try:
-        texto = extraer_markdown_docx(contenido_bytes)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"No se ha podido leer el documento: {exc}")
-
-    return {"texto": texto}
-
-
 @router.post("/anonimizar-docx")
 async def anonimizar_docx_endpoint(archivo: UploadFile = File(...)):
 
@@ -49,6 +36,11 @@ async def anonimizar_docx_endpoint(archivo: UploadFile = File(...)):
 
     try:
         contenido_final, mapa = anonimizar_docx(contenido_bytes)
+        # Texto derivado del PROPIO .docx ya anonimizado (no una detección
+        # aparte sobre el original): así el texto para copiar y el .docx
+        # para descargar usan exactamente los mismos códigos, sin
+        # arriesgarse a generar dos mapas distintos para el mismo documento.
+        texto = extraer_markdown_docx(contenido_final)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"No se ha podido procesar el documento: {exc}")
 
@@ -57,6 +49,7 @@ async def anonimizar_docx_endpoint(archivo: UploadFile = File(...)):
     # documento entero) y no cabe con garantías en una cabecera HTTP.
     return {
         "anonimizado_docx_base64": base64.b64encode(contenido_final).decode("ascii"),
+        "anonimizado_texto": texto,
         "mapa": mapa,
     }
 
