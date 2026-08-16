@@ -1,23 +1,28 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import PageHeader from './PageHeader';
 import Button from './Button';
 import Textarea from './Textarea';
-import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon } from './Icons';
+import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon, ArrowUpTrayIcon } from './Icons';
 import { useAnonimizar } from '../hooks/useAnonimizar';
 import { PALETTE } from '../theme/palette';
 
 // La respuesta de la IA online suele venir en Markdown (negrita, títulos,
-// listas). El botón "Copiar" sigue copiando el texto fuente tal cual (por si
-// se pega en un sitio que también entiende Markdown); esto es solo para que
-// no se vean asteriscos y almohadillas sueltos en la vista previa.
+// listas, tablas si el documento original tenía alguna). El botón "Copiar"
+// sigue copiando el texto fuente tal cual (por si se pega en un sitio que
+// también entiende Markdown); esto es solo para que no se vean asteriscos,
+// almohadillas y barras verticales sueltos en la vista previa.
 const markdownClassName =
     '[&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1 ' +
     '[&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1 ' +
     '[&_h3]:text-sm [&_h3]:font-bold [&_h3]:mt-2 [&_h3]:mb-1 ' +
     '[&_p]:mb-2 [&_strong]:font-semibold [&_em]:italic ' +
     '[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2 ' +
-    '[&_li]:mb-0.5 [&_hr]:my-3 [&_hr]:border-slate-200';
+    '[&_li]:mb-0.5 [&_hr]:my-3 [&_hr]:border-slate-200 ' +
+    '[&_table]:border-collapse [&_table]:mb-2 ' +
+    '[&_th]:border [&_th]:border-slate-300 [&_th]:bg-slate-100 [&_th]:p-1.5 [&_th]:text-left ' +
+    '[&_td]:border [&_td]:border-slate-300 [&_td]:p-1.5';
 
 type Paso = 1 | 2 | 3 | 4;
 
@@ -82,8 +87,36 @@ const AiToolsView: React.FC = () => {
     const [resultado, setResultado] = useState<{ anonimizado: string; mapa: Record<string, string> } | null>(null);
     const [respuestaIA, setRespuestaIA] = useState('');
     const [documentoFinal, setDocumentoFinal] = useState('');
+    const [extrayendoDocx, setExtrayendoDocx] = useState(false);
+    const [errorExtraccion, setErrorExtraccion] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const anonimizarMutation = useAnonimizar();
+
+    // Extracción de .docx a Markdown (services/extraccion_docx.py): las
+    // tablas llegan como tabla Markdown, no como texto suelto, para que la
+    // IA online (y el paso 4 de aquí mismo) las entienda como tabla. Fuera
+    // de useAnonimizar/api.post porque es multipart, no JSON -- mismo
+    // patrón que la importación de horario en PDF (ImportScheduleModal.tsx).
+    const handleSubirDocx = async (file: File) => {
+        setExtrayendoDocx(true);
+        setErrorExtraccion(null);
+        try {
+            const formData = new FormData();
+            formData.append('archivo', file);
+            const response = await fetch('/api/ai-tools/extraer-docx', { method: 'POST', body: formData });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.detail || `Error HTTP ${response.status}`);
+            }
+            const data: { texto: string } = await response.json();
+            setDocumentoOriginal(data.texto);
+        } catch (err) {
+            setErrorExtraccion(err instanceof Error ? err.message : String(err));
+        } finally {
+            setExtrayendoDocx(false);
+        }
+    };
 
     const codigosSinResolver = useMemo(() => {
         if (paso !== 4) return [];
@@ -112,6 +145,7 @@ const AiToolsView: React.FC = () => {
         setResultado(null);
         setRespuestaIA('');
         setDocumentoFinal('');
+        setErrorExtraccion(null);
         anonimizarMutation.reset();
     };
 
@@ -130,17 +164,46 @@ const AiToolsView: React.FC = () => {
                 {paso === 1 && (
                     <div className="flex flex-col gap-3 flex-1">
                         <p className="text-sm text-slate-600">
-                            Pega aquí el documento con datos personales (acta de evaluación, informe...).
-                            Se detectarán nombres, DNI, direcciones, centro, cargos y nivel/grupo, y se
-                            sustituirán por códigos antes de que salga de este servidor.
+                            Pega aquí el documento con datos personales (acta de evaluación, informe...) o sube
+                            un .docx. Se detectarán nombres, DNI, direcciones, centro, cargos y nivel/grupo, y
+                            se sustituirán por códigos antes de que salga de este servidor.
                         </p>
+                        <div className="flex items-center gap-2">
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".docx"
+                                className="hidden"
+                                onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleSubirDocx(file);
+                                    e.target.value = '';
+                                }}
+                            />
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={extrayendoDocx}
+                            >
+                                <ArrowUpTrayIcon className="w-4 h-4" />
+                                {extrayendoDocx ? 'Extrayendo texto...' : 'Subir .docx'}
+                            </Button>
+                            <span className="text-xs text-slate-400">Las tablas se convierten a tabla, para que la IA las entienda como tal.</span>
+                        </div>
                         <Textarea
                             value={documentoOriginal}
                             onChange={e => setDocumentoOriginal(e.target.value)}
-                            rows={16}
+                            rows={14}
                             placeholder="Pega aquí el documento original..."
                             className="font-mono text-sm flex-1"
                         />
+                        {errorExtraccion && (
+                            <p className="text-sm text-red-600 flex items-center gap-1.5">
+                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                                {errorExtraccion}
+                            </p>
+                        )}
                         {anonimizarMutation.isError && (
                             <p className="text-sm text-red-600 flex items-center gap-1.5">
                                 <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
@@ -217,8 +280,8 @@ const AiToolsView: React.FC = () => {
                                 Todos los códigos se han resuelto correctamente.
                             </p>
                         )}
-                        <div className={`flex-1 overflow-y-auto text-sm border rounded-lg p-4 bg-slate-50 ${markdownClassName}`}>
-                            <ReactMarkdown>{documentoFinal}</ReactMarkdown>
+                        <div className={`flex-1 overflow-auto text-sm border rounded-lg p-4 bg-slate-50 ${markdownClassName}`}>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentoFinal}</ReactMarkdown>
                         </div>
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
