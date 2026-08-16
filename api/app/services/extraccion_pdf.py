@@ -10,6 +10,13 @@ import io
 
 import pdfplumber
 
+# Un documento de teoría real no debería acercarse a esto -- pensado para
+# cortar pronto normativas/libros enteros subidos por error. Probado en
+# real: un PDF de 543 páginas tardó varios minutos y llegó a consumir una
+# parte notable de la RAM del servidor (4 GiB compartidos entre 13
+# contenedores) antes de que nginx cortara la petición por timeout.
+_MAX_PAGINAS = 150
+
 
 def extraer_texto_pdf(contenido_bytes):
     """Devuelve (texto, num_paginas). Un PDF escaneado (sin capa de texto) da
@@ -22,6 +29,12 @@ def extraer_texto_pdf(contenido_bytes):
     with pdfplumber.open(io.BytesIO(contenido_bytes)) as pdf:
 
         num_paginas = len(pdf.pages)
+
+        if num_paginas > _MAX_PAGINAS:
+            raise ValueError(
+                f"El PDF tiene {num_paginas} páginas (máximo admitido: {_MAX_PAGINAS}). "
+                f"Esta herramienta es para documentos de teoría, no para normativas o libros completos."
+            )
 
         for i, pagina in enumerate(pdf.pages, start=1):
             texto = (pagina.extract_text() or "").strip()

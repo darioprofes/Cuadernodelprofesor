@@ -52,6 +52,8 @@ async def extraer_documento(archivo: UploadFile = File(...)):
 
     except HTTPException:
         raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"No se ha podido leer el documento: {exc}")
 
