@@ -40,12 +40,12 @@ async def extraer_documento(archivo: UploadFile = File(...)):
             aviso = None
 
         elif extension == ".pptx":
-            texto, num_unidades = extraer_texto_pptx(contenido_bytes)
-            aviso = _aviso_texto_escaso(texto, num_unidades, "diapositiva")
+            texto, num_unidades, con_vision, vision_fallida = extraer_texto_pptx(contenido_bytes)
+            aviso = _construir_aviso(texto, num_unidades, "diapositiva", con_vision, vision_fallida)
 
         elif extension == ".pdf":
-            texto, num_unidades = extraer_texto_pdf(contenido_bytes)
-            aviso = _aviso_texto_escaso(texto, num_unidades, "página")
+            texto, num_unidades, con_vision, vision_fallida = extraer_texto_pdf(contenido_bytes)
+            aviso = _construir_aviso(texto, num_unidades, "página", con_vision, vision_fallida)
 
         else:
             raise HTTPException(status_code=400, detail="Formato no admitido. Sube un .docx, .pptx o .pdf.")
@@ -73,9 +73,34 @@ def _aviso_texto_escaso(texto, num_unidades, nombre_unidad):
     return (
         f"El documento tiene muy poco texto extraíble por {nombre_unidad} "
         f"(puede que algunas sean imágenes o capturas). Revisa que no falte "
-        f"contenido antes de generar el prompt -- esta herramienta no hace "
-        f"OCR ni describe imágenes."
+        f"contenido antes de generar el prompt."
     )
+
+
+def _construir_aviso(texto, num_unidades, nombre_unidad, con_vision, vision_fallida):
+
+    partes = []
+
+    if con_vision:
+        lista = ", ".join(str(n) for n in con_vision)
+        partes.append(
+            f"Se ha usado IA de visión para leer {len(con_vision)} {nombre_unidad}(s) con poco "
+            f"texto ({lista}). Revisa que la transcripción sea correcta antes de continuar."
+        )
+
+    if vision_fallida:
+        lista = ", ".join(str(n) for n in vision_fallida)
+        partes.append(
+            f"No se ha podido usar IA de visión (servidor no disponible) para {len(vision_fallida)} "
+            f"{nombre_unidad}(s) con poco texto ({lista}). Revisa que no falte contenido."
+        )
+
+    if not con_vision:
+        aviso_generico = _aviso_texto_escaso(texto, num_unidades, nombre_unidad)
+        if aviso_generico:
+            partes.append(aviso_generico)
+
+    return " ".join(partes) if partes else None
 
 
 class GenerarUnidadRequest(BaseModel):

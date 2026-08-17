@@ -16,6 +16,15 @@
 import io
 
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+from services.llm_client import transcribir_imagen
+
+# Por debajo de esto, caracteres de texto extraído en la diapositiva, se
+# intenta el fallback de visión -- pero solo si además hay una imagen en la
+# diapositiva que transcribir (una diapositiva vacía de verdad, sin imagen,
+# no tiene nada que la visión pueda rescatar).
+_UMBRAL_CARACTERES_DIAPOSITIVA = 40
 
 
 def _celda_a_texto(cell):
@@ -38,16 +47,22 @@ def _tabla_a_markdown(table):
 
 
 def extraer_texto_pptx(contenido_bytes):
-    """Devuelve (texto, num_diapositivas). `num_diapositivas` sirve para la
-    heurística de "texto escaso" del router (texto/diapositiva muy bajo suele
-    indicar diapositivas hechas de imágenes, no de texto)."""
+    """Devuelve (texto, num_diapositivas, diapositivas_con_vision,
+    diapositivas_vision_fallida). Una diapositiva con poco texto y una
+    imagen grande (típico de una diapositiva escaneada pegada como imagen
+    de fondo) se intenta releer con el modelo de visión del ia-server --
+    aquí no hace falta renderizar la diapositiva entera, basta con la propia
+    imagen incrustada."""
 
     presentacion = Presentation(io.BytesIO(contenido_bytes))
     bloques = []
+    diapositivas_con_vision = []
+    diapositivas_vision_fallida = []
 
     for i, diapositiva in enumerate(presentacion.slides, start=1):
 
         partes = []
+        imagen_mayor = None
 
         for shape in diapositiva.shapes:
 
@@ -59,11 +74,30 @@ def extraer_texto_pptx(contenido_bytes):
             elif shape.has_table:
                 partes.append(_tabla_a_markdown(shape.table))
 
+            elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                if imagen_mayor is None or (shape.width * shape.height) > (imagen_mayor.width * imagen_mayor.height):
+                    imagen_mayor = shape
+
         if diapositiva.has_notes_slide:
             notas = diapositiva.notes_slide.notes_text_frame.text.strip()
             if notas:
                 partes.append(f"(Notas del orador: {notas})")
 
-        bloques.append(f"### Diapositiva {i}\n" + "\n\n".join(partes))
+        texto_diapositiva = "\n\n".join(partes)
 
-    return "\n\n".join(bloques), len(presentacion.slides)
+        if len(texto_diapositiva) < _UMBRAL_CARACTERES_DIAPOSITIVA and imagen_mayor is not None:
+            try:
+                imagen = imagen_mayor.image
+                resultado = transcribir_imagen(imagen.blob, mime_type=imagen.content_type)
+            except Exception:
+                resultado = None
+
+            if resultado:
+                texto_diapositiva = (texto_diapositiva + "\n\n" + resultado).strip()
+                diapositivas_con_vision.append(i)
+            else:
+                diapositivas_vision_fallida.append(i)
+
+        bloques.append(f"### Diapositiva {i}\n{texto_diapositiva}")
+
+    return "\n\n".join(bloques), len(presentacion.slides), diapositivas_con_vision, diapositivas_vision_fallida
