@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { ProgrammingUnit, SessionDetail, FinalProduct, FinalExam } from '../types';
+import type { Course, EvaluationTool, ProgrammingUnit, SessionDetail, FinalProduct, FinalExam } from '../types';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -8,12 +8,16 @@ import Textarea from './Textarea';
 import { ArrowUpTrayIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, SparklesIcon } from './Icons';
 import { CARACTERISTICAS_HABITUALES } from './ClassModal';
 import { RASGOS_DOCENTE_HABITUALES } from './settings/AcademicConfigManager';
+import { EvaluationToolEditorModal } from './EvaluationToolManager';
 import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
 import { usePreferences, useUpdatePreferences } from '../hooks/usePreferences';
+import { useEvaluationCriteria } from '../hooks/useEvaluationCriteria';
+import { useCreateEvaluationTool } from '../hooks/useEvaluationTools';
+import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 import { apiClassToLocal } from '../services/apiAdapters';
 
-type Paso = 1 | 2 | 3 | 4 | 5 | 6;
+type Paso = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 // Categorías del documento de diseño original -- selección múltiple + Otro.
 const TIPOS_ACTIVIDAD_DISPONIBLES = [
@@ -110,6 +114,7 @@ const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
 interface GenerarUnidadIAModalProps {
     isOpen: boolean;
     courseId: string;
+    courses: Course[];
     onClose: () => void;
     // Al terminar, este modal se cierra y entrega el borrador para que el
     // llamador lo abra en el propio UnitEditor de ProgrammingManager.tsx --
@@ -128,7 +133,7 @@ interface GenerarUnidadIAModalProps {
 type Modo = 'documento' | 'descripcion';
 type SesionesModo = 'fijo' | 'rango';
 
-const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, courseId, onClose, onDraftReady }) => {
+const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, courseId, courses, onClose, onDraftReady }) => {
     const [paso, setPaso] = useState<Paso>(1);
     const [modo, setModo] = useState<Modo>('documento');
     const [documento, setDocumento] = useState('');
@@ -226,6 +231,79 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     const [examenFormato, setExamenFormato] = useState<string>(FORMATOS_EXAMEN_DISPONIBLES[0]);
     const [examenFormatoDetalle, setExamenFormatoDetalle] = useState('');
 
+    // Paso 7 (tras procesar la respuesta): si el examen final tiene
+    // criterios, se ofrece generar directamente su instrumento "Examen
+    // criterial" con IA local antes de entregar el borrador -- evita tener
+    // que ir luego a la SA ya guardada a hacerlo aparte. Opcional siempre
+    // (el profesor puede saltarlo), y revisable antes de guardar como el
+    // resto de instrumentos generados con IA.
+    const remoteCriteria = useEvaluationCriteria(courseId);
+    const criteria = remoteCriteria.data ?? [];
+    const createToolMutation = useCreateEvaluationTool();
+    const iaLocalDisponible = useIaLocalDisponible();
+    const [draftPendiente, setDraftPendiente] = useState<ProgrammingUnit | null>(null);
+    const [generandoInstrumento, setGenerandoInstrumento] = useState(false);
+    const [instrumentoDraft, setInstrumentoDraft] = useState<EvaluationTool | null>(null);
+    const [errorInstrumento, setErrorInstrumento] = useState<string | null>(null);
+
+    const criteriosDelExamen = (unidad: { finalExam?: FinalExam }) =>
+        Array.from(new Set((unidad.finalExam?.bloques || []).flatMap(b => b.linkedCriteriaIds || [])));
+
+    const handleGenerarInstrumentoExamen = async () => {
+        if (!draftPendiente) return;
+        setGenerandoInstrumento(true);
+        setErrorInstrumento(null);
+        try {
+            const response = await fetch('/api/prompts/instrumento-evaluacion/generar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    course_id: courseId,
+                    criterion_ids: criteriosDelExamen(draftPendiente),
+                    tool_type: 'criterial_exam',
+                    contexto: `Examen final${draftPendiente.finalExam?.formato ? `: ${draftPendiente.finalExam.formato}` : ''} de la SA "${draftPendiente.name}"`,
+                }),
+            });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.detail || `Error HTTP ${response.status}`);
+            }
+            const data: { instrumento: Omit<EvaluationTool, 'id'>; codigosDescartados: string[] } = await response.json();
+            if (data.codigosDescartados.length > 0) {
+                window.alert(
+                    `La IA usó ${data.codigosDescartados.length} código(s) de criterio que no existen en este curso ` +
+                    `y se han descartado: ${data.codigosDescartados.join(', ')}. Revisa el instrumento antes de guardar.`
+                );
+            }
+            setInstrumentoDraft({ ...data.instrumento, id: 'draft' } as EvaluationTool);
+        } catch (err) {
+            setErrorInstrumento(err instanceof Error ? err.message : String(err));
+        } finally {
+            setGenerandoInstrumento(false);
+        }
+    };
+
+    const handleGuardarInstrumentoExamen = async (tool: EvaluationTool) => {
+        const { id: _unused, ...data } = tool;
+        const creado = await createToolMutation.mutateAsync(data);
+        if (draftPendiente) {
+            const draftFinal: ProgrammingUnit = {
+                ...draftPendiente,
+                finalExam: { ...(draftPendiente.finalExam as FinalExam), evaluationToolId: creado.id },
+            };
+            setInstrumentoDraft(null);
+            handleClose();
+            onDraftReady(draftFinal);
+        }
+    };
+
+    const handleSaltarInstrumentoExamen = () => {
+        if (draftPendiente) {
+            handleClose();
+            onDraftReady(draftPendiente);
+        }
+    };
+
     const anadirActividadObligatoria = () => {
         const texto = nuevaObligatoriaTexto.trim();
         if (!texto) return;
@@ -273,6 +351,9 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
         setExamenIncluido(false);
         setExamenFormato(FORMATOS_EXAMEN_DISPONIBLES[0]);
         setExamenFormatoDetalle('');
+        setDraftPendiente(null);
+        setInstrumentoDraft(null);
+        setErrorInstrumento(null);
     };
 
     const handleClose = () => {
@@ -403,8 +484,16 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                 startDate: '',
             };
 
-            handleClose();
-            onDraftReady(draft);
+            // Si el examen final tiene criterios, se ofrece generar su
+            // instrumento (Examen criterial) antes de entregar el borrador
+            // -- ver Paso 7. Si no, se entrega directo como hasta ahora.
+            if (draft.finalExam?.incluido && criteriosDelExamen(draft).length > 0 && iaLocalDisponible) {
+                setDraftPendiente(draft);
+                setPaso(7);
+            } else {
+                handleClose();
+                onDraftReady(draft);
+            }
         } catch (err) {
             setErrorPaso3(err instanceof Error ? err.message : String(err));
         } finally {
@@ -417,7 +506,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                     <SparklesIcon className="w-4 h-4" />
-                    Paso {paso} de 6
+                    {paso <= 6 ? `Paso ${paso} de 6` : 'Instrumento del examen'}
                 </div>
 
                 {paso === 1 && (
@@ -966,6 +1055,47 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                 {procesando ? 'Procesando...' : 'Continuar a revisión'}
                             </Button>
                         </div>
+                    </div>
+                )}
+
+                {paso === 7 && draftPendiente && (
+                    <div className="flex flex-col gap-3">
+                        {!instrumentoDraft ? (
+                            <>
+                                <p className="text-sm text-slate-600">
+                                    El examen final tiene {criteriosDelExamen(draftPendiente).length} criterio(s) de
+                                    evaluación vinculado(s). ¿Generar también su instrumento (Examen criterial) con IA
+                                    local antes de guardar la SA?
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                    Puede tardar cerca de un minuto. El resultado se abre para revisar y editar antes
+                                    de guardar.
+                                </p>
+                                {errorInstrumento && (
+                                    <p className="text-sm text-red-600 flex items-center gap-1.5">
+                                        <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                                        {errorInstrumento}
+                                    </p>
+                                )}
+                                <div className="flex justify-between">
+                                    <Button type="button" variant="secondary" onClick={handleSaltarInstrumentoExamen}>
+                                        Continuar sin generarlo
+                                    </Button>
+                                    <Button type="button" onClick={handleGenerarInstrumentoExamen} disabled={generandoInstrumento}>
+                                        {generandoInstrumento ? 'Generando... (puede tardar un poco)' : 'Generar examen criterial'}
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            <EvaluationToolEditorModal
+                                isOpen={true}
+                                onClose={() => setInstrumentoDraft(null)}
+                                onSave={handleGuardarInstrumentoExamen}
+                                toolToEdit={instrumentoDraft}
+                                criteria={criteria}
+                                courses={courses}
+                            />
+                        )}
                     </div>
                 )}
             </div>

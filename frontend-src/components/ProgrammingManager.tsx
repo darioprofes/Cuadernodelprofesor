@@ -15,6 +15,7 @@ import { useSpecificCompetences } from '../hooks/useSpecificCompetences';
 import { useEvaluationTools, useCreateEvaluationTool } from '../hooks/useEvaluationTools';
 import { EvaluationToolEditorModal } from './EvaluationToolManager';
 import GenerarInstrumentoIAModal from './GenerarInstrumentoIAModal';
+import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 
 const EVALUATION_TOOL_TYPE_LABEL: Record<EvaluationTool['type'], string> = {
     checklist: 'Lista de cotejo',
@@ -103,6 +104,7 @@ const InstrumentoSelectConIA: React.FC<{
     const [showGenerar, setShowGenerar] = useState(false);
     const [draft, setDraft] = useState<EvaluationTool | null>(null);
     const createToolMutation = useCreateEvaluationTool();
+    const iaLocalDisponible = useIaLocalDisponible();
 
     const handleGuardarDraft = async (tool: EvaluationTool) => {
         const { id: _unused, ...data } = tool;
@@ -117,8 +119,9 @@ const InstrumentoSelectConIA: React.FC<{
             <button
                 type="button"
                 onClick={() => setShowGenerar(true)}
-                title="Generar instrumento con IA local a partir de los criterios vinculados aquí"
-                className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-md flex-shrink-0"
+                disabled={!iaLocalDisponible}
+                title={iaLocalDisponible ? 'Generar instrumento con IA local a partir de los criterios vinculados aquí' : 'IA local no disponible ahora mismo'}
+                className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-md flex-shrink-0 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             >
                 <SparklesIcon className="w-4 h-4" />
             </button>
@@ -614,6 +617,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
             <GenerarUnidadIAModal
                 isOpen={showGenerarIA}
                 courseId={selectedCourseId}
+                courses={courses}
                 onClose={() => setShowGenerarIA(false)}
                 onDraftReady={draft => setUnitEditorState({ mode: 'create', draft })}
             />

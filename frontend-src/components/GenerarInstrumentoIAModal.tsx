@@ -4,6 +4,7 @@ import type { EvaluationTool } from '../types';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
+import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 
 interface GenerarInstrumentoIAModalProps {
     isOpen: boolean;
@@ -38,6 +39,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
     const [numNiveles, setNumNiveles] = useState(4);
     const [generando, setGenerando] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const iaLocalDisponible = useIaLocalDisponible();
 
     const tipoInfo = TIPOS.find(t => t.value === tipo)!;
     const sinCriterios = linkedCriteriaIds.length === 0;
@@ -95,7 +97,11 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
     return (
         <Modal isOpen={isOpen} onClose={handleClose} title="Generar instrumento con IA local" size="lg">
             <div className="flex flex-col gap-4">
-                {sinCriterios ? (
+                {!iaLocalDisponible ? (
+                    <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        El servidor de IA local no está disponible ahora mismo -- inténtalo de nuevo en unos minutos.
+                    </p>
+                ) : sinCriterios ? (
                     <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
                         Este elemento todavía no tiene criterios de evaluación vinculados -- vincula al menos uno
                         antes de generar el instrumento.
@@ -127,7 +133,8 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
 
                         <p className="text-xs text-slate-500">
                             Se generará a partir de {linkedCriteriaIds.length} criterio(s) de evaluación vinculado(s)
-                            a este elemento. El resultado se abre para revisar y editar antes de guardar.
+                            a este elemento. El resultado se abre para revisar y editar antes de guardar. Puede
+                            tardar cerca de un minuto.
                         </p>
                     </>
                 )}
@@ -138,8 +145,8 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
 
                 <div className="flex justify-end gap-2 pt-2 border-t">
                     <Button type="button" variant="secondary" onClick={handleClose}>Cancelar</Button>
-                    <Button type="button" onClick={handleGenerar} disabled={sinCriterios || generando}>
-                        {generando ? 'Generando...' : 'Generar'}
+                    <Button type="button" onClick={handleGenerar} disabled={!iaLocalDisponible || sinCriterios || generando}>
+                        {generando ? 'Generando... (puede tardar un poco)' : 'Generar'}
                     </Button>
                 </div>
             </div>
