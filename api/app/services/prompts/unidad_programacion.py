@@ -307,6 +307,16 @@ CRITERIOS DE EVALUACIÓN (usa solo estos códigos, ninguno más):
 <tarea>
 {instruccion_tarea}
 
+Antes de diseñar nada más, decide estas dos cosas -- son las que dan sentido al resto:
+1. Una SITUACIÓN DE PARTIDA: un escenario, problema o pregunta real y motivadora que dé \
+propósito a toda la unidad (no una lista de contenidos, sino algo que el alumnado pueda \
+reconocer como relevante).
+2. Un PRODUCTO FINAL: qué va a producir o conseguir el alumnado al terminar la unidad que \
+demuestre lo aprendido, coherente con esa situación de partida -- no algo añadido al final \
+sin relación con ella.
+El resto de la unidad (sesiones y actividades) tiene que construir progresivamente hacia \
+ese producto final, dentro de esa situación.
+
 Reparte el contenido en sesiones de clase, cubriendo todo el contenido de principio a fin, \
 en el orden que tenga más sentido pedagógico. {instruccion_sesiones}
 {"Ten en cuenta las características del grupo dadas arriba al diseñar las sesiones." if caracteristicas_grupo else ""}
@@ -326,6 +336,7 @@ Además, para la unidad completa:
 - Los saberes básicos que activa en conjunto (de la lista dada, cero o más -- dejar vacío si \
 ninguno encaja de verdad es preferible a forzar uno).
 - Los criterios de evaluación que activa en conjunto (mismo criterio: solo de la lista dada).
+- Los criterios de evaluación que evidencia el producto final (de la lista dada, cero o más).
 
 No cites normativa, decretos ni URLs. No inventes códigos curriculares fuera de \
 las dos listas dadas arriba -- si lo haces, esos códigos se descartarán al guardar \
@@ -337,6 +348,13 @@ Devuelve ÚNICAMENTE un JSON con esta forma exacta, sin texto antes ni después:
 
 {{
   "name": "Nombre breve de la unidad",
+  "context": "La situación de partida: el escenario, problema o pregunta real que da sentido a la unidad",
+  "finalProduct": {{
+    "incluido": true,
+    "tipo": "Tipo de producto (p.ej. Infografía, Vídeo, Maqueta, Dossier, Exposición oral...)",
+    "descripcion": "Descripción del producto final, coherente con la situación de partida",
+    "linkedCriteriaIds": ["códigos de criterios que evidencia el producto"]
+  }},
   "sessions": <número de sesiones>,
   "sessionDetails": [
     {{
@@ -471,10 +489,20 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
             "actividades": actividades,
         })
 
+    producto_datos = datos.get("finalProduct") or {}
+    final_product = {
+        "incluido": bool(producto_datos.get("incluido")),
+        "tipo": producto_datos.get("tipo") or None,
+        "descripcion": _reintegrar_texto(producto_datos.get("descripcion", ""), mapa) or None,
+        "linkedCriteriaIds": _mapear_criterios(producto_datos.get("linkedCriteriaIds")),
+    }
+
     unidad = {
         "name": _reintegrar_texto(datos.get("name", ""), mapa),
+        "context": _reintegrar_texto(datos.get("context", ""), mapa),
         "sessions": datos.get("sessions", len(session_details)),
         "sessionDetails": session_details,
+        "finalProduct": final_product,
         "linkedBasicKnowledgeIds": ids_saberes,
         "linkedCriteriaIds": ids_criterios,
         # Derivadas de los criterios realmente usados (ver competencias_usadas

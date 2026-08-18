@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { ProgrammingUnit, SessionDetail } from '../types';
+import type { ProgrammingUnit, SessionDetail, FinalProduct } from '../types';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -296,8 +296,10 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             const data: {
                 unidad: {
                     name: string;
+                    context: string;
                     sessions: number;
                     sessionDetails: SessionDetail[];
+                    finalProduct: FinalProduct;
                     linkedBasicKnowledgeIds: string[];
                     linkedCriteriaIds: string[];
                     linkedSpecificCompetenceIds: string[];
@@ -321,12 +323,12 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                 courseId,
                 name: data.unidad.name,
                 sessions: data.unidad.sessions,
-                context: '',
+                context: data.unidad.context,
                 sessionDetails: data.unidad.sessionDetails,
                 linkedCriteriaIds: data.unidad.linkedCriteriaIds,
                 linkedBasicKnowledgeIds: data.unidad.linkedBasicKnowledgeIds,
                 linkedSpecificCompetenceIds: data.unidad.linkedSpecificCompetenceIds,
-                finalProduct: { incluido: false },
+                finalProduct: data.unidad.finalProduct,
                 finalExam: { incluido: false },
                 startDate: '',
             };
