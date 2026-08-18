@@ -15,7 +15,7 @@ interface GradeEntryModalProps {
   assignment: Assignment;
   grade: Grade | null;
   criteriaList: EvaluationCriterion[];
-  onSave: (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string> }, nextStudent?: boolean) => void;
+  onSave: (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string | number> }, nextStudent?: boolean) => void;
   evaluationTools: EvaluationTool[];
   allAssignments: Assignment[];
   students: Student[]; // Added to know the list for navigation
@@ -25,7 +25,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
   const { isOpen, onClose, student, assignment, grade, criteriaList, onSave, evaluationTools, students } = props;
   
   const [scores, setScores] = useState<Record<string, number | null>>({});
-  const [toolResults, setToolResults] = useState<Record<string, boolean | string>>({});
+  const [toolResults, setToolResults] = useState<Record<string, boolean | string | number>>({});
   const [singleGrade, setSingleGrade] = useState<string>('');
   
   const currentStudentIndex = useMemo(() => students.findIndex(s => s.id === student.id), [students, student.id]);
@@ -114,7 +114,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
     }
   };
 
-  const handleToolResultChange = (itemId: string, value: boolean | string) => {
+  const handleToolResultChange = (itemId: string, value: boolean | string | number) => {
       setToolResults(prev => ({ ...prev, [itemId]: value }));
   };
 
@@ -288,6 +288,23 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
                                     <span className="font-semibold text-sm">{level.name} ({level.points} pts)</span>
                                 </label>
                             ))}
+                        </div>
+                    )}
+                    {evaluationTool.type === 'criterial_exam' && (
+                        <div className="flex items-center gap-2">
+                            <Input
+                                type="number" step="0.25" min="0" max={item.weight}
+                                value={typeof toolResults[item.id] === 'number' ? toolResults[item.id] as number : ''}
+                                onChange={e => {
+                                    const raw = e.target.value;
+                                    if (raw === '') { handleToolResultChange(item.id, ''); return; }
+                                    const parsed = parseFloat(raw.replace(',', '.'));
+                                    if (!isNaN(parsed)) handleToolResultChange(item.id, Math.max(0, Math.min(parsed, item.weight)));
+                                }}
+                                className="w-24 text-center"
+                                placeholder="-"
+                            />
+                            <span className="text-sm text-slate-500">/ {item.weight} pts</span>
                         </div>
                     )}
                 </div>

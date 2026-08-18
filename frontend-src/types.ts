@@ -166,7 +166,22 @@ export interface Rubric {
   items: RubricItem[];
 }
 
-export type EvaluationTool = Checklist | RatingScale | Rubric;
+// Examen criterial: cada ítem es una pregunta, `weight` se reutiliza como
+// sus puntos máximos (en vez de una importancia abstracta como en
+// checklist/escala) -- el profesor introduce los puntos obtenidos por
+// pregunta (no un check ni un nivel) y el motor de cálculo ya existente
+// (calculateToolGlobalScore/calculateCriterionScoresFromTool) deriva solo
+// la nota global Y la nota por criterio, con la misma media ponderada por
+// `weight` que ya usan los demás instrumentos -- sin `levels`, no hace
+// falta ninguno.
+export interface CriterialExam {
+  id: string;
+  type: 'criterial_exam';
+  name: string;
+  items: BaseEvaluationItem[];
+}
+
+export type EvaluationTool = Checklist | RatingScale | Rubric | CriterialExam;
 
 // --- Fin de Tipos de Instrumentos ---
 
@@ -183,7 +198,7 @@ export interface Assignment {
   evaluationPeriodId: string;
   date?: string; // YYYY-MM-DD
 
-  evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric';
+  evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam';
   evaluationToolId?: string; // Links to an EvaluationTool's id
 
   linkedCriteria: LinkedCriterion[]; // Usado solo para 'direct_grade'
@@ -203,7 +218,7 @@ export interface Grade {
   studentId: string;
   assignmentId: string;
   criterionScores: Record<string, number | null>; // { criterionId: score }. Siempre se calcula y se guarda.
-  toolResults?: Record<string, boolean | string>; // { itemId: checked } for checklist, { itemId: levelId } for scale/rubric
+  toolResults?: Record<string, boolean | string | number>; // { itemId: checked } for checklist, { itemId: levelId } for scale/rubric, { itemId: puntosObtenidos } for examen criterial
 }
 
 export interface Course {

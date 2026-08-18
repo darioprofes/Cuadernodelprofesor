@@ -2,7 +2,7 @@ import type { ClassData, EvaluationTool } from '../../types';
 
 export const calculateToolGlobalScore = (
     tool: EvaluationTool,
-    toolResults: Record<string, boolean | string>
+    toolResults: Record<string, boolean | string | number>
 ): number => {
     let totalPoints = 0;
     let maxPoints = 0;
@@ -16,6 +16,15 @@ export const calculateToolGlobalScore = (
             maxPoints += item.weight;
             if (result === true) {
                 totalPoints += item.weight;
+            }
+        } else if (tool.type === 'criterial_exam') {
+            // Weight = puntos máximos de la pregunta (no una importancia
+            // abstracta). result = puntos obtenidos, acotados a [0, weight]
+            // por si se escribe algo fuera de rango.
+            maxPoints += item.weight;
+            const puntos = typeof result === 'number' ? result : Number(result);
+            if (!isNaN(puntos)) {
+                totalPoints += Math.max(0, Math.min(puntos, item.weight));
             }
         } else if (tool.type === 'rating_scale' || tool.type === 'rubric') {
             const levelPoints = tool.levels.map(l => l.points);
@@ -40,7 +49,7 @@ export const calculateToolGlobalScore = (
 
 export const calculateCriterionScoresFromTool = (
     tool: EvaluationTool,
-    toolResults: Record<string, boolean | string>
+    toolResults: Record<string, boolean | string | number>
 ): Record<string, number | null> => {
     const criterionTotals: Record<string, { weightedSum: number; totalWeight: number }> = {};
 
@@ -51,6 +60,11 @@ export const calculateCriterionScoresFromTool = (
         if (tool.type === 'checklist') {
             // Checked = 10, Unchecked = 0
             itemScore = result === true ? 10 : 0;
+        } else if (tool.type === 'criterial_exam') {
+            const puntos = typeof result === 'number' ? result : Number(result);
+            if (!isNaN(puntos) && item.weight > 0) {
+                itemScore = (Math.max(0, Math.min(puntos, item.weight)) / item.weight) * 10;
+            }
         } else if (tool.type === 'rating_scale' || tool.type === 'rubric') {
             const levelId = result as string;
             const level = tool.levels.find(l => l.id === levelId);

@@ -231,7 +231,7 @@ export const apiAssignmentToLocal = (a: ApiAssignment): Assignment => ({
 // ============================================================
 
 export const encodeGradeInput = (
-    data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string>; criterionScores?: Record<string, number | null> },
+    data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string | number>; criterionScores?: Record<string, number | null> },
 ): ApiGradeInput => {
     if ('toolResults' in data) {
         // Instrumento: el crudo es lo único que hace falta guardar,
@@ -265,7 +265,7 @@ export const decodeGrade = (
     evaluationTools: EvaluationTool[],
 ): Grade => {
     if (assignment.evaluationMethod !== 'direct_grade') {
-        const toolResults = (apiGrade.toolResults ?? undefined) as Record<string, boolean | string> | undefined;
+        const toolResults = (apiGrade.toolResults ?? undefined) as Record<string, boolean | string | number> | undefined;
         let criterionScores: Record<string, number | null> = {};
         if (toolResults && Object.keys(toolResults).length > 0) {
             const tool = evaluationTools.find(t => t.id === assignment.evaluationToolId);

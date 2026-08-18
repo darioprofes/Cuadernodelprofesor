@@ -22,7 +22,7 @@ interface ToolItemDraft extends BaseEvaluationItem {
 interface ToolDraft {
     id?: string;
     name: string;
-    type: 'checklist' | 'rating_scale' | 'rubric';
+    type: 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam';
     items: ToolItemDraft[];
     levels?: EvaluationLevel[];
 }
@@ -226,6 +226,7 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     const checklists = evaluationTools.filter(t => t.type === 'checklist');
     const ratingScales = evaluationTools.filter(t => t.type === 'rating_scale');
     const rubrics = evaluationTools.filter(t => t.type === 'rubric');
+    const criterialExams = evaluationTools.filter(t => t.type === 'criterial_exam');
 
     return (
         <div>
@@ -285,6 +286,7 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                 <ToolSection type="checklist" tools={checklists} onEdit={setToolToEdit} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
                 <ToolSection type="rating_scale" tools={ratingScales} onEdit={setToolToEdit} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
                 <ToolSection type="rubric" tools={rubrics} onEdit={setToolToEdit} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="criterial_exam" tools={criterialExams} onEdit={setToolToEdit} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
             </div>
 
             {isModalOpen && (
@@ -301,11 +303,12 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     );
 };
 
-const ToolSection: React.FC<{ type: 'checklist' | 'rating_scale' | 'rubric', tools: EvaluationTool[], onEdit: (tool: EvaluationTool) => void, onDelete: (id: string) => void, onOpenModal: () => void }> = ({ type, tools, onEdit, onDelete, onOpenModal }) => {
+const ToolSection: React.FC<{ type: 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam', tools: EvaluationTool[], onEdit: (tool: EvaluationTool) => void, onDelete: (id: string) => void, onOpenModal: () => void }> = ({ type, tools, onEdit, onDelete, onOpenModal }) => {
     const title = {
         checklist: 'Listas de Cotejo',
         rating_scale: 'Escalas de Valoración',
-        rubric: 'Rúbricas'
+        rubric: 'Rúbricas',
+        criterial_exam: 'Exámenes Criteriales'
     }[type];
 
     return (
@@ -348,11 +351,11 @@ const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, onClose
         setTool(prev => ({ ...prev, [field]: value }));
     };
 
-    const handleTypeChange = (newType: 'checklist' | 'rating_scale' | 'rubric') => {
+    const handleTypeChange = (newType: 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam') => {
         setTool(prev => {
             if (prev.type === newType) return prev;
-            const baseProps = { 
-                name: prev.name, 
+            const baseProps = {
+                name: prev.name,
                 items: prev.items.map(item => 'levelDescriptions' in item ? { id: item.id, description: item.description, weight: item.weight, linkedCriteriaIds: item.linkedCriteriaIds } : item)
             };
 
@@ -361,12 +364,15 @@ const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, onClose
             }
             if (newType === 'rubric') {
                 const defaultLevel = { id: `level-${Date.now()}`, name: 'Nivel 1', points: 1 };
-                return { 
-                    ...baseProps, 
-                    type: 'rubric', 
+                return {
+                    ...baseProps,
+                    type: 'rubric',
                     levels: [defaultLevel],
                     items: baseProps.items.map(item => ({ ...item, levelDescriptions: { [defaultLevel.id]: '' } }))
                 };
+            }
+            if (newType === 'criterial_exam') {
+                return { ...baseProps, type: 'criterial_exam' };
             }
             return { ...baseProps, type: 'checklist' };
         });
@@ -393,13 +399,14 @@ const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, onClose
                         <label className="block text-sm font-medium text-slate-700">Tipo de Instrumento</label>
                         <Select
                             value={tool.type}
-                            onChange={e => handleTypeChange(e.target.value as 'checklist' | 'rating_scale' | 'rubric')}
+                            onChange={e => handleTypeChange(e.target.value as 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam')}
                             disabled={!!toolToEdit}
                             className="mt-1"
                         >
                             <option value="checklist">Lista de Cotejo</option>
                             <option value="rating_scale">Escala de Valoración</option>
                             <option value="rubric">Rúbrica</option>
+                            <option value="criterial_exam">Examen criterial</option>
                         </Select>
                     </div>
                 </div>
@@ -556,7 +563,7 @@ const ToolEditorFields: React.FC<ToolEditorFieldsProps> = ({tool, setTool, crite
         )}
 
         <div className="p-3 border rounded-lg bg-slate-50/50">
-            <h4 className="font-semibold mb-2">Ítems a Evaluar</h4>
+            <h4 className="font-semibold mb-2">{tool.type === 'criterial_exam' ? 'Preguntas del examen' : 'Ítems a Evaluar'}</h4>
             <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
                 {tool.items.map((item, index) => (
                     <ItemEditor
@@ -566,10 +573,13 @@ const ToolEditorFields: React.FC<ToolEditorFieldsProps> = ({tool, setTool, crite
                         onRemove={() => handleRemoveItem(index)}
                         criteria={criteria}
                         courses={courses}
+                        pesoLabel={tool.type === 'criterial_exam' ? 'Puntos máximos:' : 'Ponderación:'}
                     />
                 ))}
             </div>
-            <button type="button" onClick={handleAddItem} className={`mt-2 text-sm font-semibold ${linkClassName}`}>+ Añadir ítem</button>
+            <button type="button" onClick={handleAddItem} className={`mt-2 text-sm font-semibold ${linkClassName}`}>
+                + {tool.type === 'criterial_exam' ? 'Añadir pregunta' : 'Añadir ítem'}
+            </button>
         </div>
         </>
     );
@@ -581,10 +591,11 @@ interface ItemEditorProps {
     onRemove: () => void;
     criteria: EvaluationCriterion[];
     courses: Course[];
+    pesoLabel?: string;
 }
 
-// Item Editor (for checklist and rating scale)
-const ItemEditor: React.FC<ItemEditorProps> = ({ item, onItemChange, onRemove, criteria, courses }) => {
+// Item Editor (for checklist, rating scale y examen criterial)
+const ItemEditor: React.FC<ItemEditorProps> = ({ item, onItemChange, onRemove, criteria, courses, pesoLabel = 'Ponderación:' }) => {
     const [isCriteriaModalOpen, setIsCriteriaModalOpen] = useState(false);
     return (
         <div className="p-3 border rounded bg-white flex items-start gap-2">
@@ -597,7 +608,7 @@ const ItemEditor: React.FC<ItemEditorProps> = ({ item, onItemChange, onRemove, c
                     className="w-full"
                 />
                 <div className="flex items-center gap-2">
-                    <label className="text-sm">Ponderación:</label>
+                    <label className="text-sm">{pesoLabel}</label>
                     <Input
                         type="number"
                         min="0"

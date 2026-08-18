@@ -18,6 +18,7 @@ const EVALUATION_TOOL_TYPE_LABEL: Record<EvaluationTool['type'], string> = {
     checklist: 'Lista de cotejo',
     rating_scale: 'Escala',
     rubric: 'Rúbrica',
+    criterial_exam: 'Examen criterial',
 };
 
 // Selector-buscador de un EvaluationTool real (Instrumentos de Evaluación) --

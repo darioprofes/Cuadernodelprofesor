@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ClassData, Category, Assignment, Grade, EvaluationCriterion, Checklist, Rubric } from '../types';
+import type { ClassData, Category, Assignment, Grade, EvaluationCriterion, Checklist, Rubric, CriterialExam } from '../types';
 import {
     getImportanceFactor,
     calculateCriterionScoresFromTool,
@@ -74,6 +74,32 @@ describe('calculateCriterionScoresFromTool', () => {
         };
         const scores = calculateCriterionScoresFromTool(tool, { i1: 'l2' });
         expect(scores.c1).toBe(10); // 4/4 max points -> 10
+    });
+
+    it('scores an examen criterial question by points obtained over its max (weight)', () => {
+        const tool: CriterialExam = {
+            id: 't3', type: 'criterial_exam', name: 'Examen',
+            items: [
+                { id: 'i1', description: 'Pregunta 1', weight: 2, linkedCriteriaIds: ['c1'] },
+                { id: 'i2', description: 'Pregunta 2', weight: 4, linkedCriteriaIds: ['c1'] },
+                { id: 'i3', description: 'Pregunta 3', weight: 4, linkedCriteriaIds: ['c2'] },
+            ],
+        };
+        // c1: pregunta de 2 pts con 1 obtenido (5/10) y pregunta de 4 pts con 4 obtenidos (10/10)
+        // media ponderada por weight: (5*2 + 10*4) / (2+4) = 50/6 = 8.333...
+        const scores = calculateCriterionScoresFromTool(tool, { i1: 1, i2: 4, i3: 2 });
+        expect(scores.c1).toBeCloseTo(8.333, 2);
+        // c2: pregunta de 4 pts con 2 obtenidos -> 5/10
+        expect(scores.c2).toBe(5);
+    });
+
+    it('clamps out-of-range exam points instead of producing a score outside 0-10', () => {
+        const tool: CriterialExam = {
+            id: 't4', type: 'criterial_exam', name: 'Examen',
+            items: [{ id: 'i1', description: 'Pregunta 1', weight: 2, linkedCriteriaIds: ['c1'] }],
+        };
+        const scores = calculateCriterionScoresFromTool(tool, { i1: 99 });
+        expect(scores.c1).toBe(10);
     });
 });
 

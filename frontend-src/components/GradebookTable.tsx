@@ -568,7 +568,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     setIsGradeEntryModalOpen(true);
   };
 
-  const handleSaveGrade = async (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string> }, nextStudent: boolean = false) => {
+  const handleSaveGrade = async (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string | number> }, nextStudent: boolean = false) => {
     const assignment = classData.assignments.find(a => a.id === assignmentId);
     if (!assignment) return;
 
