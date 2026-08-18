@@ -7,13 +7,13 @@
 # del curso) en el prompt, nunca dejar que la IA invente nada, y validar
 # cualquier código que devuelva contra lo que existe de verdad en Postgres.
 
-import asyncio
-import json
+import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from services.auth import require_auth
@@ -210,36 +210,60 @@ class GenerarInstrumentoRequest(BaseModel):
     num_niveles: Optional[int] = None
 
 
-@router.post("/instrumento-evaluacion/generar")
-async def generar_prompt_instrumento(datos: GenerarInstrumentoRequest):
+# La generación real puede tardar cerca de un minuto (llamada al ia-server).
+# Se probó primero con una respuesta en streaming (espacios de relleno
+# mientras se espera) para mantener viva una única conexión larga, pero en
+# real seguía dando 502 -- Authentik corta la conexión con "profe" antes de
+# tiempo (visto en los logs de NPM: "upstream prematurely closed connection
+# while reading response header", y Authentik sin loggear nada esa ventana,
+# 2026-08-19) y Cloudflare tiene su propio límite duro (~100s) que tampoco se
+# puede ajustar. En vez de perseguir el timeout más corto entre tres proxies
+# que no controlamos del todo, el POST devuelve un job_id al instante (nunca
+# tarda más de lo que tarda construir el prompt) y el frontend pregunta el
+# estado cada pocos segundos -- ninguna petición HTTP individual dura más de
+# un segundo, así que da igual el timeout de cada capa.
+_trabajos_instrumento: dict[str, dict] = {}
+_trabajos_lock = threading.Lock()
+_TTL_TRABAJO_SEGUNDOS = 3600
 
-    # La generación real puede tardar cerca de un minuto (llamada al
-    # ia-server) -- una respuesta normal de una vez deja la conexión sin
-    # mandar ni un byte todo ese rato, y cualquier proxy intermedio (NPM,
-    # Authentik, Cloudflare) puede darla por muerta y cortarla con un 502
-    # antes de que profe-api termine (probado en real, 2026-08-19). Un
-    # espacio es whitespace JSON válido -- no rompe el JSON.parse() del
-    # frontend aunque se acumulen varios delante -- así que aquí se manda
-    # uno cada pocos segundos mientras se espera, para que SIEMPRE haya
-    # bytes fluyendo y ningún proxy tenga motivo para cortar (su
-    # "read timeout" mide tiempo ENTRE lecturas, no la duración total).
-    # Como la respuesta ya empezó a mandarse con código 200 antes de saber
-    # si hubo error, ya no se puede cambiar el status HTTP a medias -- el
-    # error se manda dentro del JSON final ({"detail": "..."}) y el
-    # frontend lo distingue mirando esa clave, no el código HTTP.
-    async def flujo():
-        bucle = asyncio.get_running_loop()
-        tarea = bucle.run_in_executor(
-            None, generar_instrumento,
+
+def _limpiar_trabajos_viejos():
+    limite = time.monotonic() - _TTL_TRABAJO_SEGUNDOS
+    for job_id in [jid for jid, t in _trabajos_instrumento.items() if t["creado"] < limite]:
+        del _trabajos_instrumento[job_id]
+
+
+def _ejecutar_generacion_instrumento(job_id: str, datos: GenerarInstrumentoRequest):
+    try:
+        instrumento, codigos_descartados = generar_instrumento(
             datos.course_id, datos.criterion_ids, datos.tool_type, datos.contexto, datos.num_niveles,
         )
-        while not tarea.done():
-            yield " "
-            await asyncio.sleep(4)
-        try:
-            instrumento, codigos_descartados = await tarea
-            yield json.dumps({"instrumento": instrumento, "codigosDescartados": codigos_descartados})
-        except ValueError as exc:
-            yield json.dumps({"detail": str(exc)})
+        resultado = {"estado": "listo", "instrumento": instrumento, "codigosDescartados": codigos_descartados}
+    except ValueError as exc:
+        resultado = {"estado": "error", "detail": str(exc)}
+    except Exception as exc:
+        resultado = {"estado": "error", "detail": f"Error inesperado generando el instrumento: {exc}"}
 
-    return StreamingResponse(flujo(), media_type="application/json")
+    with _trabajos_lock:
+        if job_id in _trabajos_instrumento:
+            _trabajos_instrumento[job_id].update(resultado)
+
+
+@router.post("/instrumento-evaluacion/generar", status_code=202)
+async def generar_prompt_instrumento(datos: GenerarInstrumentoRequest):
+    job_id = str(uuid.uuid4())
+    with _trabajos_lock:
+        _limpiar_trabajos_viejos()
+        _trabajos_instrumento[job_id] = {"estado": "en_progreso", "creado": time.monotonic()}
+
+    threading.Thread(target=_ejecutar_generacion_instrumento, args=(job_id, datos), daemon=True).start()
+    return {"jobId": job_id}
+
+
+@router.get("/instrumento-evaluacion/generar/{job_id}")
+async def estado_prompt_instrumento(job_id: str):
+    with _trabajos_lock:
+        trabajo = _trabajos_instrumento.get(job_id)
+    if trabajo is None:
+        raise HTTPException(status_code=404, detail="Trabajo no encontrado (o ya expiró).")
+    return trabajo

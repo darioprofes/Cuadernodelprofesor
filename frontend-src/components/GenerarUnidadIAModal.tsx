@@ -16,6 +16,7 @@ import { useEvaluationCriteria } from '../hooks/useEvaluationCriteria';
 import { useCreateEvaluationTool } from '../hooks/useEvaluationTools';
 import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 import { apiClassToLocal } from '../services/apiAdapters';
+import { generarInstrumentoConIA } from '../services/generarInstrumentoIA';
 
 type Paso = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
@@ -254,22 +255,12 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
         setGenerandoInstrumento(true);
         setErrorInstrumento(null);
         try {
-            const response = await fetch('/api/prompts/instrumento-evaluacion/generar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    course_id: courseId,
-                    criterion_ids: criteriosDelExamen(draftPendiente),
-                    tool_type: 'criterial_exam',
-                    contexto: `Examen final${draftPendiente.finalExam?.formato ? `: ${draftPendiente.finalExam.formato}` : ''} de la SA "${draftPendiente.name}"`,
-                }),
+            const data = await generarInstrumentoConIA({
+                courseId,
+                criterionIds: criteriosDelExamen(draftPendiente),
+                toolType: 'criterial_exam',
+                contexto: `Examen final${draftPendiente.finalExam?.formato ? `: ${draftPendiente.finalExam.formato}` : ''} de la SA "${draftPendiente.name}"`,
             });
-            // Streaming (espacios de relleno + JSON al final, para que
-            // ningún proxy corte la conexión durante el minuto que puede
-            // tardar) -- el status HTTP ya no distingue error.
-            if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
-            const data: { instrumento: Omit<EvaluationTool, 'id'>; codigosDescartados: string[]; detail?: string } = await response.json();
-            if (data.detail) throw new Error(data.detail);
             if (data.codigosDescartados.length > 0) {
                 window.alert(
                     `La IA usó ${data.codigosDescartados.length} código(s) de criterio que no existen en este curso ` +

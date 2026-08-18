@@ -5,6 +5,7 @@ import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
+import { generarInstrumentoConIA } from '../services/generarInstrumentoIA';
 
 interface GenerarInstrumentoIAModalProps {
     isOpen: boolean;
@@ -59,24 +60,13 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
         setGenerando(true);
         setError(null);
         try {
-            const response = await fetch('/api/prompts/instrumento-evaluacion/generar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    course_id: courseId,
-                    criterion_ids: linkedCriteriaIds,
-                    tool_type: tipo,
-                    contexto,
-                    num_niveles: tipoInfo.necesitaNiveles ? numNiveles : undefined,
-                }),
+            const data = await generarInstrumentoConIA({
+                courseId,
+                criterionIds: linkedCriteriaIds,
+                toolType: tipo,
+                contexto,
+                numNiveles: tipoInfo.necesitaNiveles ? numNiveles : undefined,
             });
-            // La respuesta llega en streaming (espacios de relleno + JSON al
-            // final, para que ningún proxy corte la conexión durante el
-            // minuto que puede tardar) -- el status HTTP ya no distingue
-            // error, se mira la clave "detail" del JSON final.
-            if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
-            const data: { instrumento: Omit<EvaluationTool, 'id'>; codigosDescartados: string[]; detail?: string } = await response.json();
-            if (data.detail) throw new Error(data.detail);
 
             if (data.codigosDescartados.length > 0) {
                 window.alert(
