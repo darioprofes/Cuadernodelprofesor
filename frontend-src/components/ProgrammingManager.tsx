@@ -1084,10 +1084,22 @@ const UnitEditor: React.FC<{
                                         {abierta && (
                                             <div className="px-2 pb-2 space-y-2">
                                                 <div className="flex gap-2 items-start flex-wrap">
-                                                    <div className="w-48 flex-shrink-0"><Input type="text" value={act.titulo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { titulo: e.target.value })} placeholder="Título de la actividad"/></div>
-                                                    <div className="w-40 flex-shrink-0"><Input type="text" value={act.tipo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { tipo: e.target.value })} placeholder="Tipo (ej. cooperativo)"/></div>
-                                                    <div className="w-32 flex-shrink-0"><Input type="text" value={act.agrupamiento || ''} onChange={e => handleActivityChange(sIndex, aIndex, { agrupamiento: e.target.value })} placeholder="Agrupamiento"/></div>
-                                                    <div className="w-20 flex-shrink-0"><Input type="number" min="0" value={act.duracionMin ?? ''} onChange={e => handleActivityChange(sIndex, aIndex, { duracionMin: e.target.value ? parseInt(e.target.value, 10) : undefined })} placeholder="min"/></div>
+                                                    <div className="w-48 flex-shrink-0">
+                                                        <label className="text-xs font-medium text-slate-500">Título</label>
+                                                        <Input type="text" value={act.titulo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { titulo: e.target.value })} placeholder="Título de la actividad"/>
+                                                    </div>
+                                                    <div className="w-40 flex-shrink-0">
+                                                        <label className="text-xs font-medium text-slate-500">Tipo</label>
+                                                        <Input type="text" value={act.tipo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { tipo: e.target.value })} placeholder="Ej. cooperativo"/>
+                                                    </div>
+                                                    <div className="w-32 flex-shrink-0">
+                                                        <label className="text-xs font-medium text-slate-500">Agrupamiento</label>
+                                                        <Input type="text" value={act.agrupamiento || ''} onChange={e => handleActivityChange(sIndex, aIndex, { agrupamiento: e.target.value })} placeholder="Agrupamiento"/>
+                                                    </div>
+                                                    <div className="w-24 flex-shrink-0">
+                                                        <label className="text-xs font-medium text-slate-500">Duración (min)</label>
+                                                        <Input type="number" min="0" value={act.duracionMin ?? ''} onChange={e => handleActivityChange(sIndex, aIndex, { duracionMin: e.target.value ? parseInt(e.target.value, 10) : undefined })} placeholder="min"/>
+                                                    </div>
                                                 </div>
                                                 <div>
                                                     <label className="text-xs font-medium text-slate-500">Descripción</label>
