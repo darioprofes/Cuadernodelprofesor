@@ -4,10 +4,11 @@
 #
 # Usado solo cuando la extracción normal de texto (docx/pptx/pdf) encuentra
 # una página o diapositiva con muy poco texto -- probable señal de que es una
-# imagen/escaneado sin capa de texto. Gemma 4 E4B (ya cargado en el ia-server
-# para el resto de usos) es nativamente multimodal si se le añade su propio
-# archivo --mmproj; corre en una instancia aparte, puerto 8081, sin tocar la
-# instancia de solo texto del 8080.
+# imagen/escaneado sin capa de texto. Gemma 4 E4B es nativamente multimodal
+# si se le añade su propio archivo --mmproj; el ia-server corre una única
+# instancia (puerto 8081) que sirve tanto texto como visión -- no hace falta
+# una instancia aparte de solo texto, este mismo cliente valdría para
+# generadores futuros que necesiten IA local sin imágenes de por medio.
 #
 # Nunca es fatal si el ia-server no responde: quien llame se queda con el
 # texto escaso original y avisa al profesor, en vez de romper la extracción
