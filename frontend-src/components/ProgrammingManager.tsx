@@ -827,7 +827,7 @@ const UnitEditor: React.FC<{
     evaluationTools: EvaluationTool[];
 }> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences, evaluationTools }) => {
     const [editedUnit, setEditedUnit] = useState(unit);
-    const [activeTab, setActiveTab] = useState<'general' | 'curriculo' | 'sesiones' | 'evaluacion'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'curriculo' | 'sesiones' | 'evaluacion' | 'cobertura'>('general');
     // Actividades plegadas por defecto -- solo título/tipo/agrupamiento/
     // duración visibles hasta que se despliegan (petición explícita: mucha
     // información en poco espacio se ve mal, y los detalles necesitan más
@@ -960,7 +960,29 @@ const UnitEditor: React.FC<{
         { key: 'curriculo', label: 'Currículo' },
         { key: 'sesiones', label: 'Sesiones y actividades' },
         { key: 'evaluacion', label: 'Evaluación' },
+        { key: 'cobertura', label: 'Cobertura' },
     ];
+
+    // Fase 6: matriz sesión × criterio de esta SA -- solo lectura, sobre los
+    // datos ya guardados (no cambia el prompt ni el esquema). Solo cruza los
+    // criterios que la propia unidad tiene vinculados (linkedCriteriaIds),
+    // no el currículo entero del curso -- lo demás sería ruido para esta
+    // vista. El aviso ("declarado pero no evidenciado") es el único pedido
+    // explícitamente: un criterio puede quedar en la lista general de la SA
+    // sin que ninguna actividad concreta lo marque de verdad.
+    const criteriosVinculados = (editedUnit.linkedCriteriaIds || [])
+        .map(id => criteria.find(c => c.id === id))
+        .filter((c): c is EvaluationCriterion => !!c)
+        .sort((a, b) => a.code.localeCompare(b.code, 'es', { numeric: true }));
+
+    const sesionesConActividades = editedUnit.sessionDetails || [];
+
+    const criterioEvidenciadoEnSesion = (criterioId: string, sesion: SessionDetail) =>
+        sesion.actividades.some(act => (act.linkedCriteriaIds || []).includes(criterioId));
+
+    const criteriosSinEvidencia = criteriosVinculados.filter(c =>
+        !sesionesConActividades.some(s => criterioEvidenciadoEnSesion(c.id, s))
+    );
 
     return (
         <div className="space-y-4">
@@ -1202,6 +1224,53 @@ const UnitEditor: React.FC<{
                         </div>
                     )}
                 </div>
+            </div>
+            )}
+
+            {activeTab === 'cobertura' && (
+            <div className="space-y-4">
+                {criteriosVinculados.length === 0 ? (
+                    <p className="text-sm text-slate-500">
+                        Esta SA todavía no tiene criterios de evaluación vinculados (pestaña Currículo).
+                    </p>
+                ) : (
+                    <>
+                        {criteriosSinEvidencia.length > 0 && (
+                            <div className="p-2.5 border border-amber-300 bg-amber-50 rounded-lg text-sm text-amber-800">
+                                <p className="font-semibold mb-1">⚠️ Vinculados a la SA pero sin ninguna actividad que los evidencie:</p>
+                                <p>{criteriosSinEvidencia.map(c => c.code).join(', ')}</p>
+                            </div>
+                        )}
+                        <div className="overflow-x-auto">
+                            <table className="text-sm border-collapse">
+                                <thead>
+                                    <tr>
+                                        <th className="text-left p-1.5 border-b border-r font-semibold text-slate-600 sticky left-0 bg-white">Sesión</th>
+                                        {criteriosVinculados.map(c => (
+                                            <th key={c.id} className="p-1.5 border-b font-semibold text-slate-600 whitespace-nowrap" title={c.description}>
+                                                {c.code}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {sesionesConActividades.map((sesion, sIndex) => (
+                                        <tr key={sIndex}>
+                                            <td className="p-1.5 border-r text-slate-600 whitespace-nowrap sticky left-0 bg-white">
+                                                {sesion.titulo || `Sesión ${sIndex + 1}`}
+                                            </td>
+                                            {criteriosVinculados.map(c => (
+                                                <td key={c.id} className="p-1.5 text-center text-slate-400">
+                                                    {criterioEvidenciadoEnSesion(c.id, sesion) ? <span className="text-emerald-600 font-bold">✓</span> : '·'}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
             </div>
             )}
             </div>
