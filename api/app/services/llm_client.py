@@ -19,7 +19,7 @@ import os
 
 import requests
 
-IASERVER_VISION_URL = os.environ.get("IASERVER_VISION_URL", "http://192.168.10.116:8081")
+IASERVER_VISION_URL = os.environ.get("IASERVER_VISION_URL", "http://192.168.10.13:8081")
 
 _INSTRUCCION_TRANSCRIPCION = (
     "Transcribe fielmente todo el texto legible de esta imagen, tal cual aparece, "
@@ -52,6 +52,20 @@ def transcribir_imagen(imagen_bytes, mime_type="image/png"):
         return respuesta.json()["choices"][0]["message"]["content"].strip()
     except (requests.RequestException, KeyError, IndexError, ValueError):
         return None
+
+
+def esta_disponible():
+    """Comprobación rápida y barata (timeout corto) de si el ia-server
+    responde ahora mismo -- para que el frontend pueda ocultar/desactivar
+    los botones de "Generar con IA local" en vez de dejar que el profesor
+    espere un minuto para enterarse de que está caído (ver
+    services/prompts/instrumento_evaluacion.py y el wizard de SA)."""
+
+    try:
+        respuesta = requests.get(f"{IASERVER_VISION_URL}/v1/models", timeout=3)
+        return respuesta.status_code == 200
+    except requests.RequestException:
+        return False
 
 
 def generar_texto(prompt, max_tokens=3000):

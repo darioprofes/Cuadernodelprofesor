@@ -17,10 +17,16 @@ from services.auth import require_auth
 from services.extraccion_docx import extraer_markdown_docx
 from services.extraccion_pdf import extraer_texto_pdf
 from services.extraccion_pptx import extraer_texto_pptx
+from services.llm_client import esta_disponible as ia_local_esta_disponible
 from services.prompts.instrumento_evaluacion import generar_instrumento
 from services.prompts.unidad_programacion import construir_prompt, procesar_respuesta
 
 router = APIRouter(prefix="/prompts", tags=["Generadores de prompts"], dependencies=[Depends(require_auth)])
+
+
+@router.get("/ia-local/estado")
+async def estado_ia_local():
+    return {"disponible": ia_local_esta_disponible()}
 
 # Por debajo de esto, caracteres de media por página/diapositiva, se avisa de
 # que puede faltar contenido (probable diapositiva/página hecha de imágenes,
