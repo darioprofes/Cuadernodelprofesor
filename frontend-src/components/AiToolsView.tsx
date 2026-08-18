@@ -125,10 +125,10 @@ const GenerarUnidadCard: React.FC<{ courses: Course[]; onGenerar: (courseId: str
         <div className="bg-white rounded-xl shadow-sm border p-6 flex flex-col gap-3">
             <div className="flex items-center gap-2">
                 <SparklesIcon className="w-5 h-5 text-amber-500" />
-                <h3 className="font-semibold text-slate-800">Unidad de programación</h3>
+                <h3 className="font-semibold text-slate-800">Situación de Aprendizaje</h3>
             </div>
             <p className="text-sm text-slate-600">
-                Genera una unidad de programación a partir de tu material de teoría y el currículo real
+                Genera una Situación de Aprendizaje a partir de tu material de teoría y el currículo real
                 de una materia.
             </p>
             <div className="flex items-center gap-2 flex-wrap">

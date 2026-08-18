@@ -1,5 +1,5 @@
 import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, JournalEntry, Assignment, AgendaNote, Meeting } from '../../types';
-import { buildClassName } from '../../utils';
+import { buildClassName, sessionDisplayText } from '../../utils';
 import { PALETTE } from '../../theme/palette';
 
 export interface CalendarEvent {
@@ -245,7 +245,7 @@ export const buildCalendarEvents = ({
 
                 const currentUnitObj = unitsForClass[unitIndex];
                 const details = currentUnitObj.sessionDetails || [];
-                const detail = details[sessionInUnit] || { description: '' };
+                const detail = details[sessionInUnit];
 
                 const sessionEvent: CalendarEvent = {
                     id: `${classData.id}-${currentUnitObj.id}-s${sessionInUnit + 1}-${i}`,
@@ -255,13 +255,13 @@ export const buildCalendarEvents = ({
                     unitName: currentUnitObj.name,
                     sessionNumber: sessionInUnit + 1,
                     totalSessions: Math.max(currentUnitObj.sessions, sessionInUnit + 1),
-                    description: detail.description || (isOverflow ? '(Sesión extra)' : ''),
+                    description: sessionDisplayText(detail) || (isOverflow ? '(Sesión extra)' : ''),
                     journalNote: journalEntry?.notes, // Bind Journal Entry
                     courseId: currentUnitObj.courseId,
                     classId: classData.id,
                     className: course.subject,
                     classGrupo: classData.grupo,
-                    color: detail.color,
+                    color: detail?.color,
                     courseColor: courseColor,
                     periodIndex: slot.periodIndex,
                     periodName: periods[slot.periodIndex] || `Periodo ${slot.periodIndex + 1}`,

@@ -146,14 +146,28 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                 );
             }
 
+            // El backend, en esta pasada, sigue devolviendo una descripción
+            // plana por sesión -- se envuelve como una única actividad
+            // genérica para que encaje en el UnitEditor ya reformado (misma
+            // forma que produce la migración 0013 sobre datos antiguos). La
+            // reforma del propio generador para pedir actividades
+            // estructuradas de verdad es la Fase 3/4 del plan, todavía no
+            // hecha.
             const draft: ProgrammingUnit = {
                 id: 'new',
                 courseId,
                 name: data.unidad.name,
                 sessions: data.unidad.sessions,
-                sessionDetails: data.unidad.sessionDetails,
+                context: '',
+                sessionDetails: data.unidad.sessionDetails.map(s => ({
+                    titulo: '',
+                    actividades: [{ descripcion: s.description, linkedCriteriaIds: [] }],
+                })),
                 linkedCriteriaIds: data.unidad.linkedCriteriaIds,
                 linkedBasicKnowledgeIds: data.unidad.linkedBasicKnowledgeIds,
+                linkedSpecificCompetenceIds: [],
+                finalProduct: { incluido: false },
+                finalExam: { incluido: false },
                 startDate: '',
             };
 
@@ -167,7 +181,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={handleClose} title="Generar unidad con IA" size="3xl" accent="sand">
+        <Modal isOpen={isOpen} onClose={handleClose} title="Generar Situación de Aprendizaje con IA" size="3xl" accent="sand">
             <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                     <SparklesIcon className="w-4 h-4" />

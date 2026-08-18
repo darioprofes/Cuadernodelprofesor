@@ -9,6 +9,7 @@ import EmptyState from './EmptyState';
 import IconButton from './IconButton';
 import DateNavButton from './DateNavButton';
 import { PALETTE } from '../theme/palette';
+import { sessionDisplayText } from '../utils';
 import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
 import { getMateria, getClassAccentColor, formatFechaEs } from '../utils';
@@ -165,7 +166,7 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
                 const detail = unit.sessionDetails?.[sessionInUnit];
                 return {
                     unitName: unit.name,
-                    sessionDesc: detail?.description || '',
+                    sessionDesc: sessionDisplayText(detail),
                     sessionNumber: sessionInUnit + 1
                 };
             }

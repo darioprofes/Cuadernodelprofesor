@@ -6,7 +6,7 @@ import type { ClassData, Course, KeyCompetence, SpecificCompetence, EvaluationCr
 import { calculateEvaluationPeriodGradeForStudent, calculateOverallFinalGradeForStudent, calculateStudentCriterionGrades, calculateStudentCompetenceGrades, calculateStudentKeyCompetenceGrades, calculatePeriodGradeCriterial, calculateFinalGradeCriterial } from '../services/gradeCalculations';
 import ClassLabel from './ClassLabel';
 import { checkboxClassName } from '../theme/components/Input';
-import { buildClassName, getNombreCompleto } from '../utils';
+import { buildClassName, getNombreCompleto, sessionDisplayText } from '../utils';
 
 interface ExportModalProps {
     isOpen: boolean;
@@ -157,7 +157,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, classes, cou
                             planningRows.push([
                                 unit.name,
                                 index + 1,
-                                session.description,
+                                sessionDisplayText(session),
                                 criteriaCodes,
                                 knowledgeCodes
                             ]);

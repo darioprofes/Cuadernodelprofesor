@@ -8,29 +8,38 @@ from services.db import get_conn
 from services.schemas import ApiModel
 
 _COLUMNS = """
-    id, course_id, name, sessions, start_date, session_details,
-    linked_criteria_ids, linked_basic_knowledge_ids, created_at, updated_at
+    id, course_id, name, sessions, start_date, context, session_details,
+    linked_criteria_ids, linked_basic_knowledge_ids, linked_specific_competence_ids,
+    final_product, final_exam, created_at, updated_at
 """
 
-_JSON_FIELDS = {"session_details"}
+_JSON_FIELDS = {"session_details", "final_product", "final_exam"}
 
 
 class ProgrammingUnitInput(ApiModel):
     name: str
     sessions: int = 0
     start_date: Optional[date] = None
+    context: Optional[str] = None
     session_details: list = []
     linked_criteria_ids: list[uuid.UUID] = []
     linked_basic_knowledge_ids: list[uuid.UUID] = []
+    linked_specific_competence_ids: list[uuid.UUID] = []
+    final_product: dict = {"incluido": False}
+    final_exam: dict = {"incluido": False}
 
 
 class ProgrammingUnitPatch(ApiModel):
     name: Optional[str] = None
     sessions: Optional[int] = None
     start_date: Optional[date] = None
+    context: Optional[str] = None
     session_details: Optional[list] = None
     linked_criteria_ids: Optional[list[uuid.UUID]] = None
     linked_basic_knowledge_ids: Optional[list[uuid.UUID]] = None
+    linked_specific_competence_ids: Optional[list[uuid.UUID]] = None
+    final_product: Optional[dict] = None
+    final_exam: Optional[dict] = None
 
 
 class ProgrammingUnit(ProgrammingUnitInput):
@@ -58,12 +67,16 @@ def create_programming_unit(course_id: str, data: ProgrammingUnitInput) -> Progr
             cur.execute(
                 f"""
                 INSERT INTO programming_units
-                    (course_id, name, sessions, start_date, session_details, linked_criteria_ids, linked_basic_knowledge_ids)
-                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING {_COLUMNS}
+                    (course_id, name, sessions, start_date, context, session_details,
+                     linked_criteria_ids, linked_basic_knowledge_ids, linked_specific_competence_ids,
+                     final_product, final_exam)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {_COLUMNS}
                 """,
                 [
-                    course_id, data.name, data.sessions, data.start_date, Json(data.session_details),
+                    course_id, data.name, data.sessions, data.start_date, data.context, Json(data.session_details),
                     [str(i) for i in data.linked_criteria_ids], [str(i) for i in data.linked_basic_knowledge_ids],
+                    [str(i) for i in data.linked_specific_competence_ids],
+                    Json(data.final_product), Json(data.final_exam),
                 ]
             )
 
@@ -80,7 +93,7 @@ def update_programming_unit(unit_id: str, data: ProgrammingUnitPatch) -> Optiona
 
         if key in _JSON_FIELDS:
             processed[key] = Json(value)
-        elif key in ("linked_criteria_ids", "linked_basic_knowledge_ids"):
+        elif key in ("linked_criteria_ids", "linked_basic_knowledge_ids", "linked_specific_competence_ids"):
             processed[key] = [str(i) for i in value]
         else:
             processed[key] = value

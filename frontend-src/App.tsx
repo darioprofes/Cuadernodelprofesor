@@ -768,7 +768,7 @@ const App = () => {
                     <PageHeader title="Materia" subtitle="Currículo y planificación didáctica de la materia seleccionada." accent="navy" icon={<BookOpenIcon className="w-6 h-6" />} />
                     <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit my-6">
                         <button onClick={() => setActiveView('curriculum')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'curriculum' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Currículo</button>
-                        <button onClick={() => setActiveView('planner')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'planner' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Planificación UD</button>
+                        <button onClick={() => setActiveView('planner')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'planner' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Situaciones de Aprendizaje</button>
                     </div>
                     <React.Suspense fallback={<ViewLoadingFallback />}>
                         {activeView === 'curriculum' && (

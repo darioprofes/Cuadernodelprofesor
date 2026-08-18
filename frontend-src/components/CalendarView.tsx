@@ -203,7 +203,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
         const unit = units.find(u => u.id === unitId);
         if (!unit) return;
 
-        const newSessionDetail: SessionDetail = { description: newDescription };
+        const newSessionDetail: SessionDetail = { titulo: '', actividades: [{ descripcion: newDescription, linkedCriteriaIds: [] }] };
         const sessionIndexToInsertAfter = sessionNumber - 1;
         const updatedSessionDetails = [...unit.sessionDetails];
         updatedSessionDetails.splice(sessionIndexToInsertAfter + 1, 0, newSessionDetail);

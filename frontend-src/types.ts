@@ -218,9 +218,47 @@ export interface Course {
     pesoCriteriosManual?: boolean;
 }
 
+// Una actividad concreta dentro de una sesión de la SA. Todos los campos
+// salvo descripcion son opcionales -- una actividad creada a mano rápida no
+// tiene por qué rellenar tipo/agrupamiento/duración/recursos.
+export interface SessionActivity {
+    titulo?: string;
+    tipo?: string;
+    agrupamiento?: string;
+    duracionMin?: number;
+    recursos?: string[];
+    descripcion: string;
+    linkedCriteriaIds?: string[];
+}
+
 export interface SessionDetail {
-    description: string;
+    titulo?: string;
+    actividades: SessionActivity[];
     color?: string;
+}
+
+export interface RubricaDescriptor {
+    criterio: string;
+    descriptor: string;
+}
+
+export interface FinalProduct {
+    incluido: boolean;
+    tipo?: string;
+    descripcion?: string;
+    linkedCriteriaIds?: string[];
+    rubrica?: RubricaDescriptor[];
+}
+
+export interface FinalExamBlock {
+    descripcion: string;
+    linkedCriteriaIds?: string[];
+}
+
+export interface FinalExam {
+    incluido: boolean;
+    formato?: string;
+    bloques?: FinalExamBlock[];
 }
 
 export interface ProgrammingUnit {
@@ -229,9 +267,13 @@ export interface ProgrammingUnit {
     name: string;
     sessions: number;
     startDate?: string; // YYYY-MM-DD. Optional fixed start date.
+    context?: string; // Situación/contexto de partida de la SA.
     sessionDetails: SessionDetail[];
     linkedCriteriaIds: string[];
     linkedBasicKnowledgeIds: string[];
+    linkedSpecificCompetenceIds: string[];
+    finalProduct?: FinalProduct;
+    finalExam?: FinalExam;
 }
 
 export interface ClassData {
@@ -253,6 +295,10 @@ export interface ClassData {
   // Posición de la mesa del profesor en el Plano de la Clase (% del lienzo).
   mesaProfesorX?: number;
   mesaProfesorY?: number;
+  // Rasgos del grupo (p.ej. "Grupo numeroso", "Alta diversidad de ritmos")
+  // -- se cargan automáticamente al generar una SA para esta clase, no se
+  // repreguntan cada vez. Editable desde la gestión de la clase.
+  caracteristicasGrupo?: string[];
 }
 
 // Forma común de una fila de horario extraída de una fuente externa (PDF

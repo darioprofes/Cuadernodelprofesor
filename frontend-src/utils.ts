@@ -1,7 +1,7 @@
 import type { MouseEvent } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import type { Category, ClassData, Course, EvaluationPeriod, Student } from './types';
+import type { Category, ClassData, Course, EvaluationPeriod, SessionDetail, Student } from './types';
 
 // Nombre para mostrar al usuario: orden natural "Nombre Apellido1 Apellido2"
 export const getNombreCompleto = (student: Student): string =>
@@ -224,6 +224,17 @@ export const toYYYYMMDD = (date: Date): string => {
 // mostrar el día anterior/siguiente según el huso del navegador) y evita
 // también depender del separador que use la configuración regional del
 // navegador (que en la práctica suele dar "/" en vez del "-" pedido aquí).
+// Texto corto para mostrar una sesión (calendario, diario de clase,
+// exportación a PDF...) fuera del propio editor -- una sesión de SA ya no es
+// una sola descripción de texto, sino un título + una o varias actividades
+// estructuradas. Prioriza el título si lo hay; si no, junta las
+// descripciones de sus actividades.
+export const sessionDisplayText = (detail?: SessionDetail): string => {
+    if (!detail) return '';
+    if (detail.titulo?.trim()) return detail.titulo;
+    return (detail.actividades || []).map(a => a.descripcion).filter(Boolean).join(' · ');
+};
+
 export const formatFechaEs = (fecha: string): string => {
     const [y, m, d] = fecha.split('-');
     return `${d}-${m}-${y}`;

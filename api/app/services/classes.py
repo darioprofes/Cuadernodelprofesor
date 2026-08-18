@@ -9,7 +9,8 @@ from services.schemas import ApiModel, updated_at_matches
 
 _COLUMNS = """
     id, academic_year_id, course_id, grupo, schedule, skipped_days, icono,
-    color_acento, mesa_profesor_x, mesa_profesor_y, created_at, updated_at
+    color_acento, mesa_profesor_x, mesa_profesor_y, caracteristicas_grupo,
+    created_at, updated_at
 """
 
 _JSON_FIELDS = {"schedule", "skipped_days"}
@@ -24,6 +25,7 @@ class ClassInput(ApiModel):
     color_acento: Optional[int] = None
     mesa_profesor_x: Optional[float] = None
     mesa_profesor_y: Optional[float] = None
+    caracteristicas_grupo: list[str] = []
 
 
 class ClassPatch(ApiModel):
@@ -35,6 +37,7 @@ class ClassPatch(ApiModel):
     color_acento: Optional[int] = None
     mesa_profesor_x: Optional[float] = None
     mesa_profesor_y: Optional[float] = None
+    caracteristicas_grupo: Optional[list[str]] = None
     expected_updated_at: Optional[str] = None
 
 
@@ -49,6 +52,7 @@ class ClassData(ApiModel):
     color_acento: Optional[int] = None
     mesa_profesor_x: Optional[float] = None
     mesa_profesor_y: Optional[float] = None
+    caracteristicas_grupo: list[str] = []
     created_at: datetime
     updated_at: datetime
 

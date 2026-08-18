@@ -112,9 +112,13 @@ export interface ProgrammingUnit {
     name: string;
     sessions: number;
     startDate?: string;
+    context?: string;
     sessionDetails: unknown[];
     linkedCriteriaIds: string[];
     linkedBasicKnowledgeIds: string[];
+    linkedSpecificCompetenceIds: string[];
+    finalProduct?: unknown;
+    finalExam?: unknown;
     createdAt: string;
     updatedAt: string;
 }
@@ -123,9 +127,13 @@ export interface ProgrammingUnitInput {
     name: string;
     sessions?: number;
     startDate?: string;
+    context?: string;
     sessionDetails?: unknown[];
     linkedCriteriaIds?: string[];
     linkedBasicKnowledgeIds?: string[];
+    linkedSpecificCompetenceIds?: string[];
+    finalProduct?: unknown;
+    finalExam?: unknown;
 }
 
 // ---- Instancia por curso académico ----
@@ -207,6 +215,7 @@ export interface ClassData {
     colorAcento?: number;
     mesaProfesorX?: number;
     mesaProfesorY?: number;
+    caracteristicasGrupo?: string[];
     createdAt: string;
     updatedAt: string;
 }
@@ -220,6 +229,7 @@ export interface ClassInput {
     colorAcento?: number;
     mesaProfesorX?: number;
     mesaProfesorY?: number;
+    caracteristicasGrupo?: string[];
 }
 
 export interface ClassPatch extends Partial<ClassInput> {

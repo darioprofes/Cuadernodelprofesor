@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import type { ProgrammingUnit, Course, SessionDetail, EvaluationCriterion, BasicKnowledge, ClassData, AcademicConfiguration } from '../types';
+import type { ProgrammingUnit, Course, SessionDetail, SessionActivity, FinalProduct, FinalExam, EvaluationCriterion, BasicKnowledge, SpecificCompetence, ClassData, AcademicConfiguration } from '../types';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon, SparklesIcon } from './Icons';
 import Modal from './Modal';
 import Input from './Input';
@@ -11,6 +11,17 @@ import { formatFechaEs } from '../utils';
 import { useProgrammingUnits, useCreateProgrammingUnit, useUpdateProgrammingUnit, useDeleteProgrammingUnit } from '../hooks/useProgrammingUnits';
 import { useEvaluationCriteria } from '../hooks/useEvaluationCriteria';
 import { useBasicKnowledge } from '../hooks/useBasicKnowledge';
+import { useSpecificCompetences } from '../hooks/useSpecificCompetences';
+
+// Envuelve una descripción de sesión "plana" (formato antiguo, o lo que
+// sigue devolviendo el generador de IA en esta pasada) en una única
+// actividad genérica -- mismo criterio que la migración 0013 aplicó a los
+// datos ya existentes en producción, para no tener dos formas de leer una
+// sesión en el frontend.
+const wrapDescriptionAsActivity = (description: string): SessionDetail => ({
+    titulo: '',
+    actividades: [{ descripcion: description, linkedCriteriaIds: [] }],
+});
 
 interface ProgrammingManagerProps {
     // Fase 8: la materia activa se elige en la cabecera (App.tsx), ya no
@@ -63,6 +74,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
     const deleteUnitMutation = useDeleteProgrammingUnit();
     const remoteCriteria = useEvaluationCriteria(selectedCourseId);
     const remoteBasicKnowledge = useBasicKnowledge(selectedCourseId);
+    const remoteSpecificCompetences = useSpecificCompetences(selectedCourseId);
 
     const selectedCourse = useMemo(() => courses.find(c => c.id === selectedCourseId), [courses, selectedCourseId]);
 
@@ -75,6 +87,9 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
     const filteredBasicKnowledge = useMemo(() => (
         (remoteBasicKnowledge.data ?? []) as unknown as BasicKnowledge[]
     ), [remoteBasicKnowledge.data]);
+    const filteredSpecificCompetences = useMemo(() => (
+        (remoteSpecificCompetences.data ?? []) as unknown as SpecificCompetence[]
+    ), [remoteSpecificCompetences.data]);
 
     const unitDateRanges = useMemo(() => {
         const ranges = new Map<string, { start?: Date, end?: Date }>();
@@ -179,9 +194,13 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
             name: unit.name,
             sessions: unit.sessions,
             startDate: unit.startDate || undefined,
+            context: unit.context || undefined,
             sessionDetails: unit.sessionDetails,
             linkedCriteriaIds: unit.linkedCriteriaIds,
             linkedBasicKnowledgeIds: unit.linkedBasicKnowledgeIds,
+            linkedSpecificCompetenceIds: unit.linkedSpecificCompetenceIds,
+            finalProduct: unit.finalProduct,
+            finalExam: unit.finalExam,
         };
         if (unitEditorState?.mode === 'edit') {
             updateUnitMutation.mutate({ id: unit.id, courseId: selectedCourseId, data }, { onSuccess: () => setUnitEditorState(null) });
@@ -191,7 +210,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
     };
 
     const handleDelete = (unitId: string) => {
-        if (!window.confirm("¿Seguro que quieres eliminar esta unidad de programación?")) return;
+        if (!window.confirm("¿Seguro que quieres eliminar esta Situación de Aprendizaje?")) return;
         deleteUnitMutation.mutate({ id: unitId, courseId: selectedCourseId });
     };
 
@@ -267,19 +286,21 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                     });
                 }
 
-                // Parse Session Details (split by pipe '|')
+                // Parse Session Details (split by pipe '|') -- el CSV solo trae
+                // una descripción por sesión, se envuelve como una única
+                // actividad genérica (mismo criterio que wrapDescriptionAsActivity).
                 let sessionDetails: SessionDetail[] = [];
                 if (sessionDetailsStr) {
                     const descriptions = sessionDetailsStr.replace(/^"|"$/g, '').split('|').map(d => d.trim());
-                    sessionDetails = descriptions.map(desc => ({ description: desc }));
+                    sessionDetails = descriptions.map(desc => wrapDescriptionAsActivity(desc));
                 }
 
                 // Adjust sessions count if details provided are more
                 const finalSessions = Math.max(sessions, sessionDetails.length);
-                
+
                 // Pad session details if less than sessions count
                 while (sessionDetails.length < finalSessions) {
-                    sessionDetails.push({ description: '' });
+                    sessionDetails.push(wrapDescriptionAsActivity(''));
                 }
 
                 const newUnit: ProgrammingUnit = {
@@ -290,6 +311,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                     startDate: startDate && startDate.match(/^\d{4}-\d{2}-\d{2}$/) ? startDate : undefined,
                     linkedCriteriaIds,
                     linkedBasicKnowledgeIds,
+                    linkedSpecificCompetenceIds: [],
                     sessionDetails
                 };
 
@@ -307,13 +329,14 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                             sessionDetails: u.sessionDetails,
                             linkedCriteriaIds: u.linkedCriteriaIds,
                             linkedBasicKnowledgeIds: u.linkedBasicKnowledgeIds,
+                            linkedSpecificCompetenceIds: u.linkedSpecificCompetenceIds,
                         },
                     });
                 }
-                alert(`Se han importado ${newUnits.length} unidades correctamente al curso seleccionado.`);
+                alert(`Se han importado ${newUnits.length} Situaciones de Aprendizaje correctamente al curso seleccionado.`);
                 setShowImportHelp(false);
             } else {
-                alert("No se pudieron extraer unidades del archivo. Verifica el formato.");
+                alert("No se pudieron extraer Situaciones de Aprendizaje del archivo. Verifica el formato.");
             }
 
         } catch (error) {
@@ -326,18 +349,18 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
         <>
             <div className="space-y-6">
                 <div>
-                    <h3 className="text-xl font-bold text-slate-800 mb-2">Planificador de Unidades Didácticas</h3>
+                    <h3 className="text-xl font-bold text-slate-800 mb-2">Situaciones de Aprendizaje</h3>
                     <p className="text-sm text-slate-600 mb-4">
-                        Define la secuencia de unidades didácticas de esta materia. Esta planificación se usará para generar el calendario de todas sus clases.
+                        Define la secuencia de Situaciones de Aprendizaje de esta materia. Esta planificación se usará para generar el calendario de todas sus clases.
                     </p>
                 </div>
 
                 {selectedCourse ? (
                     <div className="bg-white rounded-xl shadow-sm border">
                         <div className="p-4 border-b flex justify-between items-center bg-slate-50/50 rounded-t-xl flex-wrap gap-2">
-                            <h2 className={TYPOGRAPHY.sectionTitle}>Unidades para {selectedCourse.level} - {selectedCourse.subject}</h2>
+                            <h2 className={TYPOGRAPHY.sectionTitle}>Situaciones de Aprendizaje para {selectedCourse.level} - {selectedCourse.subject}</h2>
                             <div className="flex gap-2">
-                                <button 
+                                <button
                                     onClick={() => setShowImportHelp(!showImportHelp)}
                                     className="inline-flex items-center justify-center py-2 px-3 border border-slate-300 shadow-sm text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50"
                                 >
@@ -346,7 +369,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                                 </button>
                                 <button onClick={() => setUnitEditorState({ mode: 'create'})} disabled={!!unitEditorState} className="inline-flex items-center justify-center py-2 px-3 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed">
                                     <PlusIcon className="w-4 h-4 mr-1"/>
-                                    Nueva Unidad
+                                    Nueva SA
                                 </button>
                                 <button onClick={() => setShowGenerarIA(true)} disabled={!!unitEditorState || showGenerarIA} className="inline-flex items-center justify-center py-2 px-3 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 disabled:cursor-not-allowed">
                                     <SparklesIcon className="w-4 h-4 mr-1"/>
@@ -357,14 +380,14 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
 
                         {showImportHelp && (
                             <div className="p-4 bg-blue-50 border-b border-blue-100">
-                                <h4 className="font-bold text-sm text-blue-800 mb-2">Instrucciones para Importar Unidades</h4>
+                                <h4 className="font-bold text-sm text-blue-800 mb-2">Instrucciones para Importar Situaciones de Aprendizaje</h4>
                                 <p className="text-xs text-blue-700 mb-2">
                                     Sube un archivo CSV con las siguientes columnas (respeta el orden). Los Criterios y Saberes se vincularán automáticamente si coinciden con los códigos del curso (ej. "1.1", "A.1").
                                 </p>
                                 <div className="bg-white p-2 rounded border border-blue-200 overflow-x-auto font-mono text-xs mb-3 text-slate-600">
                                     Nombre,Sesiones,FechaInicio,Criterios,Saberes,DetalleSesiones<br/>
-                                    "Unidad 1: La Célula",6,2024-09-15,"1.1, 1.2","A.1, A.2","Introducción|Teoría Celular|Microscopio|Práctica|Repaso|Examen"<br/>
-                                    "Unidad 2: Nutrición",8,,"2.1, 2.3","B.1","Intro Nutrición|Dieta equilibrada|..."
+                                    "SA 1: La Célula",6,2024-09-15,"1.1, 1.2","A.1, A.2","Introducción|Teoría Celular|Microscopio|Práctica|Repaso|Examen"<br/>
+                                    "SA 2: Nutrición",8,,"2.1, 2.3","B.1","Intro Nutrición|Dieta equilibrada|..."
                                 </div>
                                 <div className="mt-3">
                                     <label className="cursor-pointer inline-flex items-center justify-center py-2 px-4 border border-blue-300 shadow-sm text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50">
@@ -379,7 +402,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                         <div className="p-4 space-y-3">
                             {filteredUnits.length === 0 ? (
                                 <div className="text-center py-8 text-slate-500">
-                                    <p>No hay unidades de programación para este curso.</p>
+                                    <p>No hay Situaciones de Aprendizaje para este curso.</p>
                                     <p>¡Añade una o impórtalas para empezar a planificar!</p>
                                 </div>
                             ) : (
@@ -408,22 +431,26 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                 )}
             </div>
             {unitEditorState && (
-                <Modal 
-                    isOpen={!!unitEditorState} 
-                    onClose={() => setUnitEditorState(null)} 
-                    title={unitEditorState.mode === 'create' ? 'Nueva Unidad Didáctica' : 'Editar Unidad Didáctica'}
+                <Modal
+                    isOpen={!!unitEditorState}
+                    onClose={() => setUnitEditorState(null)}
+                    title={unitEditorState.mode === 'create' ? 'Nueva Situación de Aprendizaje' : 'Editar Situación de Aprendizaje'}
                     size="3xl"
                 >
                      <UnitEditor
                         key={unitEditorState.mode === 'edit' ? unitEditorState.unit.id : 'create-new'}
                         unit={unitEditorState.mode === 'edit' ? unitEditorState.unit : unitEditorState.draft ?? {
-                            id: 'new', courseId: selectedCourseId, name: '', sessions: 1,
-                            sessionDetails: [{ description: '' }], linkedCriteriaIds: [], linkedBasicKnowledgeIds: [], startDate: ''
+                            id: 'new', courseId: selectedCourseId, name: '', sessions: 1, context: '',
+                            sessionDetails: [wrapDescriptionAsActivity('')],
+                            linkedCriteriaIds: [], linkedBasicKnowledgeIds: [], linkedSpecificCompetenceIds: [],
+                            finalProduct: { incluido: false }, finalExam: { incluido: false },
+                            startDate: ''
                         }}
                         onSave={handleSave}
                         onCancel={() => setUnitEditorState(null)}
                         criteria={filteredCriteria}
                         basicKnowledge={filteredBasicKnowledge}
+                        specificCompetences={filteredSpecificCompetences}
                     />
                 </Modal>
             )}
@@ -479,6 +506,20 @@ const UnitViewer: React.FC<UnitViewerProps> = ({ unit, dateRange, linkedCriteria
                         ))}
                     </div>
                 </div>
+                {(unit.finalProduct?.incluido || unit.finalExam?.incluido) && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                        {unit.finalProduct?.incluido && (
+                            <span className="text-xs font-medium bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                                📦 Producto final{unit.finalProduct.tipo ? `: ${unit.finalProduct.tipo}` : ''}
+                            </span>
+                        )}
+                        {unit.finalExam?.incluido && (
+                            <span className="text-xs font-medium bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">
+                                📝 Examen final{unit.finalExam.formato ? `: ${unit.finalExam.formato}` : ''}
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={onEdit} className="p-2 hover:bg-slate-200 rounded-full"><PencilIcon className="w-4 h-4 text-slate-600" /></button>
@@ -490,7 +531,46 @@ const UnitViewer: React.FC<UnitViewerProps> = ({ unit, dateRange, linkedCriteria
 
 const PALETTE_COLORS = ['#89b0f3', '#7dd7b2', '#fde28a', '#f472b6', '#b6a3f9', '#ef4444'];
 
-const UnitEditor: React.FC<{ unit: ProgrammingUnit; onSave: (unit: ProgrammingUnit) => void; onCancel: () => void; criteria: EvaluationCriterion[], basicKnowledge: BasicKnowledge[] }> = ({ unit, onSave, onCancel, criteria, basicKnowledge }) => {
+// Selector compacto de códigos de criterio (solo el código, sin descripción)
+// -- se repite por actividad/producto/bloque de examen, así que el
+// MultiSelect de checkboxes con descripción completa sería demasiado grande
+// repetido tantas veces. Chips que se activan/desactivan al clic.
+const CriteriaChips: React.FC<{ criteria: EvaluationCriterion[]; selectedIds: string[]; onChange: (ids: string[]) => void }> = ({ criteria, selectedIds, onChange }) => {
+    const toggle = (id: string) => {
+        onChange(selectedIds.includes(id) ? selectedIds.filter(i => i !== id) : [...selectedIds, id]);
+    };
+    if (criteria.length === 0) return null;
+    return (
+        <div className="flex flex-wrap gap-1">
+            {criteria.map(c => (
+                <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggle(c.id)}
+                    title={c.description}
+                    className={`text-xs font-medium px-2 py-0.5 rounded-full border transition-colors ${
+                        selectedIds.includes(c.id)
+                            ? 'bg-slate-700 text-white border-slate-700'
+                            : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'
+                    }`}
+                >
+                    {c.code}
+                </button>
+            ))}
+        </div>
+    );
+};
+
+const emptyActivity = (): SessionActivity => ({ descripcion: '', linkedCriteriaIds: [] });
+
+const UnitEditor: React.FC<{
+    unit: ProgrammingUnit;
+    onSave: (unit: ProgrammingUnit) => void;
+    onCancel: () => void;
+    criteria: EvaluationCriterion[];
+    basicKnowledge: BasicKnowledge[];
+    specificCompetences: SpecificCompetence[];
+}> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences }) => {
     const [editedUnit, setEditedUnit] = useState(unit);
 
     const handleFieldChange = <K extends keyof ProgrammingUnit>(field: K, value: ProgrammingUnit[K]) => {
@@ -499,7 +579,7 @@ const UnitEditor: React.FC<{ unit: ProgrammingUnit; onSave: (unit: ProgrammingUn
 
     const handleSessionsChange = (newSessionsCount: number) => {
         const targetLength = Math.max(1, isNaN(newSessionsCount) ? 1 : newSessionsCount);
-        
+
         setEditedUnit(prev => {
             const currentDetails = prev.sessionDetails || [];
             const currentLength = currentDetails.length;
@@ -512,7 +592,7 @@ const UnitEditor: React.FC<{ unit: ProgrammingUnit; onSave: (unit: ProgrammingUn
             if (targetLength > currentLength) {
                 newDetails = [
                     ...currentDetails,
-                    ...Array(targetLength - currentLength).fill(0).map(() => ({ description: '' }))
+                    ...Array(targetLength - currentLength).fill(0).map(() => wrapDescriptionAsActivity(''))
                 ];
             } else {
                 newDetails = currentDetails.slice(0, targetLength);
@@ -520,12 +600,11 @@ const UnitEditor: React.FC<{ unit: ProgrammingUnit; onSave: (unit: ProgrammingUn
             return { ...prev, sessions: targetLength, sessionDetails: newDetails };
         });
     };
-    
-    const handleSessionDetailChange = (index: number, field: 'description' | 'color', value: string) => {
+
+    const handleSessionFieldChange = (index: number, field: 'titulo' | 'color', value: string) => {
         setEditedUnit(prev => {
             const newDetails = [...(prev.sessionDetails || [])];
-            const updatedDetail = { ...newDetails[index], [field]: value || (field === 'color' ? undefined : '') };
-            newDetails[index] = updatedDetail;
+            newDetails[index] = { ...newDetails[index], [field]: value || undefined };
             return { ...prev, sessionDetails: newDetails };
         });
     };
@@ -535,7 +614,7 @@ const UnitEditor: React.FC<{ unit: ProgrammingUnit; onSave: (unit: ProgrammingUn
             const details = [...(prev.sessionDetails || [])];
             const newIndex = direction === 'up' ? index - 1 : index + 1;
             if (newIndex < 0 || newIndex >= details.length) return prev;
-            
+
             const [movedItem] = details.splice(index, 1);
             details.splice(newIndex, 0, movedItem);
 
@@ -543,8 +622,76 @@ const UnitEditor: React.FC<{ unit: ProgrammingUnit; onSave: (unit: ProgrammingUn
         });
     };
 
-    const handleMultiSelectChange = (field: 'linkedCriteriaIds' | 'linkedBasicKnowledgeIds', newIdSet: Set<string>) => {
+    const handleAddActivity = (sessionIndex: number) => {
+        setEditedUnit(prev => {
+            const newDetails = [...(prev.sessionDetails || [])];
+            const session = newDetails[sessionIndex];
+            newDetails[sessionIndex] = { ...session, actividades: [...session.actividades, emptyActivity()] };
+            return { ...prev, sessionDetails: newDetails };
+        });
+    };
+
+    const handleRemoveActivity = (sessionIndex: number, activityIndex: number) => {
+        setEditedUnit(prev => {
+            const newDetails = [...(prev.sessionDetails || [])];
+            const session = newDetails[sessionIndex];
+            newDetails[sessionIndex] = { ...session, actividades: session.actividades.filter((_, i) => i !== activityIndex) };
+            return { ...prev, sessionDetails: newDetails };
+        });
+    };
+
+    const handleActivityChange = (sessionIndex: number, activityIndex: number, patch: Partial<SessionActivity>) => {
+        setEditedUnit(prev => {
+            const newDetails = [...(prev.sessionDetails || [])];
+            const session = newDetails[sessionIndex];
+            const newActivities = [...session.actividades];
+            newActivities[activityIndex] = { ...newActivities[activityIndex], ...patch };
+            newDetails[sessionIndex] = { ...session, actividades: newActivities };
+            return { ...prev, sessionDetails: newDetails };
+        });
+    };
+
+    const handleMultiSelectChange = (field: 'linkedCriteriaIds' | 'linkedBasicKnowledgeIds' | 'linkedSpecificCompetenceIds', newIdSet: Set<string>) => {
         handleFieldChange(field, Array.from(newIdSet));
+    };
+
+    const finalProduct: FinalProduct = editedUnit.finalProduct ?? { incluido: false };
+    const finalExam: FinalExam = editedUnit.finalExam ?? { incluido: false };
+
+    const handleProductChange = (patch: Partial<FinalProduct>) => {
+        handleFieldChange('finalProduct', { ...finalProduct, ...patch });
+    };
+
+    const handleExamChange = (patch: Partial<FinalExam>) => {
+        handleFieldChange('finalExam', { ...finalExam, ...patch });
+    };
+
+    const handleAddRubricaRow = () => {
+        handleProductChange({ rubrica: [...(finalProduct.rubrica || []), { criterio: '', descriptor: '' }] });
+    };
+
+    const handleRubricaRowChange = (index: number, field: 'criterio' | 'descriptor', value: string) => {
+        const rows = [...(finalProduct.rubrica || [])];
+        rows[index] = { ...rows[index], [field]: value };
+        handleProductChange({ rubrica: rows });
+    };
+
+    const handleRemoveRubricaRow = (index: number) => {
+        handleProductChange({ rubrica: (finalProduct.rubrica || []).filter((_, i) => i !== index) });
+    };
+
+    const handleAddExamBlock = () => {
+        handleExamChange({ bloques: [...(finalExam.bloques || []), { descripcion: '', linkedCriteriaIds: [] }] });
+    };
+
+    const handleExamBlockChange = (index: number, patch: Partial<{ descripcion: string; linkedCriteriaIds: string[] }>) => {
+        const rows = [...(finalExam.bloques || [])];
+        rows[index] = { ...rows[index], ...patch };
+        handleExamChange({ bloques: rows });
+    };
+
+    const handleRemoveExamBlock = (index: number) => {
+        handleExamChange({ bloques: (finalExam.bloques || []).filter((_, i) => i !== index) });
     };
 
     const handleSaveClick = () => {
@@ -557,8 +704,8 @@ const UnitEditor: React.FC<{ unit: ProgrammingUnit; onSave: (unit: ProgrammingUn
         <div className="space-y-4">
             <div className="flex items-center gap-4">
                 <div className="flex-grow">
-                    <label className="text-xs font-medium text-slate-600">Nombre de la Unidad</label>
-                    <input type="text" value={editedUnit.name} onChange={e => handleFieldChange('name', e.target.value)} placeholder="Título de la Unidad" className="w-full text-lg font-bold p-1 border-b-2 border-slate-200 focus:border-blue-500 outline-none bg-transparent"/>
+                    <label className="text-xs font-medium text-slate-600">Nombre de la SA</label>
+                    <input type="text" value={editedUnit.name} onChange={e => handleFieldChange('name', e.target.value)} placeholder="Título de la Situación de Aprendizaje" className="w-full text-lg font-bold p-1 border-b-2 border-slate-200 focus:border-blue-500 outline-none bg-transparent"/>
                 </div>
                  <div>
                     <label className="text-xs font-medium text-slate-600">Nº de Sesiones</label>
@@ -575,58 +722,150 @@ const UnitEditor: React.FC<{ unit: ProgrammingUnit; onSave: (unit: ProgrammingUn
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label className="text-xs font-medium text-slate-600">Contexto / situación de partida</label>
+                <textarea
+                    value={editedUnit.context || ''}
+                    onChange={e => handleFieldChange('context', e.target.value)}
+                    placeholder="El escenario o problema que se plantea al alumnado para arrancar la SA..."
+                    className="w-full text-sm p-2 border rounded-md focus:border-blue-500 outline-none"
+                    rows={2}
+                />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <MultiSelect title="Competencias Específicas" allItems={specificCompetences} selectedIds={new Set(editedUnit.linkedSpecificCompetenceIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedSpecificCompetenceIds', idSet)} />
                 <MultiSelect title="Criterios de Evaluación" allItems={criteria} selectedIds={new Set(editedUnit.linkedCriteriaIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedCriteriaIds', idSet)} />
                 <MultiSelect title="Saberes Básicos" allItems={basicKnowledge} selectedIds={new Set(editedUnit.linkedBasicKnowledgeIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedBasicKnowledgeIds', idSet)} />
             </div>
 
             <div>
-                <h4 className="text-sm font-semibold text-slate-700 mb-2">Detalle de las Sesiones</h4>
-                 <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                    {(editedUnit.sessionDetails || []).map((detail, index) => (
-                        <div key={index} className="flex items-center gap-3 p-2 border rounded-lg bg-white">
-                            <div className="flex flex-col">
-                                <button type="button" onClick={() => handleSessionReorder(index, 'up')} disabled={index === 0} className="p-0.5 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowUpIcon className="w-4 h-4"/></button>
-                                <button type="button" onClick={() => handleSessionReorder(index, 'down')} disabled={index === (editedUnit.sessionDetails || []).length - 1} className="p-0.5 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowDownIcon className="w-4 h-4"/></button>
+                <h4 className="text-sm font-semibold text-slate-700 mb-2">Sesiones y actividades</h4>
+                 <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                    {(editedUnit.sessionDetails || []).map((detail, sIndex) => (
+                        <div key={sIndex} className="p-2 border rounded-lg bg-white space-y-2">
+                            <div className="flex items-center gap-2">
+                                <div className="flex flex-col">
+                                    <button type="button" onClick={() => handleSessionReorder(sIndex, 'up')} disabled={sIndex === 0} className="p-0.5 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowUpIcon className="w-4 h-4"/></button>
+                                    <button type="button" onClick={() => handleSessionReorder(sIndex, 'down')} disabled={sIndex === (editedUnit.sessionDetails || []).length - 1} className="p-0.5 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowDownIcon className="w-4 h-4"/></button>
+                                </div>
+                                <label className="text-sm font-semibold text-slate-500 w-16 flex-shrink-0">Sesión {sIndex + 1}</label>
+                                <div className="relative flex-shrink-0 flex items-center gap-1.5">
+                                    {PALETTE_COLORS.map(color => (
+                                        <button
+                                            key={color}
+                                            type="button"
+                                            onClick={() => handleSessionFieldChange(sIndex, 'color', color)}
+                                            className={`w-5 h-5 rounded-full border-2 transition-transform transform hover:scale-110 ${detail.color === color ? 'border-blue-500 ring-2 ring-blue-300' : 'border-white'}`}
+                                            style={{ backgroundColor: color }}
+                                            title={`Seleccionar color ${color}`}
+                                        />
+                                    ))}
+                                </div>
+                                <Input type="text" value={detail.titulo || ''} onChange={e => handleSessionFieldChange(sIndex, 'titulo', e.target.value)} placeholder="Título de la sesión..." className="w-full"/>
                             </div>
-                            <label className="text-sm font-semibold text-slate-500 w-20 flex-shrink-0">Sesión {index + 1}:</label>
-                            <div className="relative flex-shrink-0 flex items-center gap-1.5">
-                                {PALETTE_COLORS.map(color => (
-                                    <button
-                                        key={color}
-                                        type="button"
-                                        onClick={() => handleSessionDetailChange(index, 'color', color)}
-                                        className={`w-6 h-6 rounded-full border-2 transition-transform transform hover:scale-110 ${detail.color === color ? 'border-blue-500 ring-2 ring-blue-300' : 'border-white'}`}
-                                        style={{ backgroundColor: color }}
-                                        title={`Seleccionar color ${color}`}
-                                    />
+
+                            <div className="pl-8 space-y-2">
+                                {detail.actividades.map((act, aIndex) => (
+                                    <div key={aIndex} className="p-2 border border-dashed rounded-md bg-slate-50 space-y-1.5">
+                                        <div className="flex gap-2 items-start">
+                                            <Input type="text" value={act.titulo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { titulo: e.target.value })} placeholder="Actividad..." className="w-40 flex-shrink-0"/>
+                                            <Input type="text" value={act.tipo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { tipo: e.target.value })} placeholder="Tipo (ej. cooperativo)" className="w-36 flex-shrink-0"/>
+                                            <Input type="text" value={act.agrupamiento || ''} onChange={e => handleActivityChange(sIndex, aIndex, { agrupamiento: e.target.value })} placeholder="Agrupamiento" className="w-28 flex-shrink-0"/>
+                                            <Input type="number" min="0" value={act.duracionMin ?? ''} onChange={e => handleActivityChange(sIndex, aIndex, { duracionMin: e.target.value ? parseInt(e.target.value, 10) : undefined })} placeholder="min" className="w-16 flex-shrink-0"/>
+                                            <button type="button" onClick={() => handleRemoveActivity(sIndex, aIndex)} disabled={detail.actividades.length <= 1} className="p-1.5 text-red-400 hover:text-red-600 disabled:opacity-20 flex-shrink-0"><TrashIcon className="w-4 h-4"/></button>
+                                        </div>
+                                        <textarea
+                                            value={act.descripcion}
+                                            onChange={e => handleActivityChange(sIndex, aIndex, { descripcion: e.target.value })}
+                                            placeholder="Descripción de la actividad..."
+                                            className="w-full text-sm p-1.5 border rounded-md focus:border-blue-500 outline-none"
+                                            rows={2}
+                                        />
+                                        <Input
+                                            type="text"
+                                            value={(act.recursos || []).join(', ')}
+                                            onChange={e => handleActivityChange(sIndex, aIndex, { recursos: e.target.value ? e.target.value.split(',').map(r => r.trim()).filter(Boolean) : [] })}
+                                            placeholder="Recursos (separados por comas)"
+                                            className="w-full text-xs"
+                                        />
+                                        <CriteriaChips criteria={criteria} selectedIds={act.linkedCriteriaIds || []} onChange={ids => handleActivityChange(sIndex, aIndex, { linkedCriteriaIds: ids })} />
+                                    </div>
                                 ))}
-                                {detail.color && (
-                                    <button 
-                                        type="button"
-                                        onClick={() => handleSessionDetailChange(index, 'color', '')}
-                                        className="absolute -top-1.5 -right-10 bg-slate-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center hover:bg-slate-700"
-                                        title="Quitar color"
-                                    >
-                                        &times;
-                                    </button>
-                                )}
+                                <button type="button" onClick={() => handleAddActivity(sIndex)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">
+                                    <PlusIcon className="w-3 h-3"/> Añadir actividad
+                                </button>
                             </div>
-                            <Input type="text" value={detail.description} onChange={e => handleSessionDetailChange(index, 'description', e.target.value)} placeholder="Contenido o actividad principal..." className="w-full"/>
                         </div>
                     ))}
                  </div>
             </div>
-            
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 border rounded-lg bg-white space-y-2">
+                    <label className="flex items-center gap-2 font-semibold text-slate-700">
+                        <input type="checkbox" checked={finalProduct.incluido} onChange={e => handleProductChange({ incluido: e.target.checked })} className={checkboxClassName}/>
+                        📦 Producto final
+                    </label>
+                    {finalProduct.incluido && (
+                        <div className="space-y-2 pl-1">
+                            <Input type="text" value={finalProduct.tipo || ''} onChange={e => handleProductChange({ tipo: e.target.value })} placeholder="Tipo (ej. Infografía, Vídeo...)" className="w-full"/>
+                            <textarea value={finalProduct.descripcion || ''} onChange={e => handleProductChange({ descripcion: e.target.value })} placeholder="Descripción..." className="w-full text-sm p-1.5 border rounded-md focus:border-blue-500 outline-none" rows={2}/>
+                            <CriteriaChips criteria={criteria} selectedIds={finalProduct.linkedCriteriaIds || []} onChange={ids => handleProductChange({ linkedCriteriaIds: ids })} />
+                            <div className="space-y-1">
+                                <p className="text-xs font-semibold text-slate-500">Rúbrica</p>
+                                {(finalProduct.rubrica || []).map((row, i) => (
+                                    <div key={i} className="flex gap-1.5">
+                                        <Input type="text" value={row.criterio} onChange={e => handleRubricaRowChange(i, 'criterio', e.target.value)} placeholder="Criterio (código)" className="w-28 flex-shrink-0"/>
+                                        <Input type="text" value={row.descriptor} onChange={e => handleRubricaRowChange(i, 'descriptor', e.target.value)} placeholder="Descriptor de logro..." className="w-full"/>
+                                        <button type="button" onClick={() => handleRemoveRubricaRow(i)} className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"><TrashIcon className="w-4 h-4"/></button>
+                                    </div>
+                                ))}
+                                <button type="button" onClick={handleAddRubricaRow} className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">
+                                    <PlusIcon className="w-3 h-3"/> Añadir descriptor
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="p-3 border rounded-lg bg-white space-y-2">
+                    <label className="flex items-center gap-2 font-semibold text-slate-700">
+                        <input type="checkbox" checked={finalExam.incluido} onChange={e => handleExamChange({ incluido: e.target.checked })} className={checkboxClassName}/>
+                        📝 Examen final
+                    </label>
+                    {finalExam.incluido && (
+                        <div className="space-y-2 pl-1">
+                            <Input type="text" value={finalExam.formato || ''} onChange={e => handleExamChange({ formato: e.target.value })} placeholder="Formato (ej. Test, preguntas abiertas...)" className="w-full"/>
+                            <div className="space-y-1">
+                                <p className="text-xs font-semibold text-slate-500">Bloques</p>
+                                {(finalExam.bloques || []).map((block, i) => (
+                                    <div key={i} className="p-1.5 border border-dashed rounded-md bg-slate-50 space-y-1">
+                                        <div className="flex gap-1.5">
+                                            <Input type="text" value={block.descripcion} onChange={e => handleExamBlockChange(i, { descripcion: e.target.value })} placeholder="Descripción del bloque..." className="w-full"/>
+                                            <button type="button" onClick={() => handleRemoveExamBlock(i)} className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"><TrashIcon className="w-4 h-4"/></button>
+                                        </div>
+                                        <CriteriaChips criteria={criteria} selectedIds={block.linkedCriteriaIds || []} onChange={ids => handleExamBlockChange(i, { linkedCriteriaIds: ids })} />
+                                    </div>
+                                ))}
+                                <button type="button" onClick={handleAddExamBlock} className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">
+                                    <PlusIcon className="w-3 h-3"/> Añadir bloque
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
             <div className="flex justify-end gap-2 pt-2 border-t">
                 <button onClick={onCancel} className="text-sm font-semibold text-slate-600 hover:text-slate-800 px-3 py-1">Cancelar</button>
-                <button onClick={handleSaveClick} className="text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded-md">Guardar Unidad</button>
+                <button onClick={handleSaveClick} className="text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded-md">Guardar SA</button>
             </div>
         </div>
     );
 };
 
-const MultiSelect = ({ title, allItems, selectedIds, setSelectedIds } : {title:string, allItems: (EvaluationCriterion | BasicKnowledge)[], selectedIds: Set<string>, setSelectedIds: (ids: Set<string>) => void}) => {
+const MultiSelect = ({ title, allItems, selectedIds, setSelectedIds } : {title:string, allItems: (EvaluationCriterion | BasicKnowledge | SpecificCompetence)[], selectedIds: Set<string>, setSelectedIds: (ids: Set<string>) => void}) => {
     
     const handleSelect = (id: string, checked: boolean) => {
         const newIds = new Set(selectedIds);
