@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { ProgrammingUnit, SessionDetail, FinalProduct } from '../types';
+import type { ProgrammingUnit, SessionDetail, FinalProduct, FinalExam } from '../types';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -24,6 +24,18 @@ const TIPOS_ACTIVIDAD_DISPONIBLES = [
 
 const ESTRUCTURAS_COOPERATIVAS_DISPONIBLES = [
     'Puzzle de Aronson', 'Folio giratorio', '1-2-4 (o similar estructura Kagan)', 'Grupos de investigación',
+];
+
+// Bloque 3 (Evaluación): el tipo de producto final y el formato de examen
+// los elige el profesor de sendas listas cerradas antes de generar -- la IA
+// ya no los decide libremente, solo redacta su contenido.
+const TIPOS_PRODUCTO_DISPONIBLES = [
+    'Infografía', 'Vídeo', 'Dossier', 'Exposición oral', 'Presentación digital', 'Maqueta/prototipo', 'Podcast',
+];
+
+const FORMATOS_EXAMEN_DISPONIBLES = [
+    'Test (opción múltiple)', 'Preguntas de desarrollo/abiertas', 'Mixto (test + desarrollo)',
+    'Prueba práctica/de aplicación', 'Oral',
 ];
 
 // Selector de chips con soporte para añadir valores propios (usado para
@@ -175,6 +187,15 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     const [atencionDiversidad, setAtencionDiversidad] = useState<'diferenciadas' | 'unica' | 'otro'>('diferenciadas');
     const [atencionDiversidadDetalle, setAtencionDiversidadDetalle] = useState('');
 
+    // Bloque 3: Evaluación -- producto final siempre se genera (sin toggle,
+    // como hasta ahora), pero el tipo ya no lo decide la IA libremente; el
+    // examen es opcional (toggle) y su formato también se elige de lista.
+    const [productoTipo, setProductoTipo] = useState<string>(TIPOS_PRODUCTO_DISPONIBLES[0]);
+    const [productoTipoDetalle, setProductoTipoDetalle] = useState('');
+    const [examenIncluido, setExamenIncluido] = useState(false);
+    const [examenFormato, setExamenFormato] = useState<string>(FORMATOS_EXAMEN_DISPONIBLES[0]);
+    const [examenFormatoDetalle, setExamenFormatoDetalle] = useState('');
+
     const anadirActividadObligatoria = () => {
         const texto = nuevaObligatoriaTexto.trim();
         if (!texto) return;
@@ -189,6 +210,8 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     };
 
     const textoEntrada = modo === 'documento' ? documento : descripcion;
+    const productoTipoResuelto = productoTipo === 'Otro' ? (productoTipoDetalle.trim() || 'Otro') : productoTipo;
+    const examenFormatoResuelto = examenFormato === 'Otro' ? (examenFormatoDetalle.trim() || 'Otro') : examenFormato;
 
     const reset = () => {
         setPaso(1);
@@ -211,6 +234,11 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
         setProgresionAutonomia('ia');
         setAtencionDiversidad('diferenciadas');
         setAtencionDiversidadDetalle('');
+        setProductoTipo(TIPOS_PRODUCTO_DISPONIBLES[0]);
+        setProductoTipoDetalle('');
+        setExamenIncluido(false);
+        setExamenFormato(FORMATOS_EXAMEN_DISPONIBLES[0]);
+        setExamenFormatoDetalle('');
     };
 
     const handleClose = () => {
@@ -263,6 +291,9 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                     atencion_diversidad: atencionDiversidad,
                     atencion_diversidad_detalle: atencionDiversidad === 'otro' ? atencionDiversidadDetalle : undefined,
                     class_id: classId || undefined,
+                    producto_tipo: productoTipoResuelto,
+                    examen_incluido: examenIncluido,
+                    examen_formato: examenIncluido ? examenFormatoResuelto : undefined,
                 }),
             });
             if (!response.ok) {
@@ -300,6 +331,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                     sessions: number;
                     sessionDetails: SessionDetail[];
                     finalProduct: FinalProduct;
+                    finalExam: FinalExam;
                     linkedBasicKnowledgeIds: string[];
                     linkedCriteriaIds: string[];
                     linkedSpecificCompetenceIds: string[];
@@ -329,7 +361,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                 linkedBasicKnowledgeIds: data.unidad.linkedBasicKnowledgeIds,
                 linkedSpecificCompetenceIds: data.unidad.linkedSpecificCompetenceIds,
                 finalProduct: data.unidad.finalProduct,
-                finalExam: { incluido: false },
+                finalExam: data.unidad.finalExam,
                 startDate: '',
             };
 
@@ -648,6 +680,58 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                     Si hay adaptaciones NEAE anotadas en el grupo elegido, se incluirán agregadas (sin
                                     nombres) para que la IA proponga variantes de actividad cuando corresponda.
                                 </p>
+                            )}
+                        </div>
+
+                        <div className="pt-2 border-t">
+                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Tipo de producto final</p>
+                            <div className="flex gap-1.5 flex-wrap">
+                                {[...TIPOS_PRODUCTO_DISPONIBLES, 'Otro'].map(tipo => (
+                                    <button
+                                        key={tipo}
+                                        type="button"
+                                        onClick={() => setProductoTipo(tipo)}
+                                        className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${productoTipo === tipo ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                    >
+                                        {tipo}
+                                    </button>
+                                ))}
+                            </div>
+                            {productoTipo === 'Otro' && (
+                                <div className="mt-2">
+                                    <Input type="text" value={productoTipoDetalle} onChange={e => setProductoTipoDetalle(e.target.value)} placeholder="Describe el tipo de producto..." />
+                                </div>
+                            )}
+                            <p className="text-xs text-slate-500 mt-1.5">
+                                La descripción del producto y la situación de partida las decide la IA, coherentes con este tipo.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1.5">
+                                <input type="checkbox" checked={examenIncluido} onChange={e => setExamenIncluido(e.target.checked)} className="rounded border-slate-300" />
+                                Incluir examen final
+                            </label>
+                            {examenIncluido && (
+                                <>
+                                    <div className="flex gap-1.5 flex-wrap">
+                                        {[...FORMATOS_EXAMEN_DISPONIBLES, 'Otro'].map(formato => (
+                                            <button
+                                                key={formato}
+                                                type="button"
+                                                onClick={() => setExamenFormato(formato)}
+                                                className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${examenFormato === formato ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                            >
+                                                {formato}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {examenFormato === 'Otro' && (
+                                        <div className="mt-2">
+                                            <Input type="text" value={examenFormatoDetalle} onChange={e => setExamenFormatoDetalle(e.target.value)} placeholder="Describe el formato del examen..." />
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
 

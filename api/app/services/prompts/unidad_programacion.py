@@ -120,6 +120,8 @@ def construir_prompt(
     progresion_autonomia="ia",
     atencion_diversidad="diferenciadas", atencion_diversidad_detalle=None,
     class_id=None,
+    producto_tipo=None,
+    examen_incluido=False, examen_formato=None,
 ):
     """Devuelve (anonimizado, mapa) -- mismo formato que
     services/anonimizador.py::anonimizar(), listo para el mismo flujo de
@@ -160,7 +162,21 @@ def construir_prompt(
       de arriba.
     - `class_id`: si se da, se resumen sus adaptaciones NEAE agregadas
       (ver resumir_adaptaciones_neae) y se piden variantes/adaptaciones por
-      actividad cuando corresponda."""
+      actividad cuando corresponda.
+
+    `producto_tipo`: igual que `examen_formato`, el profesor lo elige de una
+    lista cerrada en el frontend (Infografía, Vídeo, Dossier...) antes de
+    generar -- la IA ya no decide el tipo de producto final, solo su
+    descripción y qué criterios evidencia.
+
+    Bloque 3 (Evaluación -- examen final):
+    - `examen_incluido`: a diferencia del producto final (que la IA siempre
+      genera), el examen es opcional -- lo decide el profesor con un toggle
+      en el wizard, no la IA.
+    - `examen_formato`: el profesor lo elige de una lista cerrada en el
+      frontend (Test, Preguntas abiertas, Mixto...) antes de generar -- aquí
+      llega ya resuelto a texto, la IA no lo decide, solo diseña los
+      bloques del examen dentro de ese formato dado."""
 
     curso = get_course(course_id)
 
@@ -289,6 +305,33 @@ def construir_prompt(
 
     seccion_diseno = "\n<diseno_didactico>\n" + "\n\n".join(partes_diseno) + "\n</diseno_didactico>\n"
 
+    # ---- Bloque 3: examen final (opcional, a diferencia del producto final)
+    # -- el profesor decide con un toggle si lo quiere y elige el formato de
+    # una lista cerrada en el frontend; la IA solo diseña los bloques dentro
+    # de ese formato ya dado, nunca decide si hay examen o no.
+    if examen_incluido:
+        instruccion_examen = (
+            f"\n\nEl profesor quiere que la unidad incluya un EXAMEN FINAL con formato \"{examen_formato}\". "
+            "Diseña sus bloques (uno o más): cada bloque describe qué evalúa y qué criterios de evaluación "
+            "activa (de la lista dada). El examen debe evaluar contenido realmente trabajado en las sesiones "
+            "diseñadas arriba, no algo que no se haya visto en clase."
+        )
+        bloque_final_exam_json = (
+            '"finalExam": {\n'
+            '    "incluido": true,\n'
+            f'    "formato": "{examen_formato}",\n'
+            '    "bloques": [\n'
+            '      {\n'
+            '        "descripcion": "Qué evalúa este bloque del examen",\n'
+            '        "linkedCriteriaIds": ["códigos de criterios que activa este bloque"]\n'
+            '      }\n'
+            '    ]\n'
+            '  },'
+        )
+    else:
+        instruccion_examen = ""
+        bloque_final_exam_json = '"finalExam": {"incluido": false, "formato": null, "bloques": []},'
+
     prompt = f"""Eres un profesor de {curso.subject} de {curso.level} diseñando una unidad \
 de programación a partir de {"tu propio material de clase" if modo == "documento" else "lo que quieres trabajar"}.
 
@@ -311,11 +354,11 @@ Antes de diseñar nada más, decide estas dos cosas -- son las que dan sentido a
 1. Una SITUACIÓN DE PARTIDA: un escenario, problema o pregunta real y motivadora que dé \
 propósito a toda la unidad (no una lista de contenidos, sino algo que el alumnado pueda \
 reconocer como relevante).
-2. Un PRODUCTO FINAL: qué va a producir o conseguir el alumnado al terminar la unidad que \
-demuestre lo aprendido, coherente con esa situación de partida -- no algo añadido al final \
-sin relación con ella.
+2. Un PRODUCTO FINAL{f' de tipo "{producto_tipo}" (ya elegido por el profesor)' if producto_tipo else ''}: qué va a \
+producir o conseguir el alumnado al terminar la unidad que demuestre lo aprendido, coherente \
+con esa situación de partida -- no algo añadido al final sin relación con ella.
 El resto de la unidad (sesiones y actividades) tiene que construir progresivamente hacia \
-ese producto final, dentro de esa situación.
+ese producto final, dentro de esa situación.{instruccion_examen}
 
 Reparte el contenido en sesiones de clase, cubriendo todo el contenido de principio a fin, \
 en el orden que tenga más sentido pedagógico. {instruccion_sesiones}
@@ -351,10 +394,11 @@ Devuelve ÚNICAMENTE un JSON con esta forma exacta, sin texto antes ni después:
   "context": "La situación de partida: el escenario, problema o pregunta real que da sentido a la unidad",
   "finalProduct": {{
     "incluido": true,
-    "tipo": "Tipo de producto (p.ej. Infografía, Vídeo, Maqueta, Dossier, Exposición oral...)",
+    "tipo": "{producto_tipo or 'Tipo de producto (p.ej. Infografía, Vídeo, Maqueta, Dossier, Exposición oral...)'}",
     "descripcion": "Descripción del producto final, coherente con la situación de partida",
     "linkedCriteriaIds": ["códigos de criterios que evidencia el producto"]
   }},
+  {bloque_final_exam_json}
   "sessions": <número de sesiones>,
   "sessionDetails": [
     {{
@@ -497,12 +541,30 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
         "linkedCriteriaIds": _mapear_criterios(producto_datos.get("linkedCriteriaIds")),
     }
 
+    # A diferencia del producto (que la IA siempre genera), el examen es
+    # opcional -- "incluido" ya viene decidido por el toggle del profesor en
+    # el prompt (ver construir_prompt), aquí solo se parsea lo que haya
+    # devuelto la IA dentro de ese acuerdo.
+    examen_datos = datos.get("finalExam") or {}
+    final_exam = {
+        "incluido": bool(examen_datos.get("incluido")),
+        "formato": examen_datos.get("formato") or None,
+        "bloques": [
+            {
+                "descripcion": _reintegrar_texto(bloque.get("descripcion", ""), mapa),
+                "linkedCriteriaIds": _mapear_criterios(bloque.get("linkedCriteriaIds")),
+            }
+            for bloque in (examen_datos.get("bloques") or [])
+        ],
+    }
+
     unidad = {
         "name": _reintegrar_texto(datos.get("name", ""), mapa),
         "context": _reintegrar_texto(datos.get("context", ""), mapa),
         "sessions": datos.get("sessions", len(session_details)),
         "sessionDetails": session_details,
         "finalProduct": final_product,
+        "finalExam": final_exam,
         "linkedBasicKnowledgeIds": ids_saberes,
         "linkedCriteriaIds": ids_criterios,
         # Derivadas de los criterios realmente usados (ver competencias_usadas
