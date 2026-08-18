@@ -7,8 +7,10 @@ import Select from './Select';
 import Textarea from './Textarea';
 import { ArrowUpTrayIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, SparklesIcon } from './Icons';
 import { CARACTERISTICAS_HABITUALES } from './ClassModal';
+import { RASGOS_DOCENTE_HABITUALES } from './settings/AcademicConfigManager';
 import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
+import { usePreferences, useUpdatePreferences } from '../hooks/usePreferences';
 import { apiClassToLocal } from '../services/apiAdapters';
 
 type Paso = 1 | 2 | 3 | 4 | 5 | 6;
@@ -173,6 +175,26 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             : [...caracteristicasGrupo, rasgo];
         setCaracteristicasGrupo(nuevas);
         if (classId) updateClassMutation.mutate({ id: classId, yearId: currentYear.data?.id ?? '', data: { caracteristicasGrupo: nuevas } });
+    };
+
+    // Perfil docente -- a diferencia de las características del grupo, no
+    // depende de ninguna selección: es una única fila global en Preferencias
+    // (Ajustes > Configuración del curso académico), la misma para todas las
+    // SA. Se muestra y edita aquí también para que el profesor la vea
+    // aplicarse sin tener que salir del wizard, pero el guardado es
+    // exactamente el mismo (useUpdatePreferences) -- no un borrador propio
+    // del wizard.
+    const remotePreferences = usePreferences();
+    const updatePreferencesMutation = useUpdatePreferences();
+    const [perfilDocente, setPerfilDocente] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (remotePreferences.data) setPerfilDocente(remotePreferences.data.teacherProfile ?? []);
+    }, [remotePreferences.data]);
+
+    const handlePerfilDocenteChange = (nuevo: string[]) => {
+        setPerfilDocente(nuevo);
+        updatePreferencesMutation.mutate({ teacherProfile: nuevo });
     };
 
     // Bloque 2: Diseño didáctico.
@@ -553,6 +575,19 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                             )}
                         </div>
 
+                        <div className="pt-2 border-t">
+                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Tu perfil como docente</p>
+                            <p className="text-xs text-slate-500 mb-1.5">
+                                Se guarda en Ajustes y se reutiliza en todas las SA -- si lo cambias aquí, se guarda igual.
+                            </p>
+                            <ChipMultiPicker
+                                opciones={RASGOS_DOCENTE_HABITUALES}
+                                seleccion={perfilDocente}
+                                onChange={handlePerfilDocenteChange}
+                                placeholderOtro="Otro rasgo..."
+                            />
+                        </div>
+
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
                             <Button type="button" onClick={() => setPaso(3)}>Siguiente</Button>
@@ -786,6 +821,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                 </li>
                                 <li>· Grupo: {clasesDelCurso.find(c => c.id === classId)?.grupo || 'sin grupo seleccionado'}</li>
                                 <li>· Características del grupo: {caracteristicasGrupo.length > 0 ? caracteristicasGrupo.join(', ') : 'ninguna'}</li>
+                                <li>· Tu perfil docente: {perfilDocente.length > 0 ? perfilDocente.join(', ') : 'sin definir'}</li>
                             </ul>
                         </div>
 
