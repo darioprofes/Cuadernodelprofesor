@@ -572,6 +572,7 @@ const UnitEditor: React.FC<{
     specificCompetences: SpecificCompetence[];
 }> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences }) => {
     const [editedUnit, setEditedUnit] = useState(unit);
+    const [activeTab, setActiveTab] = useState<'general' | 'curriculo' | 'sesiones' | 'evaluacion'>('general');
 
     const handleFieldChange = <K extends keyof ProgrammingUnit>(field: K, value: ProgrammingUnit[K]) => {
         setEditedUnit(prev => ({ ...prev, [field]: value }));
@@ -700,6 +701,13 @@ const UnitEditor: React.FC<{
         }
     };
 
+    const TABS: { key: typeof activeTab; label: string }[] = [
+        { key: 'general', label: 'General' },
+        { key: 'curriculo', label: 'Currículo' },
+        { key: 'sesiones', label: 'Sesiones y actividades' },
+        { key: 'evaluacion', label: 'Evaluación' },
+    ];
+
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-4">
@@ -707,11 +715,11 @@ const UnitEditor: React.FC<{
                     <label className="text-xs font-medium text-slate-600">Nombre de la SA</label>
                     <input type="text" value={editedUnit.name} onChange={e => handleFieldChange('name', e.target.value)} placeholder="Título de la Situación de Aprendizaje" className="w-full text-lg font-bold p-1 border-b-2 border-slate-200 focus:border-blue-500 outline-none bg-transparent"/>
                 </div>
-                 <div>
+                 <div className="w-24 flex-shrink-0">
                     <label className="text-xs font-medium text-slate-600">Nº de Sesiones</label>
-                    <Input type="number" min="1" value={editedUnit.sessions} onChange={e => handleSessionsChange(parseInt(e.target.value, 10))} className="w-20 text-center"/>
+                    <Input type="number" min="1" value={editedUnit.sessions} onChange={e => handleSessionsChange(parseInt(e.target.value, 10))} className="text-center"/>
                 </div>
-                <div>
+                <div className="flex-shrink-0">
                     <label className="text-xs font-medium text-slate-600">Fecha de Inicio</label>
                     <Input
                         type="date"
@@ -722,26 +730,47 @@ const UnitEditor: React.FC<{
                 </div>
             </div>
 
-            <div>
-                <label className="text-xs font-medium text-slate-600">Contexto / situación de partida</label>
-                <textarea
-                    value={editedUnit.context || ''}
-                    onChange={e => handleFieldChange('context', e.target.value)}
-                    placeholder="El escenario o problema que se plantea al alumnado para arrancar la SA..."
-                    className="w-full text-sm p-2 border rounded-md focus:border-blue-500 outline-none"
-                    rows={2}
-                />
+            <div className="flex gap-1 border-b">
+                {TABS.map(tab => (
+                    <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setActiveTab(tab.key)}
+                        className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                            activeTab === tab.key
+                                ? 'border-blue-600 text-blue-700'
+                                : 'border-transparent text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <MultiSelect title="Competencias Específicas" allItems={specificCompetences} selectedIds={new Set(editedUnit.linkedSpecificCompetenceIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedSpecificCompetenceIds', idSet)} />
-                <MultiSelect title="Criterios de Evaluación" allItems={criteria} selectedIds={new Set(editedUnit.linkedCriteriaIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedCriteriaIds', idSet)} />
-                <MultiSelect title="Saberes Básicos" allItems={basicKnowledge} selectedIds={new Set(editedUnit.linkedBasicKnowledgeIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedBasicKnowledgeIds', idSet)} />
-            </div>
+            <div className="min-h-[22rem]">
+            {activeTab === 'general' && (
+                <div>
+                    <label className="text-xs font-medium text-slate-600">Contexto / situación de partida</label>
+                    <textarea
+                        value={editedUnit.context || ''}
+                        onChange={e => handleFieldChange('context', e.target.value)}
+                        placeholder="El escenario o problema que se plantea al alumnado para arrancar la SA..."
+                        className="w-full text-sm p-2 border rounded-md focus:border-blue-500 outline-none"
+                        rows={6}
+                    />
+                </div>
+            )}
 
-            <div>
-                <h4 className="text-sm font-semibold text-slate-700 mb-2">Sesiones y actividades</h4>
-                 <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+            {activeTab === 'curriculo' && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <MultiSelect title="Competencias Específicas" allItems={specificCompetences} selectedIds={new Set(editedUnit.linkedSpecificCompetenceIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedSpecificCompetenceIds', idSet)} />
+                    <MultiSelect title="Criterios de Evaluación" allItems={criteria} selectedIds={new Set(editedUnit.linkedCriteriaIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedCriteriaIds', idSet)} />
+                    <MultiSelect title="Saberes Básicos" allItems={basicKnowledge} selectedIds={new Set(editedUnit.linkedBasicKnowledgeIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedBasicKnowledgeIds', idSet)} />
+                </div>
+            )}
+
+            {activeTab === 'sesiones' && (
+                <div className="space-y-3 max-h-[28rem] overflow-y-auto pr-2">
                     {(editedUnit.sessionDetails || []).map((detail, sIndex) => (
                         <div key={sIndex} className="p-2 border rounded-lg bg-white space-y-2">
                             <div className="flex items-center gap-2">
@@ -798,9 +827,10 @@ const UnitEditor: React.FC<{
                             </div>
                         </div>
                     ))}
-                 </div>
-            </div>
+                </div>
+            )}
 
+            {activeTab === 'evaluacion' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-3 border rounded-lg bg-white space-y-2">
                     <label className="flex items-center gap-2 font-semibold text-slate-700">
@@ -855,6 +885,8 @@ const UnitEditor: React.FC<{
                         </div>
                     )}
                 </div>
+            </div>
+            )}
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t">
