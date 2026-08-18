@@ -11,7 +11,7 @@ import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
 import { apiClassToLocal } from '../services/apiAdapters';
 
-type Paso = 1 | 2 | 3 | 4 | 5;
+type Paso = 1 | 2 | 3 | 4 | 5 | 6;
 
 // Categorías del documento de diseño original -- selección múltiple + Otro.
 const TIPOS_ACTIVIDAD_DISPONIBLES = [
@@ -306,7 +306,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             }
             const data: { prompt: string; mapa: Record<string, string> } = await response.json();
             setResultado(data);
-            setPaso(4);
+            setPaso(5);
         } catch (err) {
             setErrorPaso1(err instanceof Error ? err.message : String(err));
         } finally {
@@ -383,7 +383,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                     <SparklesIcon className="w-4 h-4" />
-                    Paso {paso} de 5
+                    Paso {paso} de 6
                 </div>
 
                 {paso === 1 && (
@@ -754,6 +754,97 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                         )}
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(2)}>Atrás</Button>
+                            <Button type="button" onClick={() => setPaso(4)}>Revisar</Button>
+                        </div>
+                    </div>
+                )}
+
+                {paso === 4 && (
+                    <div className="flex flex-col gap-4">
+                        <p className="text-sm text-slate-600">
+                            Repasa lo que vas a pedirle a la IA antes de generar el prompt.
+                        </p>
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1">Contenido</p>
+                            <ul className="text-sm text-slate-600 space-y-0.5">
+                                <li>
+                                    · Modo: {modo === 'documento'
+                                        ? `Tengo material (${textoEntrada.length.toLocaleString('es-ES')} caracteres)`
+                                        : `La IA genera los contenidos (${textoEntrada.length.toLocaleString('es-ES')} caracteres de descripción)`}
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1">Planificación</p>
+                            <ul className="text-sm text-slate-600 space-y-0.5">
+                                <li>
+                                    · Sesiones: {sesionesModo === 'fijo'
+                                        ? `${sesionesFijo} (tú decides)`
+                                        : sesionesModo === 'rango'
+                                            ? `entre ${sesionesMin} y ${sesionesMax} (tú decides el rango)`
+                                            : 'que decida la IA'}
+                                </li>
+                                <li>· Grupo: {clasesDelCurso.find(c => c.id === classId)?.grupo || 'sin grupo seleccionado'}</li>
+                                <li>· Características del grupo: {caracteristicasGrupo.length > 0 ? caracteristicasGrupo.join(', ') : 'ninguna'}</li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1">Diseño didáctico</p>
+                            <ul className="text-sm text-slate-600 space-y-0.5">
+                                <li>· Tipos de actividad: {tiposActividad.length > 0 ? tiposActividad.join(', ') : 'que decida la IA'}</li>
+                                {tiposActividad.includes('Trabajo cooperativo/grupal') && (
+                                    <li>· Estructuras cooperativas: {estructurasCooperativas.length > 0 ? estructurasCooperativas.join(', ') : 'que decida la IA'}</li>
+                                )}
+                                <li>· Actividades obligatorias: {actividadesObligatorias.length > 0 ? actividadesObligatorias.length : 'ninguna'}</li>
+                                <li>
+                                    · Estructura de sesión: {estructuraSesion === 'ia'
+                                        ? 'que decida la IA'
+                                        : estructuraSesion === 'inicio_desarrollo_cierre'
+                                            ? 'Inicio-Desarrollo-Cierre (tú decides)'
+                                            : `${estructuraSesionDetalle || 'personalizada'} (tú decides)`}
+                                </li>
+                                <li>
+                                    · Progresión de autonomía: {progresionAutonomia === 'ia'
+                                        ? 'que decida la IA'
+                                        : progresionAutonomia === 'creciente' ? 'Creciente (tú decides)' : 'Constante (tú decides)'}
+                                </li>
+                                <li>
+                                    · Atención a la diversidad: {atencionDiversidad === 'diferenciadas'
+                                        ? 'Actividades diferenciadas (tú decides)'
+                                        : atencionDiversidad === 'unica'
+                                            ? 'Una única vía para el grupo (tú decides)'
+                                            : `${atencionDiversidadDetalle || 'Otro'} (tú decides)`}
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1">Evaluación</p>
+                            <ul className="text-sm text-slate-600 space-y-0.5">
+                                <li>
+                                    · Producto final: {productoIncluido
+                                        ? `Sí, tipo ${productoTipoResuelto} (tú eliges el tipo, la IA redacta la descripción)`
+                                        : 'No'}
+                                </li>
+                                <li>
+                                    · Examen final: {examenIncluido
+                                        ? `Sí, formato ${examenFormatoResuelto} (tú eliges el formato, la IA diseña los bloques)`
+                                        : 'No'}
+                                </li>
+                            </ul>
+                        </div>
+
+                        {errorPaso1 && (
+                            <p className="text-sm text-red-600 flex items-center gap-1.5">
+                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                                {errorPaso1}
+                            </p>
+                        )}
+                        <div className="flex justify-between">
+                            <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
                             <Button type="button" onClick={handleGenerarPrompt} disabled={generando}>
                                 {generando ? 'Generando...' : 'Generar prompt'}
                             </Button>
@@ -761,23 +852,23 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                     </div>
                 )}
 
-                {paso === 4 && resultado && (
+                {paso === 5 && resultado && (
                     <div className="flex flex-col gap-3">
                         <p className="text-sm text-slate-600">
                             Copia este prompt y pégalo en tu IA online de confianza.
                         </p>
                         <Textarea value={resultado.prompt} readOnly rows={14} className="font-mono text-sm bg-slate-50" />
                         <div className="flex justify-between">
-                            <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
+                            <Button type="button" variant="secondary" onClick={() => setPaso(4)}>Atrás</Button>
                             <div className="flex gap-2">
                                 <CopyButton texto={resultado.prompt} />
-                                <Button type="button" onClick={() => setPaso(5)}>Siguiente</Button>
+                                <Button type="button" onClick={() => setPaso(6)}>Siguiente</Button>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {paso === 5 && (
+                {paso === 6 && (
                     <div className="flex flex-col gap-3">
                         <p className="text-sm text-slate-600">
                             Pega aquí la respuesta (JSON) de la IA.
@@ -796,7 +887,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                             </p>
                         )}
                         <div className="flex justify-between">
-                            <Button type="button" variant="secondary" onClick={() => setPaso(4)}>Atrás</Button>
+                            <Button type="button" variant="secondary" onClick={() => setPaso(5)}>Atrás</Button>
                             <Button type="button" onClick={handleProcesarRespuesta} disabled={!respuestaIA.trim() || procesando}>
                                 {procesando ? 'Procesando...' : 'Continuar a revisión'}
                             </Button>
