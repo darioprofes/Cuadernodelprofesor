@@ -1085,7 +1085,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                 onSave={handleGuardarInstrumentoExamen}
                                 toolToEdit={instrumentoDraft}
                                 criteria={criteria}
-                                courses={courses}
+                                courses={courses.filter(c => c.id === courseId)}
                             />
                         )}
                     </div>

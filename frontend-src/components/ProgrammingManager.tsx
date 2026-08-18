@@ -105,6 +105,10 @@ const InstrumentoSelectConIA: React.FC<{
     const [draft, setDraft] = useState<EvaluationTool | null>(null);
     const createToolMutation = useCreateEvaluationTool();
     const iaLocalDisponible = useIaLocalDisponible();
+    // Solo el curso de esta SA -- si no, el selector "Filtrar por Curso" del
+    // formulario de revisión ofrece todas las etapas/niveles/materias de la
+    // app, cuando aquí solo tiene sentido vincular criterios de este curso.
+    const cursoDeEstaSA = useMemo(() => courses.filter(c => c.id === courseId), [courses, courseId]);
 
     const handleGuardarDraft = async (tool: EvaluationTool) => {
         const { id: _unused, ...data } = tool;
@@ -140,7 +144,7 @@ const InstrumentoSelectConIA: React.FC<{
                     onSave={handleGuardarDraft}
                     toolToEdit={draft}
                     criteria={criteria}
-                    courses={courses}
+                    courses={cursoDeEstaSA}
                 />
             )}
         </div>
