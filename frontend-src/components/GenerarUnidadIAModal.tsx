@@ -37,9 +37,16 @@ interface GenerarUnidadIAModalProps {
 // pegar en una IA online, y procesa la respuesta -- pero NO guarda nada
 // directamente: entrega un borrador para que se revise en el mismo
 // formulario que ya usa la creación manual de unidades.
+// Modo A ("documento"): el profesor ya tiene el material, la IA solo lo
+// organiza. Modo B ("descripcion"): no hay material escrito todavía, la IA
+// redacta el contenido teórico a partir de lo que el profesor describe.
+type Modo = 'documento' | 'descripcion';
+
 const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, courseId, onClose, onDraftReady }) => {
     const [paso, setPaso] = useState<Paso>(1);
+    const [modo, setModo] = useState<Modo>('documento');
     const [documento, setDocumento] = useState('');
+    const [descripcion, setDescripcion] = useState('');
     const [subiendoDocumento, setSubiendoDocumento] = useState(false);
     const [avisoExtraccion, setAvisoExtraccion] = useState<string | null>(null);
     const [errorPaso1, setErrorPaso1] = useState<string | null>(null);
@@ -50,9 +57,13 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     const [errorPaso3, setErrorPaso3] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    const textoEntrada = modo === 'documento' ? documento : descripcion;
+
     const reset = () => {
         setPaso(1);
+        setModo('documento');
         setDocumento('');
+        setDescripcion('');
         setAvisoExtraccion(null);
         setErrorPaso1(null);
         setResultado(null);
@@ -94,7 +105,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             const response = await fetch('/api/prompts/unidad-programacion/generar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ course_id: courseId, documento }),
+                body: JSON.stringify({ course_id: courseId, documento: textoEntrada, modo }),
             });
             if (!response.ok) {
                 const body = await response.json().catch(() => ({}));
@@ -190,52 +201,97 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
 
                 {paso === 1 && (
                     <div className="flex flex-col gap-3">
-                        <p className="text-sm text-slate-600">
-                            Pega tu material de teoría o sube un .docx, .pptx o .pdf. Se generará un prompt con
-                            el documento y el currículo real de este curso, para pegar en una IA online (Claude,
-                            ChatGPT...).
-                        </p>
-                        <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                            <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                            Este documento NO pasa por el Anonimizador (los términos científicos le confundían y
-                            corrompía el propio currículo). Revisa que no mencione a ningún alumno antes de
-                            copiarlo a la IA online.
-                        </p>
-                        <div className="flex items-center gap-2">
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept=".docx,.pptx,.pdf"
-                                className="hidden"
-                                onChange={e => {
-                                    const file = e.target.files?.[0];
-                                    if (file) handleSubirDocumento(file);
-                                    e.target.value = '';
-                                }}
-                            />
-                            <Button
+                        <div className="flex gap-1 border-b">
+                            <button
                                 type="button"
-                                variant="secondary"
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={subiendoDocumento}
+                                onClick={() => setModo('documento')}
+                                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${modo === 'documento' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                             >
-                                <ArrowUpTrayIcon className="w-4 h-4" />
-                                {subiendoDocumento ? 'Extrayendo...' : 'Subir documento'}
-                            </Button>
+                                Tengo material
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setModo('descripcion')}
+                                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${modo === 'descripcion' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                            >
+                                Quiero que la IA genere los contenidos
+                            </button>
                         </div>
-                        {avisoExtraccion && (
-                            <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                                {avisoExtraccion}
-                            </p>
+
+                        {modo === 'documento' ? (
+                            <>
+                                <p className="text-sm text-slate-600">
+                                    Pega tu material de teoría o sube un .docx, .pptx o .pdf. Se generará un prompt con
+                                    el documento y el currículo real de este curso, para pegar en una IA online (Claude,
+                                    ChatGPT...).
+                                </p>
+                                <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                    <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                    Este documento NO pasa por el Anonimizador (los términos científicos le confundían y
+                                    corrompía el propio currículo). Revisa que no mencione a ningún alumno antes de
+                                    copiarlo a la IA online.
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept=".docx,.pptx,.pdf"
+                                        className="hidden"
+                                        onChange={e => {
+                                            const file = e.target.files?.[0];
+                                            if (file) handleSubirDocumento(file);
+                                            e.target.value = '';
+                                        }}
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={subiendoDocumento}
+                                    >
+                                        <ArrowUpTrayIcon className="w-4 h-4" />
+                                        {subiendoDocumento ? 'Extrayendo...' : 'Subir documento'}
+                                    </Button>
+                                </div>
+                                {avisoExtraccion && (
+                                    <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                        <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                        {avisoExtraccion}
+                                    </p>
+                                )}
+                                <Textarea
+                                    value={documento}
+                                    onChange={e => setDocumento(e.target.value)}
+                                    rows={12}
+                                    placeholder="...o pega aquí el texto del material de teoría"
+                                    className="font-mono text-sm"
+                                />
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-sm text-slate-600">
+                                    Todavía no tienes el material escrito: describe con el mayor detalle posible lo
+                                    que quieres trabajar (subapartados, conceptos clave, ejemplos o casos que te
+                                    interesen, nivel de profundidad...) y la IA redactará el desarrollo teórico
+                                    dentro del currículo real de este curso. Cuanto más detalle des, más se
+                                    ajustará el resultado a lo que tenías en mente.
+                                </p>
+                                <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                    <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                    El contenido teórico lo redacta la IA -- revisa que sea correcto antes de usarlo
+                                    en clase, puede cometer errores factuales. (Esto no es un aviso de datos
+                                    personales: no describas aquí a ningún alumno concreto de todas formas.)
+                                </p>
+                                <Textarea
+                                    value={descripcion}
+                                    onChange={e => setDescripcion(e.target.value)}
+                                    rows={12}
+                                    placeholder="Describe con el mayor detalle posible lo que quieres trabajar: subapartados, conceptos clave, ejemplos o casos que te interesen, nivel de profundidad..."
+                                    className="text-sm"
+                                />
+                            </>
                         )}
-                        <Textarea
-                            value={documento}
-                            onChange={e => setDocumento(e.target.value)}
-                            rows={12}
-                            placeholder="...o pega aquí el texto del material de teoría"
-                            className="font-mono text-sm"
-                        />
+
                         {errorPaso1 && (
                             <p className="text-sm text-red-600 flex items-center gap-1.5">
                                 <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
@@ -243,7 +299,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                             </p>
                         )}
                         <div className="flex justify-end">
-                            <Button type="button" onClick={handleGenerarPrompt} disabled={!documento.trim() || generando}>
+                            <Button type="button" onClick={handleGenerarPrompt} disabled={!textoEntrada.trim() || generando}>
                                 {generando ? 'Generando...' : 'Generar prompt'}
                             </Button>
                         </div>

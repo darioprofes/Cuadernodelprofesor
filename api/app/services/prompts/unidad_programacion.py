@@ -41,13 +41,23 @@ def _detectar_marcador(texto):
     return None, None
 
 
-def construir_prompt(course_id, documento_texto):
+def construir_prompt(course_id, documento_texto, modo="documento"):
     """Devuelve (anonimizado, mapa) -- mismo formato que
     services/anonimizador.py::anonimizar(), listo para el mismo flujo de
     copiar/pegar del Anonimizador. El mapa normalmente sale vacío (un
     documento de teoría no suele tener datos personales), pero se pasa por
     anonimizar() de todas formas por si el documento menciona a algún alumno
-    de pasada."""
+    de pasada.
+
+    `modo`:
+    - "documento" (Modo A, por defecto): el profesor ya tiene el material
+      (subido o pegado) y la IA solo debe organizarlo, sin añadir nada que
+      no esté en él.
+    - "descripcion" (Modo B): el profesor todavía no tiene el contenido
+      escrito, solo describe lo que quiere trabajar, y le pide a la IA que
+      redacte ella misma el desarrollo teórico -- fiel a esa descripción y
+      al currículo real, pero el contenido en sí lo genera la IA (con el
+      riesgo de fiabilidad que eso conlleva, distinto al de Modo A)."""
 
     curso = get_course(course_id)
 
@@ -55,7 +65,7 @@ def construir_prompt(course_id, documento_texto):
         raise ValueError("Curso no encontrado.")
 
     if not documento_texto.strip():
-        raise ValueError("El documento está vacío.")
+        raise ValueError("El documento está vacío." if modo == "documento" else "La descripción está vacía.")
 
     saberes = list_basic_knowledge(course_id)
     criterios = list_criteria(course_id)
@@ -70,32 +80,46 @@ def construir_prompt(course_id, documento_texto):
     lista_saberes = "\n".join(f"- {s.code}: {s.description}" for s in saberes) or "(ninguno cargado en este curso)"
     lista_criterios = "\n".join(f"- {c.code}: {c.description}" for c in criterios) or "(ninguno cargado en este curso)"
 
-    unidad_estructural, marcador = _detectar_marcador(documento_texto)
-
-    if unidad_estructural:
-        instruccion_cobertura = (
-            f"El documento está dividido en {unidad_estructural}s numeradas (\"{marcador}\"). NO "
-            f"omitas ninguna, ni siquiera las que te parezcan más básicas o introductorias que el "
-            f"resto (por ejemplo: qué es un concepto, su composición, sus funciones o su "
-            f"estructura). Antes de dar la respuesta final, repasa la lista completa de "
-            f"{unidad_estructural}s del documento y comprueba que cada una está representada en, "
-            f"al menos, una sesión. Si detectas alguna {unidad_estructural} sin cubrir, añade o "
-            f"amplía una sesión para incluirla antes de responder."
+    if modo == "descripcion":
+        etiqueta_entrada = "descripcion_del_profesor"
+        instruccion_tarea = (
+            "Todavía no existe un documento de teoría escrito: a partir de la descripción del "
+            "profesor de arriba, redacta tú el desarrollo teórico necesario, siguiéndola con la "
+            "mayor fidelidad posible -- no te salgas de lo que pide ni añadas temas que no haya "
+            "mencionado, aunque parezcan relacionados."
         )
     else:
-        instruccion_cobertura = (
-            "No omitas ningún apartado o bloque de contenido del documento, ni siquiera los que te "
-            "parezcan más básicos o introductorios que el resto. Antes de dar la respuesta final, "
-            "repasa el documento de principio a fin y comprueba que todo su contenido está "
-            "representado en, al menos, una sesión."
-        )
+        etiqueta_entrada = "documento_de_teoria"
+        unidad_estructural, marcador = _detectar_marcador(documento_texto)
+
+        if unidad_estructural:
+            instruccion_tarea = (
+                f"Diseña una unidad de programación a partir ÚNICAMENTE del contenido del documento "
+                f"de teoría. No añadas datos, ejemplos ni conceptos que no aparezcan en él.\n\n"
+                f"El documento está dividido en {unidad_estructural}s numeradas (\"{marcador}\"). NO "
+                f"omitas ninguna, ni siquiera las que te parezcan más básicas o introductorias que el "
+                f"resto (por ejemplo: qué es un concepto, su composición, sus funciones o su "
+                f"estructura). Antes de dar la respuesta final, repasa la lista completa de "
+                f"{unidad_estructural}s del documento y comprueba que cada una está representada en, "
+                f"al menos, una sesión. Si detectas alguna {unidad_estructural} sin cubrir, añade o "
+                f"amplía una sesión para incluirla antes de responder."
+            )
+        else:
+            instruccion_tarea = (
+                "Diseña una unidad de programación a partir ÚNICAMENTE del contenido del documento "
+                "de teoría. No añadas datos, ejemplos ni conceptos que no aparezcan en él.\n\n"
+                "No omitas ningún apartado o bloque de contenido del documento, ni siquiera los que te "
+                "parezcan más básicos o introductorios que el resto. Antes de dar la respuesta final, "
+                "repasa el documento de principio a fin y comprueba que todo su contenido está "
+                "representado en, al menos, una sesión."
+            )
 
     prompt = f"""Eres un profesor de {curso.subject} de {curso.level} diseñando una unidad \
-de programación a partir de tu propio material de clase.
+de programación a partir de {"tu propio material de clase" if modo == "documento" else "lo que quieres trabajar"}.
 
-<documento_de_teoria>
+<{etiqueta_entrada}>
 {documento_texto}
-</documento_de_teoria>
+</{etiqueta_entrada}>
 
 <curriculo_oficial_del_curso>
 SABERES BÁSICOS (usa solo estos códigos, ninguno más):
@@ -106,19 +130,16 @@ CRITERIOS DE EVALUACIÓN (usa solo estos códigos, ninguno más):
 </curriculo_oficial_del_curso>
 
 <tarea>
-Diseña una unidad de programación a partir ÚNICAMENTE del contenido del documento \
-de teoría. No añadas datos, ejemplos ni conceptos que no aparezcan en él.
+{instruccion_tarea}
 
 Reparte el contenido en sesiones de clase (una sesión = una hora lectiva), cubriendo \
-el documento completo de principio a fin, en el orden que tenga más sentido \
+todo el contenido de principio a fin, en el orden que tenga más sentido \
 pedagógico. Tú decides cuántas sesiones hacen falta según la cantidad de contenido \
 real -- no fuerces un número concreto.
 
-{instruccion_cobertura}
-
 Para cada sesión:
 - Un título breve.
-- Una descripción de 2-4 frases con lo que se trabaja, fiel al documento.
+- Una descripción de 2-4 frases con lo que se trabaja.
 - Los saberes básicos que activa (de la lista dada, cero o más -- dejar vacío si \
 ninguno encaja de verdad es preferible a forzar uno).
 - Los criterios de evaluación que activa (mismo criterio: solo de la lista dada).

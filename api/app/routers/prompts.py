@@ -106,13 +106,16 @@ def _construir_aviso(texto, num_unidades, nombre_unidad, con_vision, vision_fall
 class GenerarUnidadRequest(BaseModel):
     course_id: str
     documento: str
+    # "documento" (Modo A, por defecto) o "descripcion" (Modo B) -- ver
+    # nota de cabecera en construir_prompt().
+    modo: str = "documento"
 
 
 @router.post("/unidad-programacion/generar")
 async def generar_prompt_unidad(datos: GenerarUnidadRequest):
 
     try:
-        prompt, mapa = construir_prompt(datos.course_id, datos.documento)
+        prompt, mapa = construir_prompt(datos.course_id, datos.documento, datos.modo)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
