@@ -11,7 +11,7 @@ import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
 import { apiClassToLocal } from '../services/apiAdapters';
 
-type Paso = 1 | 2 | 3;
+type Paso = 1 | 2 | 3 | 4;
 
 const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
     const [copiado, setCopiado] = useState(false);
@@ -47,12 +47,10 @@ interface GenerarUnidadIAModalProps {
 // organiza. Modo B ("descripcion"): no hay material escrito todavía, la IA
 // redacta el contenido teórico a partir de lo que el profesor describe.
 type Modo = 'documento' | 'descripcion';
-type Bloque = 'contenido' | 'planificacion';
 type SesionesModo = 'fijo' | 'rango' | 'ia';
 
 const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, courseId, onClose, onDraftReady }) => {
     const [paso, setPaso] = useState<Paso>(1);
-    const [activeBloque, setActiveBloque] = useState<Bloque>('contenido');
     const [modo, setModo] = useState<Modo>('documento');
     const [documento, setDocumento] = useState('');
     const [descripcion, setDescripcion] = useState('');
@@ -104,7 +102,6 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
 
     const reset = () => {
         setPaso(1);
-        setActiveBloque('contenido');
         setModo('documento');
         setDocumento('');
         setDescripcion('');
@@ -167,7 +164,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             }
             const data: { prompt: string; mapa: Record<string, string> } = await response.json();
             setResultado(data);
-            setPaso(2);
+            setPaso(3);
         } catch (err) {
             setErrorPaso1(err instanceof Error ? err.message : String(err));
         } finally {
@@ -250,92 +247,11 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                     <SparklesIcon className="w-4 h-4" />
-                    Paso {paso} de 3
+                    Paso {paso} de 4
                 </div>
 
                 {paso === 1 && (
                     <div className="flex flex-col gap-3">
-                        <div className="flex gap-1 border-b">
-                            <button
-                                type="button"
-                                onClick={() => setActiveBloque('contenido')}
-                                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeBloque === 'contenido' ? 'border-slate-700 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                            >
-                                Contenido
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setActiveBloque('planificacion')}
-                                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeBloque === 'planificacion' ? 'border-slate-700 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                            >
-                                Planificación
-                            </button>
-                        </div>
-
-                        {activeBloque === 'planificacion' && (
-                            <div className="flex flex-col gap-4">
-                                <div>
-                                    <p className="text-sm font-semibold text-slate-700 mb-1.5">Número de sesiones</p>
-                                    <div className="flex gap-1.5 flex-wrap">
-                                        {(['fijo', 'rango', 'ia'] as SesionesModo[]).map(opcion => (
-                                            <button
-                                                key={opcion}
-                                                type="button"
-                                                onClick={() => setSesionesModo(opcion)}
-                                                className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${sesionesModo === opcion ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
-                                            >
-                                                {opcion === 'fijo' ? 'Número fijo' : opcion === 'rango' ? 'Rango orientativo' : 'Que decida la IA'}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    {sesionesModo === 'fijo' && (
-                                        <div className="mt-2 w-24">
-                                            <Input type="number" min={1} value={sesionesFijo} onChange={e => setSesionesFijo(parseInt(e.target.value, 10) || 1)} />
-                                        </div>
-                                    )}
-                                    {sesionesModo === 'rango' && (
-                                        <div className="mt-2 flex items-center gap-2">
-                                            <div className="w-20"><Input type="number" min={1} value={sesionesMin} onChange={e => setSesionesMin(parseInt(e.target.value, 10) || 1)} /></div>
-                                            <span className="text-sm text-slate-500">a</span>
-                                            <div className="w-20"><Input type="number" min={1} value={sesionesMax} onChange={e => setSesionesMax(parseInt(e.target.value, 10) || 1)} /></div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <p className="text-sm font-semibold text-slate-700 mb-1.5">Grupo</p>
-                                    {clasesDelCurso.length === 0 ? (
-                                        <p className="text-sm text-slate-500">Esta materia todavía no tiene clases/grupos dados de alta.</p>
-                                    ) : (
-                                        <>
-                                            <Select value={classId} onChange={e => setClassId(e.target.value)} className="max-w-xs">
-                                                {clasesDelCurso.map(c => (
-                                                    <option key={c.id} value={c.id}>{c.grupo || 'Sin nombre'}</option>
-                                                ))}
-                                            </Select>
-                                            <p className="text-xs text-slate-500 mt-2">
-                                                Características del grupo -- se cargan de la clase y se guardan ahí si las cambias:
-                                            </p>
-                                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                                {CARACTERISTICAS_HABITUALES.map(rasgo => (
-                                                    <button
-                                                        key={rasgo}
-                                                        type="button"
-                                                        onClick={() => toggleCaracteristica(rasgo)}
-                                                        className={`text-xs font-medium px-2 py-1 rounded-full border transition-colors ${caracteristicasGrupo.includes(rasgo) ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
-                                                    >
-                                                        {rasgo}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {activeBloque === 'contenido' && (
-                        <>
                         <div className="flex gap-1.5">
                             <button
                                 type="button"
@@ -426,8 +342,6 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                 />
                             </>
                         )}
-                        </>
-                        )}
 
                         {errorPaso1 && (
                             <p className="text-sm text-red-600 flex items-center gap-1.5">
@@ -436,30 +350,105 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                             </p>
                         )}
                         <div className="flex justify-end">
-                            <Button type="button" onClick={handleGenerarPrompt} disabled={!textoEntrada.trim() || generando}>
+                            <Button type="button" onClick={() => setPaso(2)} disabled={!textoEntrada.trim()}>
+                                Siguiente
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {paso === 2 && (
+                    <div className="flex flex-col gap-4">
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Número de sesiones</p>
+                            <div className="flex gap-1.5 flex-wrap">
+                                {(['fijo', 'rango', 'ia'] as SesionesModo[]).map(opcion => (
+                                    <button
+                                        key={opcion}
+                                        type="button"
+                                        onClick={() => setSesionesModo(opcion)}
+                                        className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${sesionesModo === opcion ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                    >
+                                        {opcion === 'fijo' ? 'Número fijo' : opcion === 'rango' ? 'Rango orientativo' : 'Que decida la IA'}
+                                    </button>
+                                ))}
+                            </div>
+                            {sesionesModo === 'fijo' && (
+                                <div className="mt-2 w-24">
+                                    <Input type="number" min={1} value={sesionesFijo} onChange={e => setSesionesFijo(parseInt(e.target.value, 10) || 1)} />
+                                </div>
+                            )}
+                            {sesionesModo === 'rango' && (
+                                <div className="mt-2 flex items-center gap-2">
+                                    <div className="w-20"><Input type="number" min={1} value={sesionesMin} onChange={e => setSesionesMin(parseInt(e.target.value, 10) || 1)} /></div>
+                                    <span className="text-sm text-slate-500">a</span>
+                                    <div className="w-20"><Input type="number" min={1} value={sesionesMax} onChange={e => setSesionesMax(parseInt(e.target.value, 10) || 1)} /></div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Grupo</p>
+                            {clasesDelCurso.length === 0 ? (
+                                <p className="text-sm text-slate-500">Esta materia todavía no tiene clases/grupos dados de alta.</p>
+                            ) : (
+                                <>
+                                    <Select value={classId} onChange={e => setClassId(e.target.value)} className="max-w-xs">
+                                        {clasesDelCurso.map(c => (
+                                            <option key={c.id} value={c.id}>{c.grupo || 'Sin nombre'}</option>
+                                        ))}
+                                    </Select>
+                                    <p className="text-xs text-slate-500 mt-2">
+                                        Características del grupo -- se cargan de la clase y se guardan ahí si las cambias:
+                                    </p>
+                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                        {CARACTERISTICAS_HABITUALES.map(rasgo => (
+                                            <button
+                                                key={rasgo}
+                                                type="button"
+                                                onClick={() => toggleCaracteristica(rasgo)}
+                                                className={`text-xs font-medium px-2 py-1 rounded-full border transition-colors ${caracteristicasGrupo.includes(rasgo) ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                            >
+                                                {rasgo}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        {errorPaso1 && (
+                            <p className="text-sm text-red-600 flex items-center gap-1.5">
+                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                                {errorPaso1}
+                            </p>
+                        )}
+                        <div className="flex justify-between">
+                            <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
+                            <Button type="button" onClick={handleGenerarPrompt} disabled={generando}>
                                 {generando ? 'Generando...' : 'Generar prompt'}
                             </Button>
                         </div>
                     </div>
                 )}
 
-                {paso === 2 && resultado && (
+                {paso === 3 && resultado && (
                     <div className="flex flex-col gap-3">
                         <p className="text-sm text-slate-600">
                             Copia este prompt y pégalo en tu IA online de confianza.
                         </p>
                         <Textarea value={resultado.prompt} readOnly rows={14} className="font-mono text-sm bg-slate-50" />
                         <div className="flex justify-between">
-                            <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
+                            <Button type="button" variant="secondary" onClick={() => setPaso(2)}>Atrás</Button>
                             <div className="flex gap-2">
                                 <CopyButton texto={resultado.prompt} />
-                                <Button type="button" onClick={() => setPaso(3)}>Siguiente</Button>
+                                <Button type="button" onClick={() => setPaso(4)}>Siguiente</Button>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {paso === 3 && (
+                {paso === 4 && (
                     <div className="flex flex-col gap-3">
                         <p className="text-sm text-slate-600">
                             Pega aquí la respuesta (JSON) de la IA.
@@ -478,7 +467,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                             </p>
                         )}
                         <div className="flex justify-between">
-                            <Button type="button" variant="secondary" onClick={() => setPaso(2)}>Atrás</Button>
+                            <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
                             <Button type="button" onClick={handleProcesarRespuesta} disabled={!respuestaIA.trim() || procesando}>
                                 {procesando ? 'Procesando...' : 'Continuar a revisión'}
                             </Button>
