@@ -220,7 +220,15 @@ def construir_prompt(
     partes_diseno = []
 
     if tipos_actividad:
-        partes_diseno.append("Tipos de actividad a utilizar:\n" + "\n".join(f"- {t}" for t in tipos_actividad))
+        partes_diseno.append(
+            "Tipos de actividad a utilizar:\n" + "\n".join(f"- {t}" for t in tipos_actividad)
+            + "\n\nRepártelos de forma equilibrada entre las sesiones -- no concentres casi todas "
+            "las actividades en uno de estos tipos dejando los demás como algo residual o solo al "
+            "final. Ten en cuenta también el esfuerzo real de preparación para el profesor: si vas "
+            "a proponer varias actividades de un tipo que normalmente exige crear materiales propios "
+            "(gamificación con tableros/cartas/fichas, ABP con documentación extensa, etc.), no te "
+            "excedas en su número ni en la complejidad de esos materiales."
+        )
 
     if estructuras_cooperativas:
         partes_diseno.append(
