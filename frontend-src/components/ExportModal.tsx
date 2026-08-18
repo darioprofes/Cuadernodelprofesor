@@ -141,7 +141,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, classes, cou
             // 5. Planning CSV
             const classUnits = programmingUnits.filter(u => u.courseId === course.id);
             if (classUnits.length > 0) {
-                const planningHeaders = ['Unidad Didáctica', 'Nº Sesión', 'Descripción/Contenido', 'Criterios Vinculados', 'Saberes Básicos Vinculados'];
+                const planningHeaders = ['Situación de Aprendizaje', 'Nº Sesión', 'Descripción/Contenido', 'Criterios Vinculados', 'Saberes Básicos Vinculados'];
                 const planningRows: (string | number)[][] = [];
                 
                 classUnits.forEach(unit => {

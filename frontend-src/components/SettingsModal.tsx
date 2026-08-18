@@ -190,7 +190,7 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                     <div className="mt-4 pt-4 border-t">
                         <ul className="space-y-2">
                             <SettingsNavItem icon={<AcademicCapIcon />} label="Gestionar Currículo" view="curriculum" activeView={activeView} setActiveView={setActiveView} />
-                            <SettingsNavItem icon={<ListBulletIcon />} label="Planificación UD" view="planner" activeView={activeView} setActiveView={setActiveView} />
+                            <SettingsNavItem icon={<ListBulletIcon />} label="Situaciones de Aprendizaje" view="planner" activeView={activeView} setActiveView={setActiveView} />
                             <SettingsNavItem icon={<BeakerIcon />} label="Instrumentos Evaluación" view="evaluationTools" activeView={activeView} setActiveView={setActiveView} />
                             <SettingsNavItem icon={<InformationCircleIcon />} label="Ajustes de Evaluación" view="evaluationInfo" activeView={activeView} setActiveView={setActiveView} />
                         </ul>
@@ -262,7 +262,7 @@ const EvaluationInfoPanel: React.FC = () => (
                 <li>Los criterios (y las competencias específicas/saberes básicos que agrupan) se dan de alta por materia en <strong>Gestionar Currículo</strong>.</li>
                 <li>Ahí mismo se decide el peso de cada criterio dentro de la materia: reparto automático a partes iguales, o manual (los pesos deben sumar 100%).</li>
                 <li>Qué criterios evidencia una tarea, y con qué importancia, se marca al crear esa tarea en el Cuaderno de notas.</li>
-                <li>Las Unidades Didácticas de <strong>Planificación UD</strong> pueden vincularse a criterios/saberes, pero eso es solo planificación — no afecta a la nota, que siempre sale de las tareas evaluables reales.</li>
+                <li>Las Situaciones de Aprendizaje pueden vincularse a criterios/saberes, pero eso es solo planificación — no afecta a la nota, que siempre sale de las tareas evaluables reales.</li>
             </ul>
         </div>
 

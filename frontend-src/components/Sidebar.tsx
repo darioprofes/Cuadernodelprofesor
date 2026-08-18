@@ -4,7 +4,7 @@ import type { View } from '../types';
 import {
     HomeIcon, ClockIcon, CalendarDaysIcon, BookOpenIcon, ClipboardDocumentIcon,
     UsersIcon, ClipboardDocumentCheckIcon, ChartBarIcon, SparklesIcon,
-    StarIcon, ChevronRightIcon, Bars3Icon, XMarkIcon,
+    StarIcon, ChevronRightIcon, Bars3Icon, XMarkIcon, ListBulletIcon,
 } from './Icons';
 import Logo from './Logo';
 import { PALETTE } from '../theme/palette';
@@ -38,6 +38,11 @@ const NAV_SECTIONS: NavSection[] = [
             { view: 'gradebook', label: 'Cuaderno', icon: BookOpenIcon },
             { view: 'journal', label: 'Diario', icon: ClipboardDocumentIcon },
             { view: 'exams', label: 'Tareas evaluables', icon: ClipboardDocumentCheckIcon },
+            // Antes solo se llegaba aquí escondido dentro de Ajustes o vía el
+            // atajo de Herramientas IA -- se planifica durante todo el curso,
+            // no solo al principio, así que merece acceso directo (petición
+            // explícita del usuario).
+            { view: 'planner', label: 'Situaciones de Aprendizaje', icon: ListBulletIcon },
         ],
     },
     {
