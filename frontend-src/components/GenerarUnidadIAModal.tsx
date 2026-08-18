@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { ProgrammingUnit } from '../types';
+import type { ProgrammingUnit, SessionDetail } from '../types';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -11,7 +11,72 @@ import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
 import { apiClassToLocal } from '../services/apiAdapters';
 
-type Paso = 1 | 2 | 3 | 4;
+type Paso = 1 | 2 | 3 | 4 | 5;
+
+// Categorías del documento de diseño original -- selección múltiple + Otro.
+const TIPOS_ACTIVIDAD_DISPONIBLES = [
+    'Exposición/explicación docente', 'Trabajo individual', 'Trabajo cooperativo/grupal',
+    'Debate/coloquio', 'Aprendizaje basado en proyectos (ABP)', 'Gamificación',
+    'Uso de TIC/herramientas digitales', 'Aprendizaje-servicio', 'Práctica de laboratorio/taller',
+    'Role-play/simulación', 'Rutinas y destrezas de pensamiento', 'Aula invertida (flipped classroom)',
+    'Salida de aula o de centro',
+];
+
+const ESTRUCTURAS_COOPERATIVAS_DISPONIBLES = [
+    'Puzzle de Aronson', 'Folio giratorio', '1-2-4 (o similar estructura Kagan)', 'Grupos de investigación',
+];
+
+// Selector de chips con soporte para añadir valores propios (usado para
+// tipos de actividad y estructuras cooperativas) -- mismo patrón que
+// CARACTERISTICAS_HABITUALES en ClassModal.tsx.
+const ChipMultiPicker: React.FC<{
+    opciones: string[];
+    seleccion: string[];
+    onChange: (nueva: string[]) => void;
+    placeholderOtro: string;
+}> = ({ opciones, seleccion, onChange, placeholderOtro }) => {
+    const [nuevoValor, setNuevoValor] = useState('');
+    const toggle = (v: string) => onChange(seleccion.includes(v) ? seleccion.filter(s => s !== v) : [...seleccion, v]);
+    const anadir = () => {
+        const v = nuevoValor.trim();
+        if (!v || seleccion.includes(v)) return;
+        onChange([...seleccion, v]);
+        setNuevoValor('');
+    };
+    const extras = seleccion.filter(s => !opciones.includes(s));
+    return (
+        <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
+                {opciones.map(op => (
+                    <button
+                        key={op}
+                        type="button"
+                        onClick={() => toggle(op)}
+                        className={`text-xs font-medium px-2 py-1 rounded-full border transition-colors ${seleccion.includes(op) ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                    >
+                        {op}
+                    </button>
+                ))}
+                {extras.map(op => (
+                    <span key={op} className="text-xs font-medium px-2 py-1 rounded-full bg-slate-700 text-white inline-flex items-center gap-1">
+                        {op}
+                        <button type="button" onClick={() => toggle(op)} className="hover:text-red-200" title="Quitar">&times;</button>
+                    </span>
+                ))}
+            </div>
+            <div className="flex gap-1.5">
+                <Input
+                    type="text"
+                    value={nuevoValor}
+                    onChange={e => setNuevoValor(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); anadir(); } }}
+                    placeholder={placeholderOtro}
+                />
+                <Button type="button" variant="secondary" onClick={anadir}>Añadir</Button>
+            </div>
+        </div>
+    );
+};
 
 const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
     const [copiado, setCopiado] = useState(false);
@@ -98,6 +163,31 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
         if (classId) updateClassMutation.mutate({ id: classId, yearId: currentYear.data?.id ?? '', data: { caracteristicasGrupo: nuevas } });
     };
 
+    // Bloque 2: Diseño didáctico.
+    const [tiposActividad, setTiposActividad] = useState<string[]>([]);
+    const [estructurasCooperativas, setEstructurasCooperativas] = useState<string[]>([]);
+    const [actividadesObligatorias, setActividadesObligatorias] = useState<{ texto: string; sesion?: number }[]>([]);
+    const [nuevaObligatoriaTexto, setNuevaObligatoriaTexto] = useState('');
+    const [nuevaObligatoriaSesion, setNuevaObligatoriaSesion] = useState('');
+    const [estructuraSesion, setEstructuraSesion] = useState<'inicio_desarrollo_cierre' | 'rutina_propia' | 'ia' | 'otro'>('ia');
+    const [estructuraSesionDetalle, setEstructuraSesionDetalle] = useState('');
+    const [progresionAutonomia, setProgresionAutonomia] = useState<'creciente' | 'constante' | 'ia'>('ia');
+    const [atencionDiversidad, setAtencionDiversidad] = useState<'diferenciadas' | 'unica' | 'otro'>('diferenciadas');
+    const [atencionDiversidadDetalle, setAtencionDiversidadDetalle] = useState('');
+
+    const anadirActividadObligatoria = () => {
+        const texto = nuevaObligatoriaTexto.trim();
+        if (!texto) return;
+        const sesion = nuevaObligatoriaSesion.trim() ? parseInt(nuevaObligatoriaSesion, 10) : undefined;
+        setActividadesObligatorias(prev => [...prev, { texto, sesion }]);
+        setNuevaObligatoriaTexto('');
+        setNuevaObligatoriaSesion('');
+    };
+
+    const quitarActividadObligatoria = (index: number) => {
+        setActividadesObligatorias(prev => prev.filter((_, i) => i !== index));
+    };
+
     const textoEntrada = modo === 'documento' ? documento : descripcion;
 
     const reset = () => {
@@ -113,6 +203,14 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
         setSesionesModo('ia');
         setClassId('');
         setCaracteristicasGrupo([]);
+        setTiposActividad([]);
+        setEstructurasCooperativas([]);
+        setActividadesObligatorias([]);
+        setEstructuraSesion('ia');
+        setEstructuraSesionDetalle('');
+        setProgresionAutonomia('ia');
+        setAtencionDiversidad('diferenciadas');
+        setAtencionDiversidadDetalle('');
     };
 
     const handleClose = () => {
@@ -156,6 +254,15 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                     sesiones_min: sesionesModo === 'rango' ? sesionesMin : undefined,
                     sesiones_max: sesionesModo === 'rango' ? sesionesMax : undefined,
                     caracteristicas_grupo: caracteristicasGrupo,
+                    tipos_actividad: tiposActividad,
+                    estructuras_cooperativas: tiposActividad.includes('Trabajo cooperativo/grupal') ? estructurasCooperativas : [],
+                    actividades_obligatorias: actividadesObligatorias.map(a => ({ texto: a.texto, sesion: a.sesion })),
+                    estructura_sesion: estructuraSesion,
+                    estructura_sesion_detalle: (estructuraSesion === 'rutina_propia' || estructuraSesion === 'otro') ? estructuraSesionDetalle : undefined,
+                    progresion_autonomia: progresionAutonomia,
+                    atencion_diversidad: atencionDiversidad,
+                    atencion_diversidad_detalle: atencionDiversidad === 'otro' ? atencionDiversidadDetalle : undefined,
+                    class_id: classId || undefined,
                 }),
             });
             if (!response.ok) {
@@ -164,7 +271,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             }
             const data: { prompt: string; mapa: Record<string, string> } = await response.json();
             setResultado(data);
-            setPaso(3);
+            setPaso(4);
         } catch (err) {
             setErrorPaso1(err instanceof Error ? err.message : String(err));
         } finally {
@@ -190,7 +297,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                 unidad: {
                     name: string;
                     sessions: number;
-                    sessionDetails: { description: string }[];
+                    sessionDetails: SessionDetail[];
                     linkedBasicKnowledgeIds: string[];
                     linkedCriteriaIds: string[];
                 };
@@ -208,23 +315,13 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                 );
             }
 
-            // El backend, en esta pasada, sigue devolviendo una descripción
-            // plana por sesión -- se envuelve como una única actividad
-            // genérica para que encaje en el UnitEditor ya reformado (misma
-            // forma que produce la migración 0013 sobre datos antiguos). La
-            // reforma del propio generador para pedir actividades
-            // estructuradas de verdad es la Fase 3/4 del plan, todavía no
-            // hecha.
             const draft: ProgrammingUnit = {
                 id: 'new',
                 courseId,
                 name: data.unidad.name,
                 sessions: data.unidad.sessions,
                 context: '',
-                sessionDetails: data.unidad.sessionDetails.map(s => ({
-                    titulo: '',
-                    actividades: [{ descripcion: s.description, linkedCriteriaIds: [] }],
-                })),
+                sessionDetails: data.unidad.sessionDetails,
                 linkedCriteriaIds: data.unidad.linkedCriteriaIds,
                 linkedBasicKnowledgeIds: data.unidad.linkedBasicKnowledgeIds,
                 linkedSpecificCompetenceIds: [],
@@ -247,7 +344,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                     <SparklesIcon className="w-4 h-4" />
-                    Paso {paso} de 4
+                    Paso {paso} de 5
                 </div>
 
                 {paso === 1 && (
@@ -417,6 +514,140 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                             )}
                         </div>
 
+                        <div className="flex justify-between">
+                            <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
+                            <Button type="button" onClick={() => setPaso(3)}>Siguiente</Button>
+                        </div>
+                    </div>
+                )}
+
+                {paso === 3 && (
+                    <div className="flex flex-col gap-4">
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Tipos de actividad</p>
+                            <ChipMultiPicker
+                                opciones={TIPOS_ACTIVIDAD_DISPONIBLES}
+                                seleccion={tiposActividad}
+                                onChange={setTiposActividad}
+                                placeholderOtro="Otro tipo de actividad..."
+                            />
+                        </div>
+
+                        {tiposActividad.includes('Trabajo cooperativo/grupal') && (
+                            <div>
+                                <p className="text-sm font-semibold text-slate-700 mb-1.5">Estructuras cooperativas preferidas</p>
+                                <ChipMultiPicker
+                                    opciones={ESTRUCTURAS_COOPERATIVAS_DISPONIBLES}
+                                    seleccion={estructurasCooperativas}
+                                    onChange={setEstructurasCooperativas}
+                                    placeholderOtro="Otra estructura..."
+                                />
+                            </div>
+                        )}
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Actividades que quieres incluir sí o sí</p>
+                            {actividadesObligatorias.length > 0 && (
+                                <div className="flex flex-col gap-1 mb-1.5">
+                                    {actividadesObligatorias.map((a, i) => (
+                                        <div key={i} className="flex items-center gap-2 text-sm bg-slate-50 border rounded-md px-2 py-1">
+                                            <span className="flex-1">{a.texto}</span>
+                                            <span className="text-xs text-slate-400">{a.sesion ? `Sesión ${a.sesion}` : 'Automáticamente'}</span>
+                                            <button type="button" onClick={() => quitarActividadObligatoria(i)} className="text-red-400 hover:text-red-600">&times;</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="flex gap-1.5">
+                                <Input
+                                    type="text"
+                                    value={nuevaObligatoriaTexto}
+                                    onChange={e => setNuevaObligatoriaTexto(e.target.value)}
+                                    placeholder="Ej.: Realizar una práctica de identificación de nutrientes"
+                                    className="flex-1"
+                                />
+                                <div className="w-28"><Input type="number" min={1} value={nuevaObligatoriaSesion} onChange={e => setNuevaObligatoriaSesion(e.target.value)} placeholder="Sesión (op.)" /></div>
+                                <Button type="button" variant="secondary" onClick={anadirActividadObligatoria}>Añadir</Button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Estructura de cada sesión</p>
+                            <div className="flex gap-1.5 flex-wrap">
+                                {([
+                                    ['inicio_desarrollo_cierre', 'Inicio-Desarrollo-Cierre'],
+                                    ['rutina_propia', 'Mi rutina habitual'],
+                                    ['ia', 'Que la IA la diseñe'],
+                                    ['otro', 'Otra'],
+                                ] as const).map(([valor, etiqueta]) => (
+                                    <button
+                                        key={valor}
+                                        type="button"
+                                        onClick={() => setEstructuraSesion(valor)}
+                                        className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${estructuraSesion === valor ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                    >
+                                        {etiqueta}
+                                    </button>
+                                ))}
+                            </div>
+                            {(estructuraSesion === 'rutina_propia' || estructuraSesion === 'otro') && (
+                                <div className="mt-2">
+                                    <Input type="text" value={estructuraSesionDetalle} onChange={e => setEstructuraSesionDetalle(e.target.value)} placeholder="Describe la estructura que quieres utilizar..." />
+                                </div>
+                            )}
+                        </div>
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Progresión de autonomía</p>
+                            <div className="flex gap-1.5 flex-wrap">
+                                {([
+                                    ['creciente', 'Creciente'],
+                                    ['constante', 'Constante'],
+                                    ['ia', 'Que la IA la decida'],
+                                ] as const).map(([valor, etiqueta]) => (
+                                    <button
+                                        key={valor}
+                                        type="button"
+                                        onClick={() => setProgresionAutonomia(valor)}
+                                        className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${progresionAutonomia === valor ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                    >
+                                        {etiqueta}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Atención a la diversidad</p>
+                            <div className="flex gap-1.5 flex-wrap">
+                                {([
+                                    ['diferenciadas', 'Actividades diferenciadas'],
+                                    ['unica', 'Una única vía para todo el grupo'],
+                                    ['otro', 'Otro'],
+                                ] as const).map(([valor, etiqueta]) => (
+                                    <button
+                                        key={valor}
+                                        type="button"
+                                        onClick={() => setAtencionDiversidad(valor)}
+                                        className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${atencionDiversidad === valor ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                    >
+                                        {etiqueta}
+                                    </button>
+                                ))}
+                            </div>
+                            {atencionDiversidad === 'otro' && (
+                                <div className="mt-2">
+                                    <Input type="text" value={atencionDiversidadDetalle} onChange={e => setAtencionDiversidadDetalle(e.target.value)} placeholder="Describe el planteamiento..." />
+                                </div>
+                            )}
+                            {classId && (
+                                <p className="text-xs text-slate-500 mt-2">
+                                    Si hay adaptaciones NEAE anotadas en el grupo elegido, se incluirán agregadas (sin
+                                    nombres) para que la IA proponga variantes de actividad cuando corresponda.
+                                </p>
+                            )}
+                        </div>
+
                         {errorPaso1 && (
                             <p className="text-sm text-red-600 flex items-center gap-1.5">
                                 <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
@@ -424,7 +655,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                             </p>
                         )}
                         <div className="flex justify-between">
-                            <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
+                            <Button type="button" variant="secondary" onClick={() => setPaso(2)}>Atrás</Button>
                             <Button type="button" onClick={handleGenerarPrompt} disabled={generando}>
                                 {generando ? 'Generando...' : 'Generar prompt'}
                             </Button>
@@ -432,23 +663,23 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                     </div>
                 )}
 
-                {paso === 3 && resultado && (
+                {paso === 4 && resultado && (
                     <div className="flex flex-col gap-3">
                         <p className="text-sm text-slate-600">
                             Copia este prompt y pégalo en tu IA online de confianza.
                         </p>
                         <Textarea value={resultado.prompt} readOnly rows={14} className="font-mono text-sm bg-slate-50" />
                         <div className="flex justify-between">
-                            <Button type="button" variant="secondary" onClick={() => setPaso(2)}>Atrás</Button>
+                            <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
                             <div className="flex gap-2">
                                 <CopyButton texto={resultado.prompt} />
-                                <Button type="button" onClick={() => setPaso(4)}>Siguiente</Button>
+                                <Button type="button" onClick={() => setPaso(5)}>Siguiente</Button>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {paso === 4 && (
+                {paso === 5 && (
                     <div className="flex flex-col gap-3">
                         <p className="text-sm text-slate-600">
                             Pega aquí la respuesta (JSON) de la IA.
@@ -467,7 +698,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                             </p>
                         )}
                         <div className="flex justify-between">
-                            <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
+                            <Button type="button" variant="secondary" onClick={() => setPaso(4)}>Atrás</Button>
                             <Button type="button" onClick={handleProcesarRespuesta} disabled={!respuestaIA.trim() || procesando}>
                                 {procesando ? 'Procesando...' : 'Continuar a revisión'}
                             </Button>

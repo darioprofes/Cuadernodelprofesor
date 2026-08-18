@@ -19,12 +19,21 @@
 # revisarlo antes de copiarlo queda en el profesor (mismo criterio que ya se
 # aplica al riesgo de reidentificación por combinación de datos en el
 # Anonimizador).
+#
+# Las adaptaciones NEAE del grupo (Bloque 2) son la única excepción: SÍ son
+# datos personales reales. Se resuelve agregando por tipo (recuento de
+# etiquetas ACNEAE de enrollments, nunca nombres ni texto libre de
+# neae_detalle/medidas_educativas) -- nunca hay una cadena de texto propia de
+# un alumno concreto que anonimizar, así que no hace falta pasar esto por el
+# Anonimizador tampoco.
 
 import re
+from collections import Counter
 
 from services.basic_knowledge import list_basic_knowledge
 from services.courses import get_course
 from services.criteria import list_criteria
+from services.enrollments import list_enrollments
 
 
 def _detectar_marcador(texto):
@@ -41,10 +50,53 @@ def _detectar_marcador(texto):
     return None, None
 
 
+def resumir_adaptaciones_neae(class_id):
+    """Recuento de etiquetas ACNEAE en la clase, sin identificar a nadie
+    (nunca nombres, nunca el texto libre de neae_detalle/medidas_educativas
+    -- solo la etiqueta cerrada que ya se marca en Clases y Alumnado)."""
+
+    if not class_id:
+        return []
+
+    matriculas = list_enrollments(class_id)
+    contador = Counter()
+
+    for matricula in matriculas:
+        for etiqueta in matricula.acneae:
+            contador[etiqueta] += 1
+
+    return [
+        f"{n} alumno{'s' if n > 1 else ''} con {etiqueta}"
+        for etiqueta, n in sorted(contador.items())
+    ]
+
+
+_ETIQUETAS_ESTRUCTURA_SESION = {
+    "inicio_desarrollo_cierre": "Inicio-motivación / Desarrollo / Cierre-síntesis en cada sesión.",
+    "ia": "Decide tú la estructura interna de cada sesión, la que tenga más sentido pedagógico.",
+}
+
+_ETIQUETAS_PROGRESION = {
+    "creciente": "Creciente -- de más guiado al principio a más autónomo hacia el final.",
+    "constante": "Constante -- el mismo nivel de guía en todas las sesiones.",
+    "ia": "Decide tú la progresión de autonomía que tenga más sentido.",
+}
+
+_ETIQUETAS_DIVERSIDAD = {
+    "diferenciadas": "Actividades diferenciadas de refuerzo/ampliación cuando corresponda.",
+    "unica": "Una única vía de trabajo para todo el grupo.",
+}
+
+
 def construir_prompt(
     course_id, documento_texto, modo="documento",
     sesiones_modo="ia", sesiones_fijo=None, sesiones_min=None, sesiones_max=None,
     caracteristicas_grupo=None,
+    tipos_actividad=None, estructuras_cooperativas=None, actividades_obligatorias=None,
+    estructura_sesion="ia", estructura_sesion_detalle=None,
+    progresion_autonomia="ia",
+    atencion_diversidad="diferenciadas", atencion_diversidad_detalle=None,
+    class_id=None,
 ):
     """Devuelve (anonimizado, mapa) -- mismo formato que
     services/anonimizador.py::anonimizar(), listo para el mismo flujo de
@@ -61,15 +113,31 @@ def construir_prompt(
       escrito, solo describe lo que quiere trabajar, y le pide a la IA que
       redacte ella misma el desarrollo teórico -- fiel a esa descripción y
       al currículo real, pero el contenido en sí lo genera la IA (con el
-      riesgo de fiabilidad que eso conlleva, distinto al de Modo A).
+      riesgo de fiabilidad que eso conlleva, distinto al de Modo A). Ese
+      contenido generado vive ahora en la descripción de cada actividad
+      (Bloque 2), no se pierde como en el esquema plano anterior.
 
     `sesiones_modo`: "fijo" (usa sesiones_fijo), "rango" (usa sesiones_min/
-    sesiones_max) o "ia" (por defecto -- decide libremente, mismo
-    comportamiento que antes de que existiera este parámetro).
+    sesiones_max) o "ia" (decide libremente).
 
     `caracteristicas_grupo`: lista de rasgos del grupo (p.ej. "Grupo
-    numeroso", cargados de classes.caracteristicas_grupo) -- opcional, solo
-    se añade la sección al prompt si hay alguno."""
+    numeroso", cargados de classes.caracteristicas_grupo) -- opcional.
+
+    Bloque 2 (Diseño didáctico):
+    - `tipos_actividad`: lista de categorías elegidas (texto libre, admite
+      "Otro" ya expandido por el frontend).
+    - `estructuras_cooperativas`: lista de estructuras cooperativas
+      preferidas -- solo se añade al prompt si no está vacía.
+    - `actividades_obligatorias`: lista de {"texto": str, "sesion":
+      int|None} -- actividades concretas que el profesor quiere sí o sí,
+      con sesión opcional.
+    - `estructura_sesion`/`estructura_sesion_detalle`,
+      `progresion_autonomia`: ver los diccionarios de arriba.
+    - `atencion_diversidad`/`atencion_diversidad_detalle`: ver diccionario
+      de arriba.
+    - `class_id`: si se da, se resumen sus adaptaciones NEAE agregadas
+      (ver resumir_adaptaciones_neae) y se piden variantes/adaptaciones por
+      actividad cuando corresponda."""
 
     curso = get_course(course_id)
 
@@ -98,7 +166,9 @@ def construir_prompt(
             "Todavía no existe un documento de teoría escrito: a partir de la descripción del "
             "profesor de arriba, redacta tú el desarrollo teórico necesario, siguiéndola con la "
             "mayor fidelidad posible -- no te salgas de lo que pide ni añadas temas que no haya "
-            "mencionado, aunque parezcan relacionados."
+            "mencionado, aunque parezcan relacionados. Reparte ese desarrollo teórico entre las "
+            "descripciones de las actividades (ver formato de salida) -- no lo resumas, ese es el "
+            "contenido real que el profesor usará en clase."
         )
     else:
         etiqueta_entrada = "documento_de_teoria"
@@ -143,11 +213,46 @@ def construir_prompt(
     seccion_grupo = ""
     if caracteristicas_grupo:
         lista_rasgos = "\n".join(f"- {rasgo}" for rasgo in caracteristicas_grupo)
-        seccion_grupo = f"""
-<contexto_del_grupo>
-{lista_rasgos}
-</contexto_del_grupo>
-"""
+        seccion_grupo = f"\n<contexto_del_grupo>\n{lista_rasgos}\n</contexto_del_grupo>\n"
+
+    # ---- Bloque 2: diseño didáctico ----
+
+    partes_diseno = []
+
+    if tipos_actividad:
+        partes_diseno.append("Tipos de actividad a utilizar:\n" + "\n".join(f"- {t}" for t in tipos_actividad))
+
+    if estructuras_cooperativas:
+        partes_diseno.append(
+            "Estructuras cooperativas preferidas (si usas trabajo cooperativo):\n"
+            + "\n".join(f"- {e}" for e in estructuras_cooperativas)
+        )
+
+    if actividades_obligatorias:
+        lineas = []
+        for act in actividades_obligatorias:
+            texto = act.get("texto", "").strip()
+            if not texto:
+                continue
+            sesion = act.get("sesion")
+            lineas.append(f"- {texto}" + (f" (en la sesión {sesion})" if sesion else " (tú decides en qué sesión encaja)"))
+        if lineas:
+            partes_diseno.append("Actividades concretas que debes incluir SÍ o SÍ:\n" + "\n".join(lineas))
+
+    partes_diseno.append(f"Estructura interna de cada sesión: {estructura_sesion_detalle or _ETIQUETAS_ESTRUCTURA_SESION.get(estructura_sesion, _ETIQUETAS_ESTRUCTURA_SESION['ia'])}")
+    partes_diseno.append(f"Progresión de autonomía a lo largo de las sesiones: {_ETIQUETAS_PROGRESION.get(progresion_autonomia, _ETIQUETAS_PROGRESION['ia'])}")
+    partes_diseno.append(f"Atención a la diversidad: {atencion_diversidad_detalle or _ETIQUETAS_DIVERSIDAD.get(atencion_diversidad, _ETIQUETAS_DIVERSIDAD['diferenciadas'])}")
+
+    adaptaciones_neae = resumir_adaptaciones_neae(class_id)
+    if adaptaciones_neae:
+        partes_diseno.append(
+            "Adaptaciones NEAE presentes en el grupo (agregadas, sin identificar a nadie -- "
+            "cuando una actividad necesite una variante para este alumnado, indícala en su campo "
+            "\"adaptacion\", vacío si esa actividad no necesita ninguna):\n"
+            + "\n".join(f"- {a}" for a in adaptaciones_neae)
+        )
+
+    seccion_diseno = "\n<diseno_didactico>\n" + "\n\n".join(partes_diseno) + "\n</diseno_didactico>\n"
 
     prompt = f"""Eres un profesor de {curso.subject} de {curso.level} diseñando una unidad \
 de programación a partir de {"tu propio material de clase" if modo == "documento" else "lo que quieres trabajar"}.
@@ -163,7 +268,7 @@ SABERES BÁSICOS (usa solo estos códigos, ninguno más):
 CRITERIOS DE EVALUACIÓN (usa solo estos códigos, ninguno más):
 {lista_criterios}
 </curriculo_oficial_del_curso>
-{seccion_grupo}
+{seccion_grupo}{seccion_diseno}
 <tarea>
 {instruccion_tarea}
 
@@ -171,12 +276,21 @@ Reparte el contenido en sesiones de clase, cubriendo todo el contenido de princi
 en el orden que tenga más sentido pedagógico. {instruccion_sesiones}
 {"Ten en cuenta las características del grupo dadas arriba al diseñar las sesiones." if caracteristicas_grupo else ""}
 
-Para cada sesión:
+Para cada sesión, repártela en una o más actividades siguiendo el diseño didáctico de arriba. \
+Para cada actividad:
 - Un título breve.
-- Una descripción de 2-4 frases con lo que se trabaja.
-- Los saberes básicos que activa (de la lista dada, cero o más -- dejar vacío si \
+- El tipo de actividad (de los tipos dados).
+- El agrupamiento: individual, parejas, pequeño_grupo o gran_grupo.
+- Duración en minutos (deben sumar, aproximadamente, la duración de la sesión).
+- Recursos necesarios, si aplica.
+- Una descripción real y desarrollada de la actividad -- {"aquí va el contenido teórico que redactes, no un resumen" if modo == "descripcion" else "fiel al documento"}.
+- Los criterios de evaluación que activa (de la lista dada, cero o más).
+- Una adaptación para atender a la diversidad del grupo, solo si esa actividad concreta lo necesita (deja el campo vacío si no).
+
+Además, para la unidad completa:
+- Los saberes básicos que activa en conjunto (de la lista dada, cero o más -- dejar vacío si \
 ninguno encaja de verdad es preferible a forzar uno).
-- Los criterios de evaluación que activa (mismo criterio: solo de la lista dada).
+- Los criterios de evaluación que activa en conjunto (mismo criterio: solo de la lista dada).
 
 No cites normativa, decretos ni URLs. No inventes códigos curriculares fuera de \
 las dos listas dadas arriba -- si lo haces, esos códigos se descartarán al guardar \
@@ -190,10 +304,24 @@ Devuelve ÚNICAMENTE un JSON con esta forma exacta, sin texto antes ni después:
   "name": "Nombre breve de la unidad",
   "sessions": <número de sesiones>,
   "sessionDetails": [
-    {{"description": "Título: descripción de la sesión"}}
+    {{
+      "titulo": "Título de la sesión",
+      "actividades": [
+        {{
+          "titulo": "Título de la actividad",
+          "tipo": "Tipo de actividad",
+          "agrupamiento": "individual | parejas | pequeño_grupo | gran_grupo",
+          "duracionMin": <minutos>,
+          "recursos": ["recurso 1", "recurso 2"],
+          "descripcion": "Descripción real y desarrollada de la actividad",
+          "linkedCriteriaIds": ["códigos de criterios que activa esta actividad"],
+          "adaptacion": "Adaptación para la diversidad, o cadena vacía si no aplica"
+        }}
+      ]
+    }}
   ],
-  "linkedBasicKnowledgeIds": ["códigos de saberes usados, sin repetir"],
-  "linkedCriteriaIds": ["códigos de criterios usados, sin repetir"]
+  "linkedBasicKnowledgeIds": ["códigos de saberes usados en conjunto, sin repetir"],
+  "linkedCriteriaIds": ["códigos de criterios usados en conjunto, sin repetir"]
 }}
 </formato_de_salida>"""
 
@@ -234,9 +362,11 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
     """Recibe el texto que ha pegado el profesor (la respuesta JSON de la
     IA) y el mapa código->dato real del paso de anonimización. Devuelve
     (unidad, codigos_descartados) -- `unidad` ya tiene los códigos de
-    saberes/criterios convertidos a los UUID reales del curso (nunca se
-    guardan códigos inventados por la IA) y los datos personales
-    reintegrados, lista para el formulario de revisión del frontend."""
+    saberes/criterios (a nivel de unidad Y de cada actividad) convertidos a
+    los UUID reales del curso (nunca se guardan códigos inventados por la
+    IA) y los datos personales reintegrados, lista para el formulario de
+    revisión del frontend (mismo esquema que SessionActivity en
+    types.ts)."""
 
     import json
 
@@ -250,6 +380,15 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
 
     codigos_descartados = []
 
+    def _mapear_criterios(codigos):
+        ids = []
+        for codigo in (codigos or []):
+            if codigo in criterios_por_codigo:
+                ids.append(criterios_por_codigo[codigo])
+            else:
+                codigos_descartados.append(codigo)
+        return ids
+
     ids_saberes = []
     for codigo in (datos.get("linkedBasicKnowledgeIds") or []):
         if codigo in saberes_por_codigo:
@@ -257,17 +396,37 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
         else:
             codigos_descartados.append(codigo)
 
-    ids_criterios = []
-    for codigo in (datos.get("linkedCriteriaIds") or []):
-        if codigo in criterios_por_codigo:
-            ids_criterios.append(criterios_por_codigo[codigo])
-        else:
-            codigos_descartados.append(codigo)
+    ids_criterios = _mapear_criterios(datos.get("linkedCriteriaIds"))
 
     session_details = []
     for sesion in (datos.get("sessionDetails") or []):
+
+        actividades = []
+        for act in (sesion.get("actividades") or []):
+            actividades.append({
+                "titulo": _reintegrar_texto(act.get("titulo", ""), mapa),
+                "tipo": act.get("tipo") or None,
+                "agrupamiento": act.get("agrupamiento") or None,
+                "duracionMin": act.get("duracionMin"),
+                "recursos": act.get("recursos") or [],
+                "descripcion": _reintegrar_texto(act.get("descripcion", ""), mapa),
+                "linkedCriteriaIds": _mapear_criterios(act.get("linkedCriteriaIds")),
+                "adaptacion": _reintegrar_texto(act.get("adaptacion") or "", mapa) or None,
+            })
+
+        # Compatibilidad con respuestas que aún trajeran el esquema plano
+        # antiguo ("description" suelto, sin "actividades") -- se envuelve
+        # como una única actividad genérica en vez de descartar la sesión.
+        if not actividades and sesion.get("description"):
+            actividades = [{
+                "titulo": "", "tipo": None, "agrupamiento": None, "duracionMin": None,
+                "recursos": [], "descripcion": _reintegrar_texto(sesion["description"], mapa),
+                "linkedCriteriaIds": [], "adaptacion": None,
+            }]
+
         session_details.append({
-            "description": _reintegrar_texto(sesion.get("description", ""), mapa),
+            "titulo": _reintegrar_texto(sesion.get("titulo", ""), mapa),
+            "actividades": actividades,
         })
 
     unidad = {

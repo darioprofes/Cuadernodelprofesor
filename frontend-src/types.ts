@@ -232,6 +232,10 @@ export interface SessionActivity {
     // Opcional -- no toda actividad se califica (una explicación docente no
     // necesita instrumento). Referencia a un EvaluationTool real.
     evaluationToolId?: string;
+    // Opcional -- variante o ajuste de esta actividad para atender a la
+    // diversidad del grupo (p.ej. apoyo visual, tiempo extra). Vacío si esa
+    // actividad no necesita adaptación.
+    adaptacion?: string;
 }
 
 export interface SessionDetail {

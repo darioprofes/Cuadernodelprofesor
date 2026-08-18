@@ -714,6 +714,9 @@ const UnitDetailView: React.FC<{
                                             {(act.recursos || []).length > 0 && (
                                                 <p className="text-xs text-slate-400 mt-0.5">Recursos: {(act.recursos || []).join(', ')}</p>
                                             )}
+                                            {act.adaptacion && (
+                                                <p className="text-xs text-emerald-700 mt-0.5">🧩 Adaptación: {act.adaptacion}</p>
+                                            )}
                                             {(actCriterios.length > 0 || actTool) && (
                                                 <div className="flex items-center flex-wrap gap-1.5 mt-1">
                                                     <ReadOnlyChips codes={actCriterios} colorClass="bg-slate-200 text-slate-700" />
@@ -1065,6 +1068,13 @@ const UnitEditor: React.FC<{
                                             value={(act.recursos || []).join(', ')}
                                             onChange={e => handleActivityChange(sIndex, aIndex, { recursos: e.target.value ? e.target.value.split(',').map(r => r.trim()).filter(Boolean) : [] })}
                                             placeholder="Recursos (separados por comas)"
+                                            className="w-full text-xs"
+                                        />
+                                        <Input
+                                            type="text"
+                                            value={act.adaptacion || ''}
+                                            onChange={e => handleActivityChange(sIndex, aIndex, { adaptacion: e.target.value || undefined })}
+                                            placeholder="Adaptación para atender a la diversidad (opcional)"
                                             className="w-full text-xs"
                                         />
                                         <CriteriaChips criteria={criteria} selectedIds={act.linkedCriteriaIds || []} onChange={ids => handleActivityChange(sIndex, aIndex, { linkedCriteriaIds: ids })} />

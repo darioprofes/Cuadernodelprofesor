@@ -103,6 +103,11 @@ def _construir_aviso(texto, num_unidades, nombre_unidad, con_vision, vision_fall
     return " ".join(partes) if partes else None
 
 
+class ActividadObligatoria(BaseModel):
+    texto: str
+    sesion: Optional[int] = None
+
+
 class GenerarUnidadRequest(BaseModel):
     course_id: str
     documento: str
@@ -115,6 +120,16 @@ class GenerarUnidadRequest(BaseModel):
     sesiones_min: Optional[int] = None
     sesiones_max: Optional[int] = None
     caracteristicas_grupo: list[str] = []
+    # Bloque 2 del wizard -- ver nota de cabecera en construir_prompt().
+    tipos_actividad: list[str] = []
+    estructuras_cooperativas: list[str] = []
+    actividades_obligatorias: list[ActividadObligatoria] = []
+    estructura_sesion: str = "ia"
+    estructura_sesion_detalle: Optional[str] = None
+    progresion_autonomia: str = "ia"
+    atencion_diversidad: str = "diferenciadas"
+    atencion_diversidad_detalle: Optional[str] = None
+    class_id: Optional[str] = None
 
 
 @router.post("/unidad-programacion/generar")
@@ -125,6 +140,12 @@ async def generar_prompt_unidad(datos: GenerarUnidadRequest):
             datos.course_id, datos.documento, datos.modo,
             datos.sesiones_modo, datos.sesiones_fijo, datos.sesiones_min, datos.sesiones_max,
             datos.caracteristicas_grupo,
+            datos.tipos_actividad, datos.estructuras_cooperativas,
+            [a.model_dump() for a in datos.actividades_obligatorias],
+            datos.estructura_sesion, datos.estructura_sesion_detalle,
+            datos.progresion_autonomia,
+            datos.atencion_diversidad, datos.atencion_diversidad_detalle,
+            datos.class_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
