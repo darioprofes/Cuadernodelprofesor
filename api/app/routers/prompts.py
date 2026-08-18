@@ -139,6 +139,12 @@ class GenerarUnidadRequest(BaseModel):
     producto_tipo: Optional[str] = None
     examen_incluido: bool = False
     examen_formato: Optional[str] = None
+    # Duración real de sesión (no hay minutos guardados en el horario, lo
+    # indica el profesor a mano) y diagnóstico de conocimientos previos
+    # opcional -- ver nota de cabecera en construir_prompt().
+    duracion_sesion_min: int = 55
+    diagnostico_incluido: bool = False
+    diagnostico_minutos: Optional[int] = None
 
 
 @router.post("/unidad-programacion/generar")
@@ -157,6 +163,8 @@ async def generar_prompt_unidad(datos: GenerarUnidadRequest):
             datos.class_id,
             datos.producto_incluido, datos.producto_tipo,
             datos.examen_incluido, datos.examen_formato,
+            datos.duracion_sesion_min,
+            datos.diagnostico_incluido, datos.diagnostico_minutos,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

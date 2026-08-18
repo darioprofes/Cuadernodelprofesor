@@ -150,6 +150,12 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     const [sesionesFijo, setSesionesFijo] = useState(6);
     const [sesionesMin, setSesionesMin] = useState(4);
     const [sesionesMax, setSesionesMax] = useState(6);
+    // No hay minutos reales guardados en el horario (los periodos son solo
+    // etiquetas tipo "1ª hora", sin duración) -- lo indica el profesor a
+    // mano, 55 min por defecto.
+    const [duracionSesionMin, setDuracionSesionMin] = useState(55);
+    const [diagnosticoIncluido, setDiagnosticoIncluido] = useState(false);
+    const [diagnosticoMinutos, setDiagnosticoMinutos] = useState(15);
     const [classId, setClassId] = useState('');
     const [caracteristicasGrupo, setCaracteristicasGrupo] = useState<string[]>([]);
 
@@ -248,6 +254,9 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
         setRespuestaIA('');
         setErrorPaso3(null);
         setSesionesModo('rango');
+        setDuracionSesionMin(55);
+        setDiagnosticoIncluido(false);
+        setDiagnosticoMinutos(15);
         setClassId('');
         setCaracteristicasGrupo([]);
         setTiposActividad([]);
@@ -320,6 +329,9 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                     producto_tipo: productoIncluido ? productoTipoResuelto : undefined,
                     examen_incluido: examenIncluido,
                     examen_formato: examenIncluido ? examenFormatoResuelto : undefined,
+                    duracion_sesion_min: duracionSesionMin,
+                    diagnostico_incluido: diagnosticoIncluido,
+                    diagnostico_minutos: diagnosticoIncluido ? diagnosticoMinutos : undefined,
                 }),
             });
             if (!response.ok) {
@@ -543,6 +555,11 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                     <div className="w-20"><Input type="number" min={1} value={sesionesMax} onChange={e => setSesionesMax(parseInt(e.target.value, 10) || 1)} /></div>
                                 </div>
                             )}
+                            <div className="mt-2 flex items-center gap-2">
+                                <span className="text-sm text-slate-500">Duración de cada sesión:</span>
+                                <div className="w-20"><Input type="number" min={1} value={duracionSesionMin} onChange={e => setDuracionSesionMin(parseInt(e.target.value, 10) || 1)} /></div>
+                                <span className="text-sm text-slate-500">min</span>
+                            </div>
                         </div>
 
                         <div>
@@ -573,6 +590,23 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                     </div>
                                 </>
                             )}
+                        </div>
+
+                        <div>
+                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1.5">
+                                <input type="checkbox" checked={diagnosticoIncluido} onChange={e => setDiagnosticoIncluido(e.target.checked)} className="rounded border-slate-300" />
+                                Reservar tiempo en la primera sesión para diagnóstico de conocimientos previos
+                            </label>
+                            {diagnosticoIncluido && (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-slate-500">Minutos reservados:</span>
+                                    <div className="w-20"><Input type="number" min={1} value={diagnosticoMinutos} onChange={e => setDiagnosticoMinutos(parseInt(e.target.value, 10) || 1)} /></div>
+                                </div>
+                            )}
+                            <p className="text-xs text-slate-500 mt-1.5">
+                                Comprueba lo que el alumnado ya debería saber de las SA anteriores de este curso
+                                (se le pasan a la IA automáticamente, ver Paso 4).
+                            </p>
                         </div>
 
                         <div className="pt-2 border-t">
@@ -818,6 +852,12 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                     · Sesiones: {sesionesModo === 'fijo'
                                         ? `${sesionesFijo} (tú decides)`
                                         : `entre ${sesionesMin} y ${sesionesMax} (tú decides el rango)`}
+                                </li>
+                                <li>· Duración de cada sesión: {duracionSesionMin} min</li>
+                                <li>
+                                    · Diagnóstico de conocimientos previos: {diagnosticoIncluido
+                                        ? `Sí, ${diagnosticoMinutos} min en la primera sesión`
+                                        : 'No'}
                                 </li>
                                 <li>· Grupo: {clasesDelCurso.find(c => c.id === classId)?.grupo || 'sin grupo seleccionado'}</li>
                                 <li>· Características del grupo: {caracteristicasGrupo.length > 0 ? caracteristicasGrupo.join(', ') : 'ninguna'}</li>

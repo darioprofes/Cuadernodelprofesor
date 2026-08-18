@@ -35,6 +35,7 @@ from services.courses import get_course
 from services.criteria import list_criteria
 from services.enrollments import list_enrollments
 from services.preferences import get_preferences
+from services.programming_units import list_programming_units
 
 
 def _detectar_marcador(texto):
@@ -138,6 +139,8 @@ def construir_prompt(
     class_id=None,
     producto_incluido=True, producto_tipo=None,
     examen_incluido=False, examen_formato=None,
+    duracion_sesion_min=55,
+    diagnostico_incluido=False, diagnostico_minutos=None,
 ):
     """Devuelve (anonimizado, mapa) -- mismo formato que
     services/anonimizador.py::anonimizar(), listo para el mismo flujo de
@@ -204,7 +207,25 @@ def construir_prompt(
     inyecta en la frase de apertura del prompt -- no es un parámetro de esta
     función porque, a diferencia del resto, no lo decide el profesor cada
     vez que genera una SA, sino una sola vez en Ajustes y se reutiliza
-    siempre."""
+    siempre.
+
+    `duracion_sesion_min`: no hay minutos reales guardados en el horario
+    (los periodos son solo etiquetas tipo "1ª hora", sin duración) -- el
+    profesor lo indica a mano en el wizard, 55 por defecto, y sustituye al
+    "una sesión = una hora lectiva" que se usaba antes de fijo.
+
+    `diagnostico_incluido`/`diagnostico_minutos`: si se activa, la primera
+    sesión reserva esos minutos para una actividad de diagnóstico de
+    conocimientos previos -- solo tiene sentido si hay SA anteriores en el
+    curso (ver más abajo, situaciones_anteriores), que es de donde sale lo
+    que se supone que el alumnado ya debería saber.
+
+    Las SA anteriores del mismo curso (nombre, fecha de inicio si la
+    tiene, contexto/situación de partida -- NUNCA los códigos de
+    criterios/saberes que cubrieron, demasiado granulares para ser útiles
+    aquí) se leen siempre de `list_programming_units` y se inyectan como
+    contexto, tanto para evitar repetir contenido como para que el
+    diagnóstico (si se pide) compruebe algo concreto de verdad."""
 
     curso = get_course(course_id)
 
@@ -226,6 +247,29 @@ def construir_prompt(
 
     lista_saberes = "\n".join(f"- {s.code}: {s.description}" for s in saberes) or "(ninguno cargado en este curso)"
     lista_criterios = "\n".join(f"- {c.code}: {c.description}" for c in criterios) or "(ninguno cargado en este curso)"
+
+    # SA anteriores del curso -- solo nombre, fecha si la tiene y contexto en
+    # lenguaje natural (nunca códigos de criterios/saberes, demasiado
+    # granulares para dar una idea real de qué se trabajó). Sirve tanto para
+    # no repetir contenido como base del diagnóstico de conocimientos
+    # previos si se pide.
+    unidades_anteriores = list_programming_units(course_id)
+    if unidades_anteriores:
+        lineas_anteriores = []
+        for u in unidades_anteriores:
+            fecha = f" ({u.start_date.strftime('%d/%m/%Y')})" if u.start_date else ""
+            contexto = f": {u.context}" if u.context else ""
+            lineas_anteriores.append(f"- {u.name}{fecha}{contexto}")
+        seccion_sa_anteriores = (
+            "\n<situaciones_de_aprendizaje_anteriores_del_curso>\n"
+            "Ya se han dado estas situaciones de aprendizaje en este mismo curso, de más antigua a más "
+            "reciente (o sin fecha si todavía no se ha fijado). Es lo que el alumnado ya debería saber -- "
+            "no repitas este contenido, y tenlo en cuenta como base de lo que ya se ha trabajado:\n"
+            + "\n".join(lineas_anteriores)
+            + "\n</situaciones_de_aprendizaje_anteriores_del_curso>\n"
+        )
+    else:
+        seccion_sa_anteriores = ""
 
     if modo == "descripcion":
         etiqueta_entrada = "descripcion_del_profesor"
@@ -264,17 +308,17 @@ def construir_prompt(
             )
 
     if sesiones_modo == "fijo" and sesiones_fijo:
-        instruccion_sesiones = f"Usa exactamente {sesiones_fijo} sesiones de clase (una sesión = una hora lectiva)."
+        instruccion_sesiones = f"Usa exactamente {sesiones_fijo} sesiones de clase (una sesión = {duracion_sesion_min} minutos)."
     elif sesiones_modo == "rango" and sesiones_min and sesiones_max:
         instruccion_sesiones = (
-            f"Usa entre {sesiones_min} y {sesiones_max} sesiones de clase (una sesión = una hora "
-            f"lectiva) -- decide tú el número exacto dentro de ese rango según la cantidad de "
-            f"contenido real."
+            f"Usa entre {sesiones_min} y {sesiones_max} sesiones de clase (una sesión = "
+            f"{duracion_sesion_min} minutos) -- decide tú el número exacto dentro de ese rango según "
+            f"la cantidad de contenido real."
         )
     else:
         instruccion_sesiones = (
-            "Tú decides cuántas sesiones de clase hacen falta (una sesión = una hora lectiva) "
-            "según la cantidad de contenido real -- no fuerces un número concreto."
+            f"Tú decides cuántas sesiones de clase hacen falta (una sesión = {duracion_sesion_min} "
+            f"minutos) según la cantidad de contenido real -- no fuerces un número concreto."
         )
 
     seccion_grupo = ""
@@ -394,6 +438,20 @@ def construir_prompt(
         instruccion_examen = ""
         bloque_final_exam_json = '"finalExam": {"incluido": false, "formato": null, "bloques": []},'
 
+    # Diagnóstico de conocimientos previos -- solo tiene sentido si hay algo
+    # que diagnosticar, así que se apoya en seccion_sa_anteriores (si el
+    # curso no tiene SA anteriores, no se avisa de nada raro, simplemente el
+    # diagnóstico saldría genérico; es el profesor quien decide si lo pide).
+    if diagnostico_incluido and diagnostico_minutos:
+        instruccion_diagnostico = (
+            f"\nLa PRIMERA sesión debe reservar sus primeros {diagnostico_minutos} minutos para una "
+            "actividad de diagnóstico de conocimientos previos: comprueba lo que el alumnado ya debería "
+            "saber de las situaciones de aprendizaje anteriores de este curso (ver más abajo si las hay). "
+            "El resto de esa sesión y las siguientes se dedican al contenido nuevo de esta unidad.\n"
+        )
+    else:
+        instruccion_diagnostico = ""
+
     perfil_docente = get_preferences().teacher_profile
     frase_perfil = f" -- tu estilo como docente: {'; '.join(perfil_docente)} --" if perfil_docente else ""
 
@@ -411,13 +469,13 @@ SABERES BÁSICOS (usa solo estos códigos, ninguno más):
 CRITERIOS DE EVALUACIÓN (usa solo estos códigos, ninguno más):
 {lista_criterios}
 </curriculo_oficial_del_curso>
-{seccion_grupo}{seccion_diseno}
+{seccion_grupo}{seccion_diseno}{seccion_sa_anteriores}
 <tarea>
 {instruccion_tarea}
 
 Antes de diseñar nada más, decide esto -- es lo que da sentido al resto:
 {instruccion_producto}{instruccion_examen}
-
+{instruccion_diagnostico}
 Reparte el contenido en sesiones de clase, cubriendo todo el contenido de principio a fin, \
 en el orden que tenga más sentido pedagógico. {instruccion_sesiones}
 {"Ten en cuenta las características del grupo dadas arriba al diseñar las sesiones." if caracteristicas_grupo else ""}
