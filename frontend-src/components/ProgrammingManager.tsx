@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { ProgrammingUnit, Course, SessionDetail, SessionActivity, FinalProduct, FinalExam, EvaluationCriterion, BasicKnowledge, SpecificCompetence, EvaluationTool, ClassData, AcademicConfiguration } from '../types';
-import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon, SparklesIcon } from './Icons';
+import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon, SparklesIcon, ChevronDownIcon, ChevronRightIcon } from './Icons';
 import Modal from './Modal';
 import Input from './Input';
 import GenerarUnidadIAModal from './GenerarUnidadIAModal';
@@ -828,6 +828,19 @@ const UnitEditor: React.FC<{
 }> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences, evaluationTools }) => {
     const [editedUnit, setEditedUnit] = useState(unit);
     const [activeTab, setActiveTab] = useState<'general' | 'curriculo' | 'sesiones' | 'evaluacion'>('general');
+    // Actividades plegadas por defecto -- solo título/tipo/agrupamiento/
+    // duración visibles hasta que se despliegan (petición explícita: mucha
+    // información en poco espacio se ve mal, y los detalles necesitan más
+    // sitio del que cabe siempre visible).
+    const [actividadesAbiertas, setActividadesAbiertas] = useState<Set<string>>(new Set());
+    const toggleActividadAbierta = (sIndex: number, aIndex: number) => {
+        const clave = `${sIndex}-${aIndex}`;
+        setActividadesAbiertas(prev => {
+            const next = new Set(prev);
+            if (next.has(clave)) next.delete(clave); else next.add(clave);
+            return next;
+        });
+    };
 
     const handleFieldChange = <K extends keyof ProgrammingUnit>(field: K, value: ProgrammingUnit[K]) => {
         setEditedUnit(prev => ({ ...prev, [field]: value }));
@@ -1047,42 +1060,77 @@ const UnitEditor: React.FC<{
                             </div>
 
                             <div className="pl-8 space-y-2">
-                                {detail.actividades.map((act, aIndex) => (
-                                    <div key={aIndex} className="p-2 border border-dashed rounded-md bg-slate-50 space-y-1.5">
-                                        <div className="flex gap-2 items-start flex-wrap">
-                                            <div className="w-40 flex-shrink-0"><Input type="text" value={act.titulo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { titulo: e.target.value })} placeholder="Actividad..."/></div>
-                                            <div className="w-36 flex-shrink-0"><Input type="text" value={act.tipo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { tipo: e.target.value })} placeholder="Tipo (ej. cooperativo)"/></div>
-                                            <div className="w-28 flex-shrink-0"><Input type="text" value={act.agrupamiento || ''} onChange={e => handleActivityChange(sIndex, aIndex, { agrupamiento: e.target.value })} placeholder="Agrupamiento"/></div>
-                                            <div className="w-16 flex-shrink-0"><Input type="number" min="0" value={act.duracionMin ?? ''} onChange={e => handleActivityChange(sIndex, aIndex, { duracionMin: e.target.value ? parseInt(e.target.value, 10) : undefined })} placeholder="min"/></div>
-                                            <button type="button" onClick={() => handleRemoveActivity(sIndex, aIndex)} disabled={detail.actividades.length <= 1} className="p-1.5 text-red-400 hover:text-red-600 disabled:opacity-20 flex-shrink-0"><TrashIcon className="w-5 h-5"/></button>
+                                {detail.actividades.map((act, aIndex) => {
+                                    const abierta = actividadesAbiertas.has(`${sIndex}-${aIndex}`);
+                                    const resumen = [act.tipo, act.agrupamiento, act.duracionMin ? `${act.duracionMin} min` : null].filter(Boolean).join(' · ');
+                                    return (
+                                    <div key={aIndex} className="border border-dashed rounded-md bg-slate-50">
+                                        <div className="flex items-center gap-2 p-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleActividadAbierta(sIndex, aIndex)}
+                                                className="p-1 text-slate-400 hover:text-slate-700 flex-shrink-0"
+                                                title={abierta ? 'Plegar detalles' : 'Desplegar detalles'}
+                                            >
+                                                {abierta ? <ChevronDownIcon className="w-4 h-4"/> : <ChevronRightIcon className="w-4 h-4"/>}
+                                            </button>
+                                            <button type="button" onClick={() => toggleActividadAbierta(sIndex, aIndex)} className="flex-1 min-w-0 text-left">
+                                                <span className="text-sm font-medium text-slate-700">{act.titulo || `Actividad ${aIndex + 1}`}</span>
+                                                {resumen && <span className="text-xs text-slate-400 ml-2">{resumen}</span>}
+                                            </button>
+                                            <button type="button" onClick={() => handleRemoveActivity(sIndex, aIndex)} disabled={detail.actividades.length <= 1} className="p-1.5 text-red-400 hover:text-red-600 disabled:opacity-20 flex-shrink-0"><TrashIcon className="w-4 h-4"/></button>
                                         </div>
-                                        <textarea
-                                            value={act.descripcion}
-                                            onChange={e => handleActivityChange(sIndex, aIndex, { descripcion: e.target.value })}
-                                            placeholder="Descripción de la actividad..."
-                                            className="w-full text-sm p-1.5 border rounded-md focus:border-blue-500 outline-none"
-                                            rows={2}
-                                        />
-                                        <Input
-                                            type="text"
-                                            value={(act.recursos || []).join(', ')}
-                                            onChange={e => handleActivityChange(sIndex, aIndex, { recursos: e.target.value ? e.target.value.split(',').map(r => r.trim()).filter(Boolean) : [] })}
-                                            placeholder="Recursos (separados por comas)"
-                                            className="w-full text-xs"
-                                        />
-                                        <Input
-                                            type="text"
-                                            value={act.adaptacion || ''}
-                                            onChange={e => handleActivityChange(sIndex, aIndex, { adaptacion: e.target.value || undefined })}
-                                            placeholder="Adaptación para atender a la diversidad (opcional)"
-                                            className="w-full text-xs"
-                                        />
-                                        <CriteriaChips criteria={criteria} selectedIds={act.linkedCriteriaIds || []} onChange={ids => handleActivityChange(sIndex, aIndex, { linkedCriteriaIds: ids })} />
-                                        <div className="w-64">
-                                            <InstrumentoSelect evaluationTools={evaluationTools} value={act.evaluationToolId} onChange={id => handleActivityChange(sIndex, aIndex, { evaluationToolId: id })} />
-                                        </div>
+
+                                        {abierta && (
+                                            <div className="px-2 pb-2 space-y-2">
+                                                <div className="flex gap-2 items-start flex-wrap">
+                                                    <div className="w-48 flex-shrink-0"><Input type="text" value={act.titulo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { titulo: e.target.value })} placeholder="Título de la actividad"/></div>
+                                                    <div className="w-40 flex-shrink-0"><Input type="text" value={act.tipo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { tipo: e.target.value })} placeholder="Tipo (ej. cooperativo)"/></div>
+                                                    <div className="w-32 flex-shrink-0"><Input type="text" value={act.agrupamiento || ''} onChange={e => handleActivityChange(sIndex, aIndex, { agrupamiento: e.target.value })} placeholder="Agrupamiento"/></div>
+                                                    <div className="w-20 flex-shrink-0"><Input type="number" min="0" value={act.duracionMin ?? ''} onChange={e => handleActivityChange(sIndex, aIndex, { duracionMin: e.target.value ? parseInt(e.target.value, 10) : undefined })} placeholder="min"/></div>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-slate-500">Descripción</label>
+                                                    <textarea
+                                                        value={act.descripcion}
+                                                        onChange={e => handleActivityChange(sIndex, aIndex, { descripcion: e.target.value })}
+                                                        placeholder="Descripción de la actividad..."
+                                                        className="w-full text-sm p-2 border rounded-md focus:border-blue-500 outline-none"
+                                                        rows={6}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-slate-500">Recursos</label>
+                                                    <Input
+                                                        type="text"
+                                                        value={(act.recursos || []).join(', ')}
+                                                        onChange={e => handleActivityChange(sIndex, aIndex, { recursos: e.target.value ? e.target.value.split(',').map(r => r.trim()).filter(Boolean) : [] })}
+                                                        placeholder="Recursos (separados por comas)"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-slate-500">Adaptación para atender a la diversidad (opcional)</label>
+                                                    <textarea
+                                                        value={act.adaptacion || ''}
+                                                        onChange={e => handleActivityChange(sIndex, aIndex, { adaptacion: e.target.value || undefined })}
+                                                        placeholder="Adaptación, si esta actividad la necesita..."
+                                                        className="w-full text-sm p-2 border rounded-md focus:border-blue-500 outline-none"
+                                                        rows={3}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-slate-500 block mb-1">Criterios que activa</label>
+                                                    <CriteriaChips criteria={criteria} selectedIds={act.linkedCriteriaIds || []} onChange={ids => handleActivityChange(sIndex, aIndex, { linkedCriteriaIds: ids })} />
+                                                </div>
+                                                <div className="w-72">
+                                                    <label className="text-xs font-medium text-slate-500 block mb-1">Instrumento de evaluación</label>
+                                                    <InstrumentoSelect evaluationTools={evaluationTools} value={act.evaluationToolId} onChange={id => handleActivityChange(sIndex, aIndex, { evaluationToolId: id })} />
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                ))}
+                                    );
+                                })}
                                 <button type="button" onClick={() => handleAddActivity(sIndex)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">
                                     <PlusIcon className="w-3 h-3"/> Añadir actividad
                                 </button>
