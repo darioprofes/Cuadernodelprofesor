@@ -52,3 +52,26 @@ def transcribir_imagen(imagen_bytes, mime_type="image/png"):
         return respuesta.json()["choices"][0]["message"]["content"].strip()
     except (requests.RequestException, KeyError, IndexError, ValueError):
         return None
+
+
+def generar_texto(prompt, max_tokens=3000):
+    """Función genérica de texto (sin imagen) para generadores que llaman
+    al ia-server directamente en vez del flujo de copiar/pegar en una IA
+    online (ver services/prompts/instrumento_evaluacion.py, primer caso).
+    Reutiliza la misma instancia/puerto que transcribir_imagen() -- el
+    ia-server sirve texto y visión desde el mismo proceso, no hace falta
+    una URL aparte. Devuelve None si no está disponible, mismo criterio de
+    "nunca fatal" que el resto de este módulo."""
+
+    payload = {
+        "model": "gemma-4-E4B",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+    }
+
+    try:
+        respuesta = requests.post(f"{IASERVER_VISION_URL}/v1/chat/completions", json=payload, timeout=120)
+        respuesta.raise_for_status()
+        return respuesta.json()["choices"][0]["message"]["content"].strip()
+    except (requests.RequestException, KeyError, IndexError, ValueError):
+        return None

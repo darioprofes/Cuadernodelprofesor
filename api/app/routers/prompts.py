@@ -17,6 +17,7 @@ from services.auth import require_auth
 from services.extraccion_docx import extraer_markdown_docx
 from services.extraccion_pdf import extraer_texto_pdf
 from services.extraccion_pptx import extraer_texto_pptx
+from services.prompts.instrumento_evaluacion import generar_instrumento
 from services.prompts.unidad_programacion import construir_prompt, procesar_respuesta
 
 router = APIRouter(prefix="/prompts", tags=["Generadores de prompts"], dependencies=[Depends(require_auth)])
@@ -190,3 +191,24 @@ async def validar_respuesta_unidad(datos: ValidarUnidadRequest):
         raise HTTPException(status_code=400, detail=str(exc))
 
     return {"unidad": unidad, "codigosDescartados": codigos_descartados}
+
+
+class GenerarInstrumentoRequest(BaseModel):
+    course_id: str
+    criterion_ids: list[str]
+    tool_type: str
+    contexto: Optional[str] = None
+    num_niveles: Optional[int] = None
+
+
+@router.post("/instrumento-evaluacion/generar")
+async def generar_prompt_instrumento(datos: GenerarInstrumentoRequest):
+
+    try:
+        instrumento, codigos_descartados = generar_instrumento(
+            datos.course_id, datos.criterion_ids, datos.tool_type, datos.contexto, datos.num_niveles,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {"instrumento": instrumento, "codigosDescartados": codigos_descartados}
