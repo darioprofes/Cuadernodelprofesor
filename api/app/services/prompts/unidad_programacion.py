@@ -71,6 +71,29 @@ def resumir_adaptaciones_neae(class_id):
     ]
 
 
+# Descripción breve de qué distingue de verdad a cada tipo de actividad --
+# sin esto la IA se queda en la etiqueta y el resultado sale soso (probado
+# en real: "Gamificación" sin más dio actividades normales con una etiqueta
+# de juego encima, no mecánicas de juego reales). Solo cubre las opciones
+# predefinidas del frontend -- un tipo "Otro" escrito a mano por el
+# profesor se manda tal cual, sin descripción añadida.
+_DESCRIPCIONES_TIPOS_ACTIVIDAD = {
+    "Exposición/explicación docente": "el profesorado presenta y desarrolla el contenido de forma directa, con espacio para preguntas.",
+    "Trabajo individual": "el alumnado trabaja de forma autónoma, a su propio ritmo, con un resultado propio.",
+    "Trabajo cooperativo/grupal": "el alumnado trabaja en grupos pequeños con roles o estructura definida, donde el resultado depende de la contribución de todos.",
+    "Debate/coloquio": "confrontación argumentada de puntos de vista sobre una cuestión, moderada por el profesorado.",
+    "Aprendizaje basado en proyectos (ABP)": "el alumnado investiga y produce un resultado tangible a lo largo de varias sesiones, en torno a un reto o pregunta real.",
+    "Gamificación": "mecánicas de juego genuinas (puntos, niveles, retos, misiones, recompensas, competición sana) que hagan la actividad realmente divertida -- no basta con ponerle una etiqueta de \"juego\" a una tarea normal.",
+    "Uso de TIC/herramientas digitales": "herramientas digitales (apps, plataformas online, simuladores...) como parte central de la actividad, no solo de apoyo.",
+    "Aprendizaje-servicio": "un proyecto que combina aprendizaje curricular con un servicio real a la comunidad.",
+    "Práctica de laboratorio/taller": "manipulación directa de materiales o instrumentos para observar, experimentar o construir algo.",
+    "Role-play/simulación": "el alumnado representa un papel o simula una situación real para vivenciarla.",
+    "Rutinas y destrezas de pensamiento": "estructuras breves y repetibles (p.ej. \"veo-pienso-me pregunto\") que guían el pensamiento crítico o creativo sobre un contenido.",
+    "Aula invertida (flipped classroom)": "el alumnado conoce el contenido ANTES de la sesión (vídeo, lectura, web...) de forma autónoma en casa, y la sesión se dedica a aplicar, practicar o resolver dudas sobre ese contenido -- no a explicarlo por primera vez. Solo tiene sentido si el material de casa introduce algo genuinamente nuevo que no se haya explicado ya en una sesión anterior; no la uses como repaso de algo que ya se dio en clase.",
+    "Salida de aula o de centro": "actividad que se realiza fuera del aula habitual (otro espacio del centro, o una salida al exterior).",
+}
+
+
 _ETIQUETAS_ESTRUCTURA_SESION = {
     "inicio_desarrollo_cierre": "Inicio-motivación / Desarrollo / Cierre-síntesis en cada sesión.",
     "ia": "Decide tú la estructura interna de cada sesión, la que tenga más sentido pedagógico.",
@@ -220,8 +243,12 @@ def construir_prompt(
     partes_diseno = []
 
     if tipos_actividad:
+        lista_tipos = "\n".join(
+            f"- {t}: {_DESCRIPCIONES_TIPOS_ACTIVIDAD[t]}" if t in _DESCRIPCIONES_TIPOS_ACTIVIDAD else f"- {t}"
+            for t in tipos_actividad
+        )
         partes_diseno.append(
-            "Tipos de actividad a utilizar:\n" + "\n".join(f"- {t}" for t in tipos_actividad)
+            "Tipos de actividad a utilizar:\n" + lista_tipos
             + "\n\nRepártelos de forma equilibrada entre las sesiones -- no concentres casi todas "
             "las actividades en uno de estos tipos dejando los demás como algo residual o solo al "
             "final. Ten en cuenta también el esfuerzo real de preparación para el profesor: si vas "
