@@ -768,12 +768,12 @@ const UnitEditor: React.FC<{
                             <div className="pl-8 space-y-2">
                                 {detail.actividades.map((act, aIndex) => (
                                     <div key={aIndex} className="p-2 border border-dashed rounded-md bg-slate-50 space-y-1.5">
-                                        <div className="flex gap-2 items-start">
-                                            <Input type="text" value={act.titulo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { titulo: e.target.value })} placeholder="Actividad..." className="w-40 flex-shrink-0"/>
-                                            <Input type="text" value={act.tipo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { tipo: e.target.value })} placeholder="Tipo (ej. cooperativo)" className="w-36 flex-shrink-0"/>
-                                            <Input type="text" value={act.agrupamiento || ''} onChange={e => handleActivityChange(sIndex, aIndex, { agrupamiento: e.target.value })} placeholder="Agrupamiento" className="w-28 flex-shrink-0"/>
-                                            <Input type="number" min="0" value={act.duracionMin ?? ''} onChange={e => handleActivityChange(sIndex, aIndex, { duracionMin: e.target.value ? parseInt(e.target.value, 10) : undefined })} placeholder="min" className="w-16 flex-shrink-0"/>
-                                            <button type="button" onClick={() => handleRemoveActivity(sIndex, aIndex)} disabled={detail.actividades.length <= 1} className="p-1.5 text-red-400 hover:text-red-600 disabled:opacity-20 flex-shrink-0"><TrashIcon className="w-4 h-4"/></button>
+                                        <div className="flex gap-2 items-start flex-wrap">
+                                            <div className="w-40 flex-shrink-0"><Input type="text" value={act.titulo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { titulo: e.target.value })} placeholder="Actividad..."/></div>
+                                            <div className="w-36 flex-shrink-0"><Input type="text" value={act.tipo || ''} onChange={e => handleActivityChange(sIndex, aIndex, { tipo: e.target.value })} placeholder="Tipo (ej. cooperativo)"/></div>
+                                            <div className="w-28 flex-shrink-0"><Input type="text" value={act.agrupamiento || ''} onChange={e => handleActivityChange(sIndex, aIndex, { agrupamiento: e.target.value })} placeholder="Agrupamiento"/></div>
+                                            <div className="w-16 flex-shrink-0"><Input type="number" min="0" value={act.duracionMin ?? ''} onChange={e => handleActivityChange(sIndex, aIndex, { duracionMin: e.target.value ? parseInt(e.target.value, 10) : undefined })} placeholder="min"/></div>
+                                            <button type="button" onClick={() => handleRemoveActivity(sIndex, aIndex)} disabled={detail.actividades.length <= 1} className="p-1.5 text-red-400 hover:text-red-600 disabled:opacity-20 flex-shrink-0"><TrashIcon className="w-5 h-5"/></button>
                                         </div>
                                         <textarea
                                             value={act.descripcion}
@@ -815,10 +815,10 @@ const UnitEditor: React.FC<{
                             <div className="space-y-1">
                                 <p className="text-xs font-semibold text-slate-500">Rúbrica</p>
                                 {(finalProduct.rubrica || []).map((row, i) => (
-                                    <div key={i} className="flex gap-1.5">
-                                        <Input type="text" value={row.criterio} onChange={e => handleRubricaRowChange(i, 'criterio', e.target.value)} placeholder="Criterio (código)" className="w-28 flex-shrink-0"/>
-                                        <Input type="text" value={row.descriptor} onChange={e => handleRubricaRowChange(i, 'descriptor', e.target.value)} placeholder="Descriptor de logro..." className="w-full"/>
-                                        <button type="button" onClick={() => handleRemoveRubricaRow(i)} className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"><TrashIcon className="w-4 h-4"/></button>
+                                    <div key={i} className="flex gap-1.5 items-center">
+                                        <div className="w-28 flex-shrink-0"><Input type="text" value={row.criterio} onChange={e => handleRubricaRowChange(i, 'criterio', e.target.value)} placeholder="Criterio (código)"/></div>
+                                        <Input type="text" value={row.descriptor} onChange={e => handleRubricaRowChange(i, 'descriptor', e.target.value)} placeholder="Descriptor de logro..." className="flex-1"/>
+                                        <button type="button" onClick={() => handleRemoveRubricaRow(i)} className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"><TrashIcon className="w-5 h-5"/></button>
                                     </div>
                                 ))}
                                 <button type="button" onClick={handleAddRubricaRow} className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">
