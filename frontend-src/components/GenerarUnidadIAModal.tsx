@@ -1,9 +1,15 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { ProgrammingUnit } from '../types';
 import Modal from './Modal';
 import Button from './Button';
+import Input from './Input';
+import Select from './Select';
 import Textarea from './Textarea';
 import { ArrowUpTrayIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, SparklesIcon } from './Icons';
+import { CARACTERISTICAS_HABITUALES } from './ClassModal';
+import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
+import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
+import { apiClassToLocal } from '../services/apiAdapters';
 
 type Paso = 1 | 2 | 3;
 
@@ -41,9 +47,12 @@ interface GenerarUnidadIAModalProps {
 // organiza. Modo B ("descripcion"): no hay material escrito todavía, la IA
 // redacta el contenido teórico a partir de lo que el profesor describe.
 type Modo = 'documento' | 'descripcion';
+type Bloque = 'contenido' | 'planificacion';
+type SesionesModo = 'fijo' | 'rango' | 'ia';
 
 const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, courseId, onClose, onDraftReady }) => {
     const [paso, setPaso] = useState<Paso>(1);
+    const [activeBloque, setActiveBloque] = useState<Bloque>('contenido');
     const [modo, setModo] = useState<Modo>('documento');
     const [documento, setDocumento] = useState('');
     const [descripcion, setDescripcion] = useState('');
@@ -57,10 +66,45 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     const [errorPaso3, setErrorPaso3] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Bloque 1: Planificación -- número de sesiones y grupo de referencia
+    // (para cargar sus características, aunque la SA se guarda a nivel de
+    // materia, no de clase).
+    const [sesionesModo, setSesionesModo] = useState<SesionesModo>('ia');
+    const [sesionesFijo, setSesionesFijo] = useState(6);
+    const [sesionesMin, setSesionesMin] = useState(4);
+    const [sesionesMax, setSesionesMax] = useState(6);
+    const [classId, setClassId] = useState('');
+    const [caracteristicasGrupo, setCaracteristicasGrupo] = useState<string[]>([]);
+
+    const currentYear = useCurrentAcademicYear();
+    const remoteClasses = useApiClasses(currentYear.data?.id ?? '', { enabled: !!currentYear.data?.id });
+    const updateClassMutation = useUpdateClass();
+    const clasesDelCurso = (remoteClasses.data ?? []).map(apiClassToLocal).filter(c => c.courseId === courseId);
+
+    useEffect(() => {
+        if (!classId && clasesDelCurso.length > 0) setClassId(clasesDelCurso[0].id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [clasesDelCurso.length]);
+
+    useEffect(() => {
+        const clase = clasesDelCurso.find(c => c.id === classId);
+        setCaracteristicasGrupo(clase?.caracteristicasGrupo || []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [classId]);
+
+    const toggleCaracteristica = (rasgo: string) => {
+        const nuevas = caracteristicasGrupo.includes(rasgo)
+            ? caracteristicasGrupo.filter(r => r !== rasgo)
+            : [...caracteristicasGrupo, rasgo];
+        setCaracteristicasGrupo(nuevas);
+        if (classId) updateClassMutation.mutate({ id: classId, yearId: currentYear.data?.id ?? '', data: { caracteristicasGrupo: nuevas } });
+    };
+
     const textoEntrada = modo === 'documento' ? documento : descripcion;
 
     const reset = () => {
         setPaso(1);
+        setActiveBloque('contenido');
         setModo('documento');
         setDocumento('');
         setDescripcion('');
@@ -69,6 +113,9 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
         setResultado(null);
         setRespuestaIA('');
         setErrorPaso3(null);
+        setSesionesModo('ia');
+        setClassId('');
+        setCaracteristicasGrupo([]);
     };
 
     const handleClose = () => {
@@ -105,7 +152,14 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
             const response = await fetch('/api/prompts/unidad-programacion/generar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ course_id: courseId, documento: textoEntrada, modo }),
+                body: JSON.stringify({
+                    course_id: courseId, documento: textoEntrada, modo,
+                    sesiones_modo: sesionesModo,
+                    sesiones_fijo: sesionesModo === 'fijo' ? sesionesFijo : undefined,
+                    sesiones_min: sesionesModo === 'rango' ? sesionesMin : undefined,
+                    sesiones_max: sesionesModo === 'rango' ? sesionesMax : undefined,
+                    caracteristicas_grupo: caracteristicasGrupo,
+                }),
             });
             if (!response.ok) {
                 const body = await response.json().catch(() => ({}));
@@ -204,15 +258,96 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                         <div className="flex gap-1 border-b">
                             <button
                                 type="button"
+                                onClick={() => setActiveBloque('contenido')}
+                                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeBloque === 'contenido' ? 'border-slate-700 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Contenido
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setActiveBloque('planificacion')}
+                                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeBloque === 'planificacion' ? 'border-slate-700 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Planificación
+                            </button>
+                        </div>
+
+                        {activeBloque === 'planificacion' && (
+                            <div className="flex flex-col gap-4">
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-700 mb-1.5">Número de sesiones</p>
+                                    <div className="flex gap-1.5 flex-wrap">
+                                        {(['fijo', 'rango', 'ia'] as SesionesModo[]).map(opcion => (
+                                            <button
+                                                key={opcion}
+                                                type="button"
+                                                onClick={() => setSesionesModo(opcion)}
+                                                className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${sesionesModo === opcion ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                            >
+                                                {opcion === 'fijo' ? 'Número fijo' : opcion === 'rango' ? 'Rango orientativo' : 'Que decida la IA'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {sesionesModo === 'fijo' && (
+                                        <div className="mt-2 w-24">
+                                            <Input type="number" min={1} value={sesionesFijo} onChange={e => setSesionesFijo(parseInt(e.target.value, 10) || 1)} />
+                                        </div>
+                                    )}
+                                    {sesionesModo === 'rango' && (
+                                        <div className="mt-2 flex items-center gap-2">
+                                            <div className="w-20"><Input type="number" min={1} value={sesionesMin} onChange={e => setSesionesMin(parseInt(e.target.value, 10) || 1)} /></div>
+                                            <span className="text-sm text-slate-500">a</span>
+                                            <div className="w-20"><Input type="number" min={1} value={sesionesMax} onChange={e => setSesionesMax(parseInt(e.target.value, 10) || 1)} /></div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-700 mb-1.5">Grupo</p>
+                                    {clasesDelCurso.length === 0 ? (
+                                        <p className="text-sm text-slate-500">Esta materia todavía no tiene clases/grupos dados de alta.</p>
+                                    ) : (
+                                        <>
+                                            <Select value={classId} onChange={e => setClassId(e.target.value)} className="max-w-xs">
+                                                {clasesDelCurso.map(c => (
+                                                    <option key={c.id} value={c.id}>{c.grupo || 'Sin nombre'}</option>
+                                                ))}
+                                            </Select>
+                                            <p className="text-xs text-slate-500 mt-2">
+                                                Características del grupo -- se cargan de la clase y se guardan ahí si las cambias:
+                                            </p>
+                                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                {CARACTERISTICAS_HABITUALES.map(rasgo => (
+                                                    <button
+                                                        key={rasgo}
+                                                        type="button"
+                                                        onClick={() => toggleCaracteristica(rasgo)}
+                                                        className={`text-xs font-medium px-2 py-1 rounded-full border transition-colors ${caracteristicasGrupo.includes(rasgo) ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                                    >
+                                                        {rasgo}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeBloque === 'contenido' && (
+                        <>
+                        <div className="flex gap-1.5">
+                            <button
+                                type="button"
                                 onClick={() => setModo('documento')}
-                                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${modo === 'documento' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${modo === 'documento' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                             >
                                 Tengo material
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setModo('descripcion')}
-                                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${modo === 'descripcion' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${modo === 'descripcion' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}
                             >
                                 Quiero que la IA genere los contenidos
                             </button>
@@ -290,6 +425,8 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                     className="text-sm"
                                 />
                             </>
+                        )}
+                        </>
                         )}
 
                         {errorPaso1 && (

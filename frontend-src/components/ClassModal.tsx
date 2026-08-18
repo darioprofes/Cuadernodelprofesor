@@ -16,11 +16,23 @@ interface ClassModalProps {
   courses: Course[];
 }
 
+// Rasgos habituales -- selección rápida con un clic, con hueco para
+// cualquier otro que no encaje en estos (campo de texto libre debajo).
+export const CARACTERISTICAS_HABITUALES = [
+  'Grupo numeroso',
+  'Alta diversidad de ritmos de aprendizaje',
+  'Alumnado ACNEAE',
+  'Grupo con dificultades de convivencia/gestión de aula',
+  'Grupo con buen nivel de autonomía',
+];
+
 const ClassModal: React.FC<ClassModalProps> = ({ isOpen, onClose, onSave, classToEdit, courses }) => {
   const [grupo, setGrupo] = useState('');
   const [courseId, setCourseId] = useState<string>(courses[0]?.id || '');
   const [icono, setIcono] = useState<string | undefined>(undefined);
   const [colorAcento, setColorAcento] = useState<number | undefined>(undefined);
+  const [caracteristicasGrupo, setCaracteristicasGrupo] = useState<string[]>([]);
+  const [nuevaCaracteristica, setNuevaCaracteristica] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -29,14 +41,28 @@ const ClassModal: React.FC<ClassModalProps> = ({ isOpen, onClose, onSave, classT
             setCourseId(classToEdit.courseId);
             setIcono(classToEdit.icono);
             setColorAcento(classToEdit.colorAcento);
+            setCaracteristicasGrupo(classToEdit.caracteristicasGrupo || []);
         } else {
             setGrupo('');
             setCourseId(courses[0]?.id || '');
             setIcono(undefined);
             setColorAcento(undefined);
+            setCaracteristicasGrupo([]);
         }
+        setNuevaCaracteristica('');
     }
   }, [classToEdit, isOpen, courses]);
+
+  const toggleCaracteristica = (rasgo: string) => {
+    setCaracteristicasGrupo(prev => prev.includes(rasgo) ? prev.filter(r => r !== rasgo) : [...prev, rasgo]);
+  };
+
+  const anadirCaracteristicaLibre = () => {
+    const valor = nuevaCaracteristica.trim();
+    if (!valor || caracteristicasGrupo.includes(valor)) return;
+    setCaracteristicasGrupo(prev => [...prev, valor]);
+    setNuevaCaracteristica('');
+  };
 
   const selectedCourse = courses.find(c => c.id === courseId);
 
@@ -56,6 +82,7 @@ const ClassModal: React.FC<ClassModalProps> = ({ isOpen, onClose, onSave, classT
         courseId,
         icono,
         colorAcento,
+        caracteristicasGrupo,
       });
       onClose();
     } else {
@@ -142,6 +169,49 @@ const ClassModal: React.FC<ClassModalProps> = ({ isOpen, onClose, onSave, classT
                         </span>
                     </div>
                 )}
+            </div>
+        </div>
+
+        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+            <label className="block text-sm font-medium text-slate-700">Características del grupo</label>
+            <p className="text-xs text-slate-500">
+                Se cargan automáticamente al generar una Situación de Aprendizaje para esta clase, sin tener que repetirlas cada vez.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+                {CARACTERISTICAS_HABITUALES.map(rasgo => (
+                    <button
+                        key={rasgo}
+                        type="button"
+                        onClick={() => toggleCaracteristica(rasgo)}
+                        className={`text-xs font-medium px-2 py-1 rounded-full border transition-colors ${
+                            caracteristicasGrupo.includes(rasgo)
+                                ? 'bg-slate-700 text-white border-slate-700'
+                                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                        }`}
+                    >
+                        {rasgo}
+                    </button>
+                ))}
+            </div>
+            {caracteristicasGrupo.filter(r => !CARACTERISTICAS_HABITUALES.includes(r)).length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                    {caracteristicasGrupo.filter(r => !CARACTERISTICAS_HABITUALES.includes(r)).map(rasgo => (
+                        <span key={rasgo} className="text-xs font-medium px-2 py-1 rounded-full bg-slate-700 text-white inline-flex items-center gap-1">
+                            {rasgo}
+                            <button type="button" onClick={() => toggleCaracteristica(rasgo)} className="hover:text-red-200" title="Quitar">&times;</button>
+                        </span>
+                    ))}
+                </div>
+            )}
+            <div className="flex gap-1.5">
+                <Input
+                    type="text"
+                    value={nuevaCaracteristica}
+                    onChange={e => setNuevaCaracteristica(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); anadirCaracteristicaLibre(); } }}
+                    placeholder="Otra característica..."
+                />
+                <Button type="button" variant="secondary" onClick={anadirCaracteristicaLibre}>Añadir</Button>
             </div>
         </div>
 

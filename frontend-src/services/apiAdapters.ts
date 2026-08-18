@@ -33,7 +33,7 @@ const studentPhotoUrl = (studentId: string): string => `http://studentphoto.loca
 // embebidos (bloques 5/6) — se rellenan vacíos aquí; cada consumidor los
 // sustituye aparte (roster hidratado) o simplemente no los usa (nunca los
 // lee ni los escribe).
-export const apiClassToLocal = (cls: Pick<ApiClassData, 'id' | 'courseId' | 'grupo' | 'schedule' | 'skippedDays' | 'icono' | 'colorAcento' | 'mesaProfesorX' | 'mesaProfesorY'>): ClassData => ({
+export const apiClassToLocal = (cls: Pick<ApiClassData, 'id' | 'courseId' | 'grupo' | 'schedule' | 'skippedDays' | 'icono' | 'colorAcento' | 'mesaProfesorX' | 'mesaProfesorY' | 'caracteristicasGrupo'>): ClassData => ({
     id: cls.id,
     grupo: cls.grupo,
     courseId: cls.courseId,
@@ -47,6 +47,7 @@ export const apiClassToLocal = (cls: Pick<ApiClassData, 'id' | 'courseId' | 'gru
     colorAcento: cls.colorAcento,
     mesaProfesorX: cls.mesaProfesorX,
     mesaProfesorY: cls.mesaProfesorY,
+    caracteristicasGrupo: cls.caracteristicasGrupo ?? [],
 });
 
 // STUDENT (persona, global) + ENROLLMENT (matrícula de esta clase) fundidos

@@ -109,13 +109,23 @@ class GenerarUnidadRequest(BaseModel):
     # "documento" (Modo A, por defecto) o "descripcion" (Modo B) -- ver
     # nota de cabecera en construir_prompt().
     modo: str = "documento"
+    # Bloque 1 del wizard -- ver nota de cabecera en construir_prompt().
+    sesiones_modo: str = "ia"
+    sesiones_fijo: Optional[int] = None
+    sesiones_min: Optional[int] = None
+    sesiones_max: Optional[int] = None
+    caracteristicas_grupo: list[str] = []
 
 
 @router.post("/unidad-programacion/generar")
 async def generar_prompt_unidad(datos: GenerarUnidadRequest):
 
     try:
-        prompt, mapa = construir_prompt(datos.course_id, datos.documento, datos.modo)
+        prompt, mapa = construir_prompt(
+            datos.course_id, datos.documento, datos.modo,
+            datos.sesiones_modo, datos.sesiones_fijo, datos.sesiones_min, datos.sesiones_max,
+            datos.caracteristicas_grupo,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

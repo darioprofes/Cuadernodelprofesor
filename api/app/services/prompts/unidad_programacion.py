@@ -41,7 +41,11 @@ def _detectar_marcador(texto):
     return None, None
 
 
-def construir_prompt(course_id, documento_texto, modo="documento"):
+def construir_prompt(
+    course_id, documento_texto, modo="documento",
+    sesiones_modo="ia", sesiones_fijo=None, sesiones_min=None, sesiones_max=None,
+    caracteristicas_grupo=None,
+):
     """Devuelve (anonimizado, mapa) -- mismo formato que
     services/anonimizador.py::anonimizar(), listo para el mismo flujo de
     copiar/pegar del Anonimizador. El mapa normalmente sale vacío (un
@@ -57,7 +61,15 @@ def construir_prompt(course_id, documento_texto, modo="documento"):
       escrito, solo describe lo que quiere trabajar, y le pide a la IA que
       redacte ella misma el desarrollo teórico -- fiel a esa descripción y
       al currículo real, pero el contenido en sí lo genera la IA (con el
-      riesgo de fiabilidad que eso conlleva, distinto al de Modo A)."""
+      riesgo de fiabilidad que eso conlleva, distinto al de Modo A).
+
+    `sesiones_modo`: "fijo" (usa sesiones_fijo), "rango" (usa sesiones_min/
+    sesiones_max) o "ia" (por defecto -- decide libremente, mismo
+    comportamiento que antes de que existiera este parámetro).
+
+    `caracteristicas_grupo`: lista de rasgos del grupo (p.ej. "Grupo
+    numeroso", cargados de classes.caracteristicas_grupo) -- opcional, solo
+    se añade la sección al prompt si hay alguno."""
 
     curso = get_course(course_id)
 
@@ -114,6 +126,29 @@ def construir_prompt(course_id, documento_texto, modo="documento"):
                 "representado en, al menos, una sesión."
             )
 
+    if sesiones_modo == "fijo" and sesiones_fijo:
+        instruccion_sesiones = f"Usa exactamente {sesiones_fijo} sesiones de clase (una sesión = una hora lectiva)."
+    elif sesiones_modo == "rango" and sesiones_min and sesiones_max:
+        instruccion_sesiones = (
+            f"Usa entre {sesiones_min} y {sesiones_max} sesiones de clase (una sesión = una hora "
+            f"lectiva) -- decide tú el número exacto dentro de ese rango según la cantidad de "
+            f"contenido real."
+        )
+    else:
+        instruccion_sesiones = (
+            "Tú decides cuántas sesiones de clase hacen falta (una sesión = una hora lectiva) "
+            "según la cantidad de contenido real -- no fuerces un número concreto."
+        )
+
+    seccion_grupo = ""
+    if caracteristicas_grupo:
+        lista_rasgos = "\n".join(f"- {rasgo}" for rasgo in caracteristicas_grupo)
+        seccion_grupo = f"""
+<contexto_del_grupo>
+{lista_rasgos}
+</contexto_del_grupo>
+"""
+
     prompt = f"""Eres un profesor de {curso.subject} de {curso.level} diseñando una unidad \
 de programación a partir de {"tu propio material de clase" if modo == "documento" else "lo que quieres trabajar"}.
 
@@ -128,14 +163,13 @@ SABERES BÁSICOS (usa solo estos códigos, ninguno más):
 CRITERIOS DE EVALUACIÓN (usa solo estos códigos, ninguno más):
 {lista_criterios}
 </curriculo_oficial_del_curso>
-
+{seccion_grupo}
 <tarea>
 {instruccion_tarea}
 
-Reparte el contenido en sesiones de clase (una sesión = una hora lectiva), cubriendo \
-todo el contenido de principio a fin, en el orden que tenga más sentido \
-pedagógico. Tú decides cuántas sesiones hacen falta según la cantidad de contenido \
-real -- no fuerces un número concreto.
+Reparte el contenido en sesiones de clase, cubriendo todo el contenido de principio a fin, \
+en el orden que tenga más sentido pedagógico. {instruccion_sesiones}
+{"Ten en cuenta las características del grupo dadas arriba al diseñar las sesiones." if caracteristicas_grupo else ""}
 
 Para cada sesión:
 - Un título breve.

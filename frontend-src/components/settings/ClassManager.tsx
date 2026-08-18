@@ -180,12 +180,12 @@ const ClassManager: React.FC<{
             await updateClassMutation.mutateAsync({
                 id: classData.id,
                 yearId,
-                data: { courseId: classData.courseId, grupo: classData.grupo, icono: classData.icono, colorAcento: classData.colorAcento },
+                data: { courseId: classData.courseId, grupo: classData.grupo, icono: classData.icono, colorAcento: classData.colorAcento, caracteristicasGrupo: classData.caracteristicasGrupo },
             });
         } else {
             const created = await createClassMutation.mutateAsync({
                 yearId,
-                data: { courseId: classData.courseId, grupo: classData.grupo, icono: classData.icono, colorAcento: classData.colorAcento, schedule: [] },
+                data: { courseId: classData.courseId, grupo: classData.grupo, icono: classData.icono, colorAcento: classData.colorAcento, caracteristicasGrupo: classData.caracteristicasGrupo, schedule: [] },
             });
             for (const cat of buildDefaultCategories(realEvaluationPeriods)) {
                 await createCategoryMutation.mutateAsync({
