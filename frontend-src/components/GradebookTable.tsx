@@ -26,6 +26,7 @@ import StudentSummaryModal from './StudentSummaryModal';
 import StudentPersonalDataModal from './StudentPersonalDataModal';
 import PlanoClaseModal from './PlanoClaseModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
+import ImportarDesdeSAModal from './ImportarDesdeSAModal';
 import ClassLabel from './ClassLabel';
 import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getDayOfWeek1a7, parsePeriodRange, periodoActivoEn } from '../utils';
 import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
@@ -112,6 +113,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
   const [assignmentToEdit, setAssignmentToEdit] = useState<Assignment | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
+  const [isImportarSAModalOpen, setIsImportarSAModalOpen] = useState(false);
 
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [categoryToEdit, setCategoryToEdit] = useState<Category | null>(null);
@@ -806,6 +808,15 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           >
             {isCompact ? <TableCellsIcon className="w-4 h-4" /> : <Bars3Icon className="w-4 h-4" />}
           </button>
+          {activePeriodId !== 'final' && (
+            <button
+              onClick={() => setIsImportarSAModalOpen(true)}
+              className="p-1.5 rounded-md text-white/90 hover:bg-white/15 transition-all flex-shrink-0"
+              title="Importar tareas desde una Situación de Aprendizaje"
+            >
+              <BookOpenIcon className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1206,6 +1217,18 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
       {activeCategory && <AssignmentModal isOpen={isAssignmentModalOpen} onClose={() => setIsAssignmentModalOpen(false)} onSave={handleSaveAssignment} assignmentToEdit={assignmentToEdit} category={activeCategory} criteria={criteria} specificCompetences={specificCompetences} keyCompetences={keyCompetences} programmingUnits={programmingUnits} evaluationPeriods={evaluationPeriods} academicConfiguration={academicConfiguration} evaluationTools={evaluationTools} allAssignments={classData.assignments} allCategories={classData.categories} />}
       <CategoryModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} onSave={handleSaveCategory} categoryToEdit={categoryToEdit} evaluationPeriodId={activePeriodId} />
+      <ImportarDesdeSAModal
+        isOpen={isImportarSAModalOpen}
+        onClose={() => setIsImportarSAModalOpen(false)}
+        classId={classData.id}
+        courseId={classData.courseId}
+        evaluationPeriodId={activePeriodId}
+        programmingUnits={programmingUnits}
+        categories={categoriesForPeriod}
+        criteria={criteria}
+        specificCompetences={specificCompetences}
+        evaluationTools={evaluationTools}
+      />
       {gradeEntryData && <GradeEntryModal isOpen={isGradeEntryModalOpen} onClose={() => setIsGradeEntryModalOpen(false)} student={gradeEntryData.student} assignment={gradeEntryData.assignment} grade={gradeEntryData.grade} criteriaList={criteria} onSave={handleSaveGrade} evaluationTools={evaluationTools} allAssignments={classData.assignments} students={classData.students} />}
       {assignmentForImport && <BulkGradeImportModal isOpen={isBulkImportModalOpen} onClose={() => setIsBulkImportModalOpen(false)} onSave={handleBulkSaveGrades} assignment={assignmentForImport} students={classData.students} />}
       <BulkAddStudentModal isOpen={isBulkAddOpen} onClose={() => setIsBulkAddOpen(false)} onSave={handleBulkAddStudents} />
