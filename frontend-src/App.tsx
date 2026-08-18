@@ -337,6 +337,7 @@ const App = () => {
         // sembraba el valor real desde el principio) a esta fila remota.
         gradeScale: remotePreferences.data?.gradeScale?.length ? remotePreferences.data.gradeScale : INITIAL_ACADEMIC_CONFIGURATION.gradeScale,
         defaultCalendarView: remotePreferences.data?.defaultCalendarView,
+        teacherProfile: remotePreferences.data?.teacherProfile ?? [],
     }), [currentYear.data, remoteEvaluationPeriods.data, remotePreferences.data]);
     const effectiveTasks: Task[] = useMemo(() => (
         remoteTasks.data ?? []
@@ -521,8 +522,10 @@ const App = () => {
         if (yearId && (next.holidays !== effectiveAcademicConfiguration.holidays || next.periods !== effectiveAcademicConfiguration.periods)) {
             updateAcademicYearMutation.mutate({ id: yearId, data: { holidays: next.holidays, periods: next.periods } });
         }
-        if (next.gradeScale !== effectiveAcademicConfiguration.gradeScale || next.defaultCalendarView !== effectiveAcademicConfiguration.defaultCalendarView) {
-            updatePreferencesMutation.mutate({ gradeScale: next.gradeScale, defaultCalendarView: next.defaultCalendarView });
+        if (next.gradeScale !== effectiveAcademicConfiguration.gradeScale
+            || next.defaultCalendarView !== effectiveAcademicConfiguration.defaultCalendarView
+            || next.teacherProfile !== effectiveAcademicConfiguration.teacherProfile) {
+            updatePreferencesMutation.mutate({ gradeScale: next.gradeScale, defaultCalendarView: next.defaultCalendarView, teacherProfile: next.teacherProfile });
         }
     }, [effectiveAcademicConfiguration, yearId, updateAcademicYearMutation, updatePreferencesMutation]);
     // setTasks/setMeetings/setAgendaNotes: diffAndSyncList traduce el

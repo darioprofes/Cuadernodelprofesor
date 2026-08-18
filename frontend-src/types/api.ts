@@ -552,9 +552,11 @@ import type { GradeScaleRule } from '../types';
 export interface Preferences {
     defaultCalendarView?: 'month' | 'week' | 'day';
     gradeScale: GradeScaleRule[];
+    teacherProfile: string[];
 }
 
 export interface PreferencesInput {
     defaultCalendarView?: 'month' | 'week' | 'day';
     gradeScale?: GradeScaleRule[];
+    teacherProfile?: string[];
 }

@@ -1,11 +1,25 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { AcademicConfiguration, Holiday, EvaluationPeriod, GradeScaleRule } from '../../types';
 import { TrashIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
+import Button from '../Button';
 import BufferedInput from '../BufferedInput';
 import { linkClassName } from '../../theme/components/Link';
 import { useCurrentAcademicYear, useUpdateAcademicYear, useEvaluationPeriods, useCreateEvaluationPeriod, useUpdateEvaluationPeriod, useDeleteEvaluationPeriod } from '../../hooks/useAcademicYears';
+
+// Rasgos de estilo docente habituales -- se inyectan en el prompt de cada
+// SA generada con IA (ver services/prompts/unidad_programacion.py) para que
+// escriba coherente con cómo enseña este profesor, no con un "eres un
+// profesor" genérico. Se guardan una sola vez aquí y se reutilizan siempre,
+// sin repreguntarse en cada wizard -- mismo patrón que
+// CARACTERISTICAS_HABITUALES en ClassModal.tsx.
+export const RASGOS_DOCENTE_HABITUALES = [
+    'Cercano y motivador', 'Exigente y riguroso', 'Prioriza la práctica sobre la teoría',
+    'Prioriza la teoría bien explicada', 'Fomenta la autonomía del alumnado',
+    'Explica paso a paso, muy guiado', 'Con humor', 'Estructurado y metódico',
+    'Flexible, se adapta sobre la marcha',
+];
 
 const AcademicConfigManager: React.FC<{
     academicConfiguration: AcademicConfiguration;
@@ -18,6 +32,7 @@ const AcademicConfigManager: React.FC<{
     const createPeriodMutation = useCreateEvaluationPeriod();
     const updatePeriodMutation = useUpdateEvaluationPeriod();
     const deletePeriodMutation = useDeleteEvaluationPeriod();
+    const [nuevoRasgoDocente, setNuevoRasgoDocente] = useState('');
 
     // Fechas del curso (Fase 8 en web, Fase 7 bloque 4 en escritorio): antes
     // escribían solo en el blob (academicConfiguration.academicYearStart/
@@ -68,7 +83,8 @@ const AcademicConfigManager: React.FC<{
                             !Array.isArray(academicConfiguration.evaluationPeriods) ||
                             typeof academicConfiguration.evaluationPeriodWeights !== 'object' ||
                             academicConfiguration.evaluationPeriodWeights === null ||
-                            !Array.isArray(academicConfiguration.gradeScale);
+                            !Array.isArray(academicConfiguration.gradeScale) ||
+                            !Array.isArray(academicConfiguration.teacherProfile);
 
         if (needsUpdate) {
             setAcademicConfiguration(prev => ({
@@ -79,6 +95,7 @@ const AcademicConfigManager: React.FC<{
                 periods: Array.isArray(prev?.periods) ? prev.periods : [],
                 defaultStartView: prev?.defaultStartView || 'calendar',
                 defaultCalendarView: prev?.defaultCalendarView || 'month',
+                teacherProfile: Array.isArray(prev?.teacherProfile) ? prev.teacherProfile : [],
                 // Initialize defaults if missing
                 gradeScale: Array.isArray(prev?.gradeScale) && prev.gradeScale.length > 0 ? prev.gradeScale : [
                     { min: 9, color: 'emerald', label: 'Sobresaliente' },
@@ -95,7 +112,8 @@ const AcademicConfigManager: React.FC<{
         return <div className="text-center p-4">Cargando configuración...</div>;
     }
 
-    const { gradeScale = [] } = academicConfiguration;
+    const { gradeScale = [], teacherProfile = [] } = academicConfiguration;
+
     // Calculate total weight for display
     let totalWeight = 0;
     for (const w of Object.values(effectiveWeights)) {
@@ -105,6 +123,20 @@ const AcademicConfigManager: React.FC<{
 
     const handleConfigChange = <K extends keyof AcademicConfiguration>(field: K, value: AcademicConfiguration[K]) => {
         setAcademicConfiguration(prev => ({ ...prev, [field]: value }));
+    };
+
+    const toggleRasgoDocente = (rasgo: string) => {
+        const nuevos = teacherProfile.includes(rasgo)
+            ? teacherProfile.filter(r => r !== rasgo)
+            : [...teacherProfile, rasgo];
+        handleConfigChange('teacherProfile', nuevos);
+    };
+
+    const anadirRasgoDocenteLibre = () => {
+        const rasgo = nuevoRasgoDocente.trim();
+        if (!rasgo || teacherProfile.includes(rasgo)) return;
+        handleConfigChange('teacherProfile', [...teacherProfile, rasgo]);
+        setNuevoRasgoDocente('');
     };
 
     // Solo 'holidays' — 'periods' (franjas horarias) se gestiona ahora en
@@ -160,6 +192,50 @@ const AcademicConfigManager: React.FC<{
     return (
         <div className="space-y-8 pb-8">
             <h3 className="text-xl font-bold text-slate-800 mb-4">Configuración del Curso Académico</h3>
+
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
+                <label className="block text-sm font-medium text-slate-700">Tu perfil como docente</label>
+                <p className="text-xs text-slate-500">
+                    Se guarda una sola vez aquí y se reutiliza en todas las Situaciones de Aprendizaje que generes con
+                    IA, para que el resultado encaje con cómo enseñas -- no hace falta repetirlo cada vez.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                    {RASGOS_DOCENTE_HABITUALES.map(rasgo => (
+                        <button
+                            key={rasgo}
+                            type="button"
+                            onClick={() => toggleRasgoDocente(rasgo)}
+                            className={`text-xs font-medium px-2 py-1 rounded-full border transition-colors ${
+                                teacherProfile.includes(rasgo)
+                                    ? 'bg-slate-700 text-white border-slate-700'
+                                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                            }`}
+                        >
+                            {rasgo}
+                        </button>
+                    ))}
+                </div>
+                {teacherProfile.filter(r => !RASGOS_DOCENTE_HABITUALES.includes(r)).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                        {teacherProfile.filter(r => !RASGOS_DOCENTE_HABITUALES.includes(r)).map(rasgo => (
+                            <span key={rasgo} className="text-xs font-medium px-2 py-1 rounded-full bg-slate-700 text-white inline-flex items-center gap-1">
+                                {rasgo}
+                                <button type="button" onClick={() => toggleRasgoDocente(rasgo)} className="hover:text-red-200" title="Quitar">&times;</button>
+                            </span>
+                        ))}
+                    </div>
+                )}
+                <div className="flex gap-1.5">
+                    <Input
+                        type="text"
+                        value={nuevoRasgoDocente}
+                        onChange={e => setNuevoRasgoDocente(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); anadirRasgoDocenteLibre(); } }}
+                        placeholder="Otro rasgo..."
+                    />
+                    <Button type="button" variant="secondary" onClick={anadirRasgoDocenteLibre}>Añadir</Button>
+                </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>

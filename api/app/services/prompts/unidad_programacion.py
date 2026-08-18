@@ -34,6 +34,7 @@ from services.basic_knowledge import list_basic_knowledge
 from services.courses import get_course
 from services.criteria import list_criteria
 from services.enrollments import list_enrollments
+from services.preferences import get_preferences
 
 
 def _detectar_marcador(texto):
@@ -195,7 +196,15 @@ def construir_prompt(
     - `examen_formato`: el profesor lo elige de una lista cerrada en el
       frontend (Test, Preguntas abiertas, Mixto...) antes de generar -- aquí
       llega ya resuelto a texto, la IA no lo decide, solo diseña los
-      bloques del examen dentro de ese formato dado."""
+      bloques del examen dentro de ese formato dado.
+
+    El perfil docente (rasgos de estilo al enseñar, p.ej. "Cercano y
+    motivador", "Prioriza la práctica sobre la teoría") se lee de
+    Preferencias (services/preferences.py, fila única de toda la app) y se
+    inyecta en la frase de apertura del prompt -- no es un parámetro de esta
+    función porque, a diferencia del resto, no lo decide el profesor cada
+    vez que genera una SA, sino una sola vez en Ajustes y se reutiliza
+    siempre."""
 
     curso = get_course(course_id)
 
@@ -385,7 +394,10 @@ def construir_prompt(
         instruccion_examen = ""
         bloque_final_exam_json = '"finalExam": {"incluido": false, "formato": null, "bloques": []},'
 
-    prompt = f"""Eres un profesor de {curso.subject} de {curso.level} diseñando una situación \
+    perfil_docente = get_preferences().teacher_profile
+    frase_perfil = f" -- tu estilo como docente: {'; '.join(perfil_docente)} --" if perfil_docente else ""
+
+    prompt = f"""Eres un profesor de {curso.subject} de {curso.level}{frase_perfil} diseñando una situación \
 de aprendizaje a partir de {"tu propio material de clase" if modo == "documento" else "lo que quieres trabajar"}.
 
 <{etiqueta_entrada}>

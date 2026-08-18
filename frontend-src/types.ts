@@ -409,6 +409,9 @@ export interface AcademicConfiguration {
   defaultStartView?: 'hoy' | 'calendar' | 'gradebook' | 'journal';
   defaultCalendarView?: 'month' | 'week' | 'day';
   gradeScale?: GradeScaleRule[];
+  // Rasgos de estilo docente -- se inyectan en el prompt de cada SA
+  // generada con IA (ver services/prompts/unidad_programacion.py).
+  teacherProfile?: string[];
 }
 
 export type View =
