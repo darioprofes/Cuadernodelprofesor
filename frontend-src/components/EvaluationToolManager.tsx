@@ -9,6 +9,9 @@ import Select from './Select';
 import Textarea from './Textarea';
 import { checkboxClassName } from '../theme/components/Input';
 import { linkClassName } from '../theme/components/Link';
+import { SparklesIcon } from './Icons';
+import GenerarInstrumentoIAModal from './GenerarInstrumentoIAModal';
+import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 
 // Forma "de borrador" usada mientras se edita un instrumento: unifica
 // BaseEvaluationItem y RubricItem en un único tipo con `levelDescriptions`
@@ -40,9 +43,20 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [toolToEdit, setToolToEdit] = useState<EvaluationTool | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
+    // Instrumento recién generado con IA (fuera del contexto de una SA, ver
+    // más abajo) pendiente de revisar en el mismo formulario de edición de
+    // siempre -- se precarga como toolToEdit para reutilizar el formulario
+    // tal cual, pero debe GUARDARSE como nuevo (onCreate), no como
+    // actualización de un instrumento real (onUpdate), así que necesita
+    // distinguirse aparte.
+    const [instrumentoGeneradoPendiente, setInstrumentoGeneradoPendiente] = useState(false);
+    const [showCriteriaPickerParaIA, setShowCriteriaPickerParaIA] = useState(false);
+    const [criteriosParaIA, setCriteriosParaIA] = useState<{ courseId: string; ids: string[] } | null>(null);
+    const [showGenerarIA, setShowGenerarIA] = useState(false);
+    const iaLocalDisponible = useIaLocalDisponible();
 
     const handleSave = (tool: EvaluationTool) => {
-        if (toolToEdit) {
+        if (toolToEdit && !instrumentoGeneradoPendiente) {
             // criterionScores de una nota basada en instrumento se deriva
             // siempre en caliente a partir de toolResults + la definición
             // VIGENTE del instrumento (ver services/apiAdapters.ts,
@@ -56,6 +70,34 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
             onCreate(data);
         }
         setIsModalOpen(false);
+        setInstrumentoGeneradoPendiente(false);
+    };
+
+    const handleEditExisting = (tool: EvaluationTool) => {
+        setInstrumentoGeneradoPendiente(false);
+        setToolToEdit(tool);
+    };
+
+    // Fuera de una SA no hay un "elemento concreto" del que heredar
+    // criterios (a diferencia de InstrumentoSelectConIA en
+    // ProgrammingManager.tsx) -- el profesor los elige a mano aquí,
+    // reutilizando el mismo selector de criterios que ya existe
+    // (CriteriaSelectorModal, más abajo). El curso del instrumento se
+    // deduce del primer criterio elegido.
+    const handleCriteriosElegidosParaIA = (ids: string[]) => {
+        setShowCriteriaPickerParaIA(false);
+        if (ids.length === 0) return;
+        const courseId = criteria.find(c => ids.includes(c.id))?.courseId;
+        if (!courseId) return;
+        setCriteriosParaIA({ courseId, ids });
+        setShowGenerarIA(true);
+    };
+
+    const handleInstrumentoGenerado = (draft: EvaluationTool) => {
+        setShowGenerarIA(false);
+        setInstrumentoGeneradoPendiente(true);
+        setToolToEdit(draft);
+        setIsModalOpen(true);
     };
 
     const handleDelete = (toolId: string) => {
@@ -241,7 +283,16 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                         Importar CSV
                     </button>
                     <button
-                        onClick={() => { setToolToEdit(null); setIsModalOpen(true); }}
+                        onClick={() => setShowCriteriaPickerParaIA(true)}
+                        disabled={!iaLocalDisponible}
+                        title={iaLocalDisponible ? 'Elegir criterios y generar un instrumento con IA local' : 'IA local no disponible ahora mismo'}
+                        className="inline-flex items-center justify-center py-2 px-3 border border-purple-300 shadow-sm text-sm font-medium rounded-lg text-purple-700 bg-white hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                    >
+                        <SparklesIcon className="w-4 h-4 mr-1" />
+                        Generar con IA
+                    </button>
+                    <button
+                        onClick={() => { setInstrumentoGeneradoPendiente(false); setToolToEdit(null); setIsModalOpen(true); }}
                         className="inline-flex items-center justify-center py-2 px-3 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700"
                     >
                         <PlusIcon className="w-4 h-4 mr-1" />
@@ -283,20 +334,39 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
             </p>
 
             <div className="space-y-6">
-                <ToolSection type="checklist" tools={checklists} onEdit={setToolToEdit} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
-                <ToolSection type="rating_scale" tools={ratingScales} onEdit={setToolToEdit} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
-                <ToolSection type="rubric" tools={rubrics} onEdit={setToolToEdit} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
-                <ToolSection type="criterial_exam" tools={criterialExams} onEdit={setToolToEdit} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="checklist" tools={checklists} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="rating_scale" tools={ratingScales} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="rubric" tools={rubrics} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="criterial_exam" tools={criterialExams} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
             </div>
 
             {isModalOpen && (
                 <EvaluationToolEditorModal
                     isOpen={isModalOpen}
-                    onClose={() => setIsModalOpen(false)}
+                    onClose={() => { setIsModalOpen(false); setInstrumentoGeneradoPendiente(false); }}
                     onSave={handleSave}
                     toolToEdit={toolToEdit}
                     criteria={criteria}
                     courses={courses}
+                />
+            )}
+            {showCriteriaPickerParaIA && (
+                <CriteriaSelectorModal
+                    isOpen={showCriteriaPickerParaIA}
+                    onClose={() => setShowCriteriaPickerParaIA(false)}
+                    allCriteria={criteria}
+                    courses={courses}
+                    selectedIds={[]}
+                    onSave={handleCriteriosElegidosParaIA}
+                />
+            )}
+            {criteriosParaIA && (
+                <GenerarInstrumentoIAModal
+                    isOpen={showGenerarIA}
+                    onClose={() => setShowGenerarIA(false)}
+                    courseId={criteriosParaIA.courseId}
+                    linkedCriteriaIds={criteriosParaIA.ids}
+                    onDraftReady={handleInstrumentoGenerado}
                 />
             )}
         </div>
