@@ -342,7 +342,10 @@ interface EditorModalProps {
     courses: Course[];
 }
 
-const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, onClose, onSave, toolToEdit, criteria, courses }) => {
+// Exportado -- reutilizado tal cual por InstrumentoSelectConIA
+// (ProgrammingManager.tsx) para revisar/editar un instrumento recién
+// generado con IA antes de guardarlo, sin duplicar este formulario.
+export const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, onClose, onSave, toolToEdit, criteria, courses }) => {
     const [tool, setTool] = useState<ToolDraft>(() =>
         toolToEdit || { name: '', type: 'checklist', items: [] }
     );

@@ -12,7 +12,9 @@ import { useProgrammingUnits, useCreateProgrammingUnit, useUpdateProgrammingUnit
 import { useEvaluationCriteria } from '../hooks/useEvaluationCriteria';
 import { useBasicKnowledge } from '../hooks/useBasicKnowledge';
 import { useSpecificCompetences } from '../hooks/useSpecificCompetences';
-import { useEvaluationTools } from '../hooks/useEvaluationTools';
+import { useEvaluationTools, useCreateEvaluationTool } from '../hooks/useEvaluationTools';
+import { EvaluationToolEditorModal } from './EvaluationToolManager';
+import GenerarInstrumentoIAModal from './GenerarInstrumentoIAModal';
 
 const EVALUATION_TOOL_TYPE_LABEL: Record<EvaluationTool['type'], string> = {
     checklist: 'Lista de cotejo',
@@ -77,6 +79,66 @@ const InstrumentoSelect: React.FC<{ evaluationTools: EvaluationTool[]; value?: s
                         </button>
                     ))}
                 </div>
+            )}
+        </div>
+    );
+};
+
+// InstrumentoSelect + botón "Generar con IA local" -- genera un
+// instrumento nuevo a partir de los criterios YA vinculados a este
+// producto/examen/actividad concretos (no todos los de la SA, mismo
+// criterio que ya usa la importación al cuaderno de notas), lo abre en el
+// formulario de edición de siempre para revisar, y al guardar lo enlaza
+// automáticamente aquí mismo -- sin tener que ir a Ajustes y volver.
+const InstrumentoSelectConIA: React.FC<{
+    evaluationTools: EvaluationTool[];
+    value?: string;
+    onChange: (id: string | undefined) => void;
+    courseId: string;
+    courses: Course[];
+    criteria: EvaluationCriterion[];
+    linkedCriteriaIds: string[];
+    contexto?: string;
+}> = ({ evaluationTools, value, onChange, courseId, courses, criteria, linkedCriteriaIds, contexto }) => {
+    const [showGenerar, setShowGenerar] = useState(false);
+    const [draft, setDraft] = useState<EvaluationTool | null>(null);
+    const createToolMutation = useCreateEvaluationTool();
+
+    const handleGuardarDraft = async (tool: EvaluationTool) => {
+        const { id: _unused, ...data } = tool;
+        const creado = await createToolMutation.mutateAsync(data);
+        onChange(creado.id);
+        setDraft(null);
+    };
+
+    return (
+        <div className="flex items-center gap-1.5">
+            <div className="flex-1"><InstrumentoSelect evaluationTools={evaluationTools} value={value} onChange={onChange} /></div>
+            <button
+                type="button"
+                onClick={() => setShowGenerar(true)}
+                title="Generar instrumento con IA local a partir de los criterios vinculados aquí"
+                className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-md flex-shrink-0"
+            >
+                <SparklesIcon className="w-4 h-4" />
+            </button>
+            <GenerarInstrumentoIAModal
+                isOpen={showGenerar}
+                onClose={() => setShowGenerar(false)}
+                courseId={courseId}
+                linkedCriteriaIds={linkedCriteriaIds}
+                contexto={contexto}
+                onDraftReady={setDraft}
+            />
+            {draft && (
+                <EvaluationToolEditorModal
+                    isOpen={true}
+                    onClose={() => setDraft(null)}
+                    onSave={handleGuardarDraft}
+                    toolToEdit={draft}
+                    criteria={criteria}
+                    courses={courses}
+                />
             )}
         </div>
     );
@@ -532,6 +594,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                         basicKnowledge={filteredBasicKnowledge}
                         specificCompetences={filteredSpecificCompetences}
                         evaluationTools={filteredEvaluationTools}
+                        courses={courses}
                     />
                 </Modal>
             )}
@@ -826,7 +889,8 @@ const UnitEditor: React.FC<{
     basicKnowledge: BasicKnowledge[];
     specificCompetences: SpecificCompetence[];
     evaluationTools: EvaluationTool[];
-}> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences, evaluationTools }) => {
+    courses: Course[];
+}> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences, evaluationTools, courses }) => {
     const [editedUnit, setEditedUnit] = useState(unit);
     const [activeTab, setActiveTab] = useState<'general' | 'curriculo' | 'sesiones' | 'evaluacion' | 'cobertura'>('general');
     // Actividades plegadas por defecto -- solo título/tipo/agrupamiento/
@@ -1159,7 +1223,16 @@ const UnitEditor: React.FC<{
                                                 </div>
                                                 <div className="w-72">
                                                     <label className="text-xs font-medium text-slate-500 block mb-1">Instrumento de evaluación</label>
-                                                    <InstrumentoSelect evaluationTools={evaluationTools} value={act.evaluationToolId} onChange={id => handleActivityChange(sIndex, aIndex, { evaluationToolId: id })} />
+                                                    <InstrumentoSelectConIA
+                                                        evaluationTools={evaluationTools}
+                                                        value={act.evaluationToolId}
+                                                        onChange={id => handleActivityChange(sIndex, aIndex, { evaluationToolId: id })}
+                                                        courseId={editedUnit.courseId}
+                                                        courses={courses}
+                                                        criteria={criteria}
+                                                        linkedCriteriaIds={act.linkedCriteriaIds || []}
+                                                        contexto={act.descripcion || act.titulo}
+                                                    />
                                                 </div>
                                             </div>
                                         )}
@@ -1189,7 +1262,16 @@ const UnitEditor: React.FC<{
                             <CriteriaChips criteria={criteria} selectedIds={finalProduct.linkedCriteriaIds || []} onChange={ids => handleProductChange({ linkedCriteriaIds: ids })} />
                             <div>
                                 <p className="text-xs font-semibold text-slate-500 mb-1">Instrumento de evaluación</p>
-                                <InstrumentoSelect evaluationTools={evaluationTools} value={finalProduct.evaluationToolId} onChange={id => handleProductChange({ evaluationToolId: id })} />
+                                <InstrumentoSelectConIA
+                                    evaluationTools={evaluationTools}
+                                    value={finalProduct.evaluationToolId}
+                                    onChange={id => handleProductChange({ evaluationToolId: id })}
+                                    courseId={editedUnit.courseId}
+                                    courses={courses}
+                                    criteria={criteria}
+                                    linkedCriteriaIds={finalProduct.linkedCriteriaIds || []}
+                                    contexto={finalProduct.descripcion || finalProduct.tipo}
+                                />
                             </div>
                         </div>
                     )}
@@ -1205,7 +1287,16 @@ const UnitEditor: React.FC<{
                             <Input type="text" value={finalExam.formato || ''} onChange={e => handleExamChange({ formato: e.target.value })} placeholder="Formato (ej. Test, preguntas abiertas...)" className="w-full"/>
                             <div>
                                 <p className="text-xs font-semibold text-slate-500 mb-1">Instrumento de evaluación</p>
-                                <InstrumentoSelect evaluationTools={evaluationTools} value={finalExam.evaluationToolId} onChange={id => handleExamChange({ evaluationToolId: id })} />
+                                <InstrumentoSelectConIA
+                                    evaluationTools={evaluationTools}
+                                    value={finalExam.evaluationToolId}
+                                    onChange={id => handleExamChange({ evaluationToolId: id })}
+                                    courseId={editedUnit.courseId}
+                                    courses={courses}
+                                    criteria={criteria}
+                                    linkedCriteriaIds={Array.from(new Set((finalExam.bloques || []).flatMap(b => b.linkedCriteriaIds || [])))}
+                                    contexto={finalExam.formato ? `Examen final: ${finalExam.formato}` : 'Examen final'}
+                                />
                             </div>
                             <div className="space-y-1">
                                 <p className="text-xs font-semibold text-slate-500">Bloques</p>
