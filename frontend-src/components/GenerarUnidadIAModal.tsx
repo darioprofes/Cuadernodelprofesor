@@ -124,7 +124,7 @@ interface GenerarUnidadIAModalProps {
 // organiza. Modo B ("descripcion"): no hay material escrito todavía, la IA
 // redacta el contenido teórico a partir de lo que el profesor describe.
 type Modo = 'documento' | 'descripcion';
-type SesionesModo = 'fijo' | 'rango' | 'ia';
+type SesionesModo = 'fijo' | 'rango';
 
 const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, courseId, onClose, onDraftReady }) => {
     const [paso, setPaso] = useState<Paso>(1);
@@ -144,7 +144,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     // Bloque 1: Planificación -- número de sesiones y grupo de referencia
     // (para cargar sus características, aunque la SA se guarda a nivel de
     // materia, no de clase).
-    const [sesionesModo, setSesionesModo] = useState<SesionesModo>('ia');
+    const [sesionesModo, setSesionesModo] = useState<SesionesModo>('rango');
     const [sesionesFijo, setSesionesFijo] = useState(6);
     const [sesionesMin, setSesionesMin] = useState(4);
     const [sesionesMax, setSesionesMax] = useState(6);
@@ -225,7 +225,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
         setResultado(null);
         setRespuestaIA('');
         setErrorPaso3(null);
-        setSesionesModo('ia');
+        setSesionesModo('rango');
         setClassId('');
         setCaracteristicasGrupo([]);
         setTiposActividad([]);
@@ -498,14 +498,14 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                         <div>
                             <p className="text-sm font-semibold text-slate-700 mb-1.5">Número de sesiones</p>
                             <div className="flex gap-1.5 flex-wrap">
-                                {(['fijo', 'rango', 'ia'] as SesionesModo[]).map(opcion => (
+                                {(['fijo', 'rango'] as SesionesModo[]).map(opcion => (
                                     <button
                                         key={opcion}
                                         type="button"
                                         onClick={() => setSesionesModo(opcion)}
                                         className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${sesionesModo === opcion ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
                                     >
-                                        {opcion === 'fijo' ? 'Número fijo' : opcion === 'rango' ? 'Rango orientativo' : 'Que decida la IA'}
+                                        {opcion === 'fijo' ? 'Número fijo' : 'Rango orientativo'}
                                     </button>
                                 ))}
                             </div>
@@ -782,9 +782,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                                 <li>
                                     · Sesiones: {sesionesModo === 'fijo'
                                         ? `${sesionesFijo} (tú decides)`
-                                        : sesionesModo === 'rango'
-                                            ? `entre ${sesionesMin} y ${sesionesMax} (tú decides el rango)`
-                                            : 'que decida la IA'}
+                                        : `entre ${sesionesMin} y ${sesionesMax} (tú decides el rango)`}
                                 </li>
                                 <li>· Grupo: {clasesDelCurso.find(c => c.id === classId)?.grupo || 'sin grupo seleccionado'}</li>
                                 <li>· Características del grupo: {caracteristicasGrupo.length > 0 ? caracteristicasGrupo.join(', ') : 'ninguna'}</li>
