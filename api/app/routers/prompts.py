@@ -7,10 +7,13 @@
 # del curso) en el prompt, nunca dejar que la IA invente nada, y validar
 # cualquier código que devuelva contra lo que existe de verdad en Postgres.
 
+import asyncio
+import json
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from services.auth import require_auth
@@ -210,11 +213,33 @@ class GenerarInstrumentoRequest(BaseModel):
 @router.post("/instrumento-evaluacion/generar")
 async def generar_prompt_instrumento(datos: GenerarInstrumentoRequest):
 
-    try:
-        instrumento, codigos_descartados = generar_instrumento(
+    # La generación real puede tardar cerca de un minuto (llamada al
+    # ia-server) -- una respuesta normal de una vez deja la conexión sin
+    # mandar ni un byte todo ese rato, y cualquier proxy intermedio (NPM,
+    # Authentik, Cloudflare) puede darla por muerta y cortarla con un 502
+    # antes de que profe-api termine (probado en real, 2026-08-19). Un
+    # espacio es whitespace JSON válido -- no rompe el JSON.parse() del
+    # frontend aunque se acumulen varios delante -- así que aquí se manda
+    # uno cada pocos segundos mientras se espera, para que SIEMPRE haya
+    # bytes fluyendo y ningún proxy tenga motivo para cortar (su
+    # "read timeout" mide tiempo ENTRE lecturas, no la duración total).
+    # Como la respuesta ya empezó a mandarse con código 200 antes de saber
+    # si hubo error, ya no se puede cambiar el status HTTP a medias -- el
+    # error se manda dentro del JSON final ({"detail": "..."}) y el
+    # frontend lo distingue mirando esa clave, no el código HTTP.
+    async def flujo():
+        bucle = asyncio.get_running_loop()
+        tarea = bucle.run_in_executor(
+            None, generar_instrumento,
             datos.course_id, datos.criterion_ids, datos.tool_type, datos.contexto, datos.num_niveles,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        while not tarea.done():
+            yield " "
+            await asyncio.sleep(4)
+        try:
+            instrumento, codigos_descartados = await tarea
+            yield json.dumps({"instrumento": instrumento, "codigosDescartados": codigos_descartados})
+        except ValueError as exc:
+            yield json.dumps({"detail": str(exc)})
 
-    return {"instrumento": instrumento, "codigosDescartados": codigos_descartados}
+    return StreamingResponse(flujo(), media_type="application/json")

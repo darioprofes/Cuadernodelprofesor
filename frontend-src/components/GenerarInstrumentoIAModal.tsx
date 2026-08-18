@@ -70,11 +70,13 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                     num_niveles: tipoInfo.necesitaNiveles ? numNiveles : undefined,
                 }),
             });
-            if (!response.ok) {
-                const body = await response.json().catch(() => ({}));
-                throw new Error(body.detail || `Error HTTP ${response.status}`);
-            }
-            const data: { instrumento: Omit<EvaluationTool, 'id'>; codigosDescartados: string[] } = await response.json();
+            // La respuesta llega en streaming (espacios de relleno + JSON al
+            // final, para que ningún proxy corte la conexión durante el
+            // minuto que puede tardar) -- el status HTTP ya no distingue
+            // error, se mira la clave "detail" del JSON final.
+            if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
+            const data: { instrumento: Omit<EvaluationTool, 'id'>; codigosDescartados: string[]; detail?: string } = await response.json();
+            if (data.detail) throw new Error(data.detail);
 
             if (data.codigosDescartados.length > 0) {
                 window.alert(
