@@ -79,6 +79,9 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
     const [unitEditorState, setUnitEditorState] = useState<{ mode: 'create', draft?: ProgrammingUnit } | { mode: 'edit', unit: ProgrammingUnit } | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
     const [showGenerarIA, setShowGenerarIA] = useState(false);
+    // Vista de solo lectura al pinchar en una SA de la lista -- separada del
+    // editor: mismo contenido pero sin campos editables ni secciones vacías.
+    const [viewingUnit, setViewingUnit] = useState<ProgrammingUnit | null>(null);
 
     React.useEffect(() => {
         if (autoOpenGenerarIA) {
@@ -435,14 +438,18 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                                     const linkedBasicKnowledgeData = unit.linkedBasicKnowledgeIds.map(id => filteredBasicKnowledge.find(sb => sb.id === id)).filter((sb): sb is BasicKnowledge => sb !== undefined);
                                     
                                     return (
-                                        <div key={unit.id} className="p-3 border rounded-lg group hover:bg-slate-50/50 transition-colors">
-                                            <UnitViewer 
-                                                unit={unit} 
+                                        <div
+                                            key={unit.id}
+                                            className="p-3 border rounded-lg group hover:bg-slate-50/50 transition-colors cursor-pointer"
+                                            onClick={() => setViewingUnit(unit)}
+                                        >
+                                            <UnitViewer
+                                                unit={unit}
                                                 dateRange={unitDateRanges.get(unit.id)}
-                                                linkedCriteria={linkedCriteriaData} 
-                                                linkedBasicKnowledge={linkedBasicKnowledgeData} 
-                                                onEdit={() => setUnitEditorState({ mode: 'edit', unit })} 
-                                                onDelete={() => handleDelete(unit.id)} 
+                                                linkedCriteria={linkedCriteriaData}
+                                                linkedBasicKnowledge={linkedBasicKnowledgeData}
+                                                onEdit={() => setUnitEditorState({ mode: 'edit', unit })}
+                                                onDelete={() => handleDelete(unit.id)}
                                             />
                                         </div>
                                     );
@@ -476,6 +483,19 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                         basicKnowledge={filteredBasicKnowledge}
                         specificCompetences={filteredSpecificCompetences}
                         evaluationTools={filteredEvaluationTools}
+                    />
+                </Modal>
+            )}
+            {viewingUnit && (
+                <Modal isOpen={!!viewingUnit} onClose={() => setViewingUnit(null)} title={viewingUnit.name} size="5xl">
+                    <UnitDetailView
+                        unit={viewingUnit}
+                        criteria={filteredCriteria}
+                        basicKnowledge={filteredBasicKnowledge}
+                        specificCompetences={filteredSpecificCompetences}
+                        evaluationTools={filteredEvaluationTools}
+                        onEdit={() => { setUnitEditorState({ mode: 'edit', unit: viewingUnit }); setViewingUnit(null); }}
+                        onClose={() => setViewingUnit(null)}
                     />
                 </Modal>
             )}
@@ -547,11 +567,169 @@ const UnitViewer: React.FC<UnitViewerProps> = ({ unit, dateRange, linkedCriteria
                 )}
             </div>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={onEdit} className="p-2 hover:bg-slate-200 rounded-full"><PencilIcon className="w-4 h-4 text-slate-600" /></button>
-                <button onClick={onDelete} className="p-2 hover:bg-red-100 rounded-full"><TrashIcon className="w-4 h-4 text-red-500" /></button>
+                <button onClick={e => { e.stopPropagation(); onEdit(); }} className="p-2 hover:bg-slate-200 rounded-full"><PencilIcon className="w-4 h-4 text-slate-600" /></button>
+                <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-2 hover:bg-red-100 rounded-full"><TrashIcon className="w-4 h-4 text-red-500" /></button>
             </div>
         </div>
     )
+};
+
+// Chips de solo lectura -- null si no hay nada que mostrar, para que la
+// sección entera se pueda ocultar sin dejar un título huérfano.
+const ReadOnlyChips: React.FC<{ codes: string[]; colorClass: string }> = ({ codes, colorClass }) => (
+    codes.length === 0 ? null : (
+        <div className="flex flex-wrap gap-1">
+            {codes.map(c => <span key={c} className={`text-xs font-medium px-2 py-0.5 rounded-full ${colorClass}`}>{c}</span>)}
+        </div>
+    )
+);
+
+// Vista de solo lectura de una SA ya guardada -- mismo contenido que el
+// editor, pero sin ningún campo editable, y ocultando toda sección/campo
+// vacío en vez de mostrarlo en blanco (petición explícita del profesor).
+const UnitDetailView: React.FC<{
+    unit: ProgrammingUnit;
+    criteria: EvaluationCriterion[];
+    basicKnowledge: BasicKnowledge[];
+    specificCompetences: SpecificCompetence[];
+    evaluationTools: EvaluationTool[];
+    onEdit: () => void;
+    onClose: () => void;
+}> = ({ unit, criteria, basicKnowledge, specificCompetences, evaluationTools, onEdit, onClose }) => {
+
+    const codesFor = (ids: string[] | undefined, items: { id: string; code: string }[]) =>
+        (ids || []).map(id => items.find(i => i.id === id)?.code).filter((c): c is string => !!c);
+
+    const toolName = (id?: string) => id ? evaluationTools.find(t => t.id === id)?.name : undefined;
+
+    const competenciaCodes = codesFor(unit.linkedSpecificCompetenceIds, specificCompetences);
+    const criteriosCodes = codesFor(unit.linkedCriteriaIds, criteria);
+    const saberesCodes = codesFor(unit.linkedBasicKnowledgeIds, basicKnowledge);
+
+    return (
+        <div className="space-y-5">
+            <div className="flex items-center gap-3 text-sm text-slate-500">
+                <span>{unit.sessions} sesiones</span>
+                {unit.startDate && <span>· Inicio fijado: {formatFechaEs(unit.startDate)}</span>}
+            </div>
+
+            {unit.context && (
+                <div>
+                    <h4 className="text-sm font-semibold text-slate-700 mb-1">Contexto / situación de partida</h4>
+                    <p className="text-sm text-slate-600 whitespace-pre-wrap">{unit.context}</p>
+                </div>
+            )}
+
+            {(competenciaCodes.length > 0 || criteriosCodes.length > 0 || saberesCodes.length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {competenciaCodes.length > 0 && (
+                        <div>
+                            <p className="text-sm font-semibold text-slate-600 mb-1">Competencias Específicas</p>
+                            <ReadOnlyChips codes={competenciaCodes} colorClass="bg-indigo-100 text-indigo-800" />
+                        </div>
+                    )}
+                    {criteriosCodes.length > 0 && (
+                        <div>
+                            <p className="text-sm font-semibold text-slate-600 mb-1">Criterios de Evaluación</p>
+                            <ReadOnlyChips codes={criteriosCodes} colorClass="bg-slate-200 text-slate-700" />
+                        </div>
+                    )}
+                    {saberesCodes.length > 0 && (
+                        <div>
+                            <p className="text-sm font-semibold text-slate-600 mb-1">Saberes Básicos</p>
+                            <ReadOnlyChips codes={saberesCodes} colorClass="bg-amber-100 text-amber-800" />
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <div>
+                <h4 className="text-sm font-semibold text-slate-700 mb-2">Sesiones</h4>
+                <div className="space-y-3">
+                    {(unit.sessionDetails || []).map((session, sIndex) => (
+                        <div key={sIndex} className="p-3 border rounded-lg bg-white">
+                            <p className="font-semibold text-slate-700">
+                                Sesión {sIndex + 1}{session.titulo ? `: ${session.titulo}` : ''}
+                            </p>
+                            <div className="mt-2 space-y-3 pl-3 border-l-2 border-slate-100">
+                                {session.actividades.map((act, aIndex) => {
+                                    const actCriterios = codesFor(act.linkedCriteriaIds, criteria);
+                                    const actTool = toolName(act.evaluationToolId);
+                                    const detalles = [act.tipo, act.agrupamiento, act.duracionMin ? `${act.duracionMin} min` : null].filter(Boolean);
+                                    return (
+                                        <div key={aIndex} className="text-sm">
+                                            <p className="font-medium text-slate-700">
+                                                {act.titulo || `Actividad ${aIndex + 1}`}
+                                                {detalles.length > 0 && <span className="text-xs font-normal text-slate-400"> · {detalles.join(' · ')}</span>}
+                                            </p>
+                                            {act.descripcion && <p className="text-slate-600 mt-0.5">{act.descripcion}</p>}
+                                            {(act.recursos || []).length > 0 && (
+                                                <p className="text-xs text-slate-400 mt-0.5">Recursos: {(act.recursos || []).join(', ')}</p>
+                                            )}
+                                            {(actCriterios.length > 0 || actTool) && (
+                                                <div className="flex items-center flex-wrap gap-1.5 mt-1">
+                                                    <ReadOnlyChips codes={actCriterios} colorClass="bg-slate-200 text-slate-700" />
+                                                    {actTool && <span className="text-xs font-medium bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">📋 {actTool}</span>}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {unit.finalProduct?.incluido && (
+                <div className="p-3 border rounded-lg bg-emerald-50/50">
+                    <h4 className="font-semibold text-slate-700">
+                        📦 Producto final{unit.finalProduct.tipo ? `: ${unit.finalProduct.tipo}` : ''}
+                    </h4>
+                    {unit.finalProduct.descripcion && <p className="text-sm text-slate-600 mt-1">{unit.finalProduct.descripcion}</p>}
+                    {(() => {
+                        const codes = codesFor(unit.finalProduct.linkedCriteriaIds, criteria);
+                        const tool = toolName(unit.finalProduct.evaluationToolId);
+                        return (codes.length > 0 || tool) && (
+                            <div className="flex items-center flex-wrap gap-1.5 mt-1.5">
+                                <ReadOnlyChips codes={codes} colorClass="bg-slate-200 text-slate-700" />
+                                {tool && <span className="text-xs font-medium bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">📋 {tool}</span>}
+                            </div>
+                        );
+                    })()}
+                </div>
+            )}
+
+            {unit.finalExam?.incluido && (
+                <div className="p-3 border rounded-lg bg-purple-50/50">
+                    <h4 className="font-semibold text-slate-700">
+                        📝 Examen final{unit.finalExam.formato ? `: ${unit.finalExam.formato}` : ''}
+                    </h4>
+                    {toolName(unit.finalExam.evaluationToolId) && (
+                        <span className="inline-block text-xs font-medium bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full mt-1.5">📋 {toolName(unit.finalExam.evaluationToolId)}</span>
+                    )}
+                    {(unit.finalExam.bloques || []).length > 0 && (
+                        <div className="mt-2 space-y-2">
+                            {(unit.finalExam.bloques || []).map((block, i) => {
+                                const codes = codesFor(block.linkedCriteriaIds, criteria);
+                                return (
+                                    <div key={i} className="text-sm">
+                                        <p className="text-slate-600">{block.descripcion}</p>
+                                        <ReadOnlyChips codes={codes} colorClass="bg-slate-200 text-slate-700" />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+                <button onClick={onClose} className="text-sm font-semibold text-slate-600 hover:text-slate-800 px-3 py-1">Cerrar</button>
+                <button onClick={onEdit} className="text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded-md inline-flex items-center gap-1.5"><PencilIcon className="w-4 h-4"/> Editar</button>
+            </div>
+        </div>
+    );
 };
 
 const PALETTE_COLORS = ['#89b0f3', '#7dd7b2', '#fde28a', '#f472b6', '#b6a3f9', '#ef4444'];
