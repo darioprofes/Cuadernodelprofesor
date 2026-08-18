@@ -1,10 +1,9 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { ProgrammingUnit, Course, SessionDetail, SessionActivity, FinalProduct, FinalExam, EvaluationCriterion, BasicKnowledge, SpecificCompetence, EvaluationTool, ClassData, AcademicConfiguration } from '../types';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon, SparklesIcon } from './Icons';
 import Modal from './Modal';
 import Input from './Input';
-import Select from './Select';
 import GenerarUnidadIAModal from './GenerarUnidadIAModal';
 import { TYPOGRAPHY } from '../theme/typography';
 import { checkboxClassName } from '../theme/components/Input';
@@ -21,17 +20,66 @@ const EVALUATION_TOOL_TYPE_LABEL: Record<EvaluationTool['type'], string> = {
     rubric: 'Rúbrica',
 };
 
-// Selector compacto de un EvaluationTool real (Instrumentos de Evaluación) --
+// Selector-buscador de un EvaluationTool real (Instrumentos de Evaluación) --
 // se reutiliza en producto final, examen y cada actividad, en vez de
-// modelar una rúbrica aparte y más pobre dentro de la propia SA.
-const InstrumentoSelect: React.FC<{ evaluationTools: EvaluationTool[]; value?: string; onChange: (id: string | undefined) => void }> = ({ evaluationTools, value, onChange }) => (
-    <Select value={value || ''} onChange={e => onChange(e.target.value || undefined)}>
-        <option value="">Sin instrumento de evaluación</option>
-        {evaluationTools.map(t => (
-            <option key={t.id} value={t.id}>{t.name} ({EVALUATION_TOOL_TYPE_LABEL[t.type]})</option>
-        ))}
-    </Select>
-);
+// modelar una rúbrica aparte y más pobre dentro de la propia SA. Con
+// muchos instrumentos, un <select> plano se vuelve difícil de recorrer --
+// esto deja escribir para filtrar por nombre.
+const InstrumentoSelect: React.FC<{ evaluationTools: EvaluationTool[]; value?: string; onChange: (id: string | undefined) => void }> = ({ evaluationTools, value, onChange }) => {
+    const selected = evaluationTools.find(t => t.id === value);
+    const [query, setQuery] = useState('');
+    const [open, setOpen] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const handleClickOutside = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [open]);
+
+    const filtered = evaluationTools.filter(t => t.name.toLowerCase().includes(query.toLowerCase()));
+
+    const handlePick = (id: string | undefined) => {
+        onChange(id);
+        setOpen(false);
+        setQuery('');
+    };
+
+    return (
+        <div className="relative" ref={containerRef}>
+            <Input
+                type="text"
+                value={open ? query : (selected?.name || '')}
+                onChange={e => { setQuery(e.target.value); setOpen(true); }}
+                onFocus={() => { setQuery(''); setOpen(true); }}
+                placeholder="Buscar instrumento de evaluación..."
+                autoComplete="off"
+            />
+            {open && (
+                <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    <button type="button" onClick={() => handlePick(undefined)} className="w-full text-left px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">
+                        Sin instrumento de evaluación
+                    </button>
+                    {filtered.length === 0 ? (
+                        <p className="px-3 py-1.5 text-sm text-slate-400">Sin resultados</p>
+                    ) : filtered.map(t => (
+                        <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => handlePick(t.id)}
+                            className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${t.id === value ? 'bg-blue-50 font-semibold text-blue-700' : 'text-slate-700'}`}
+                        >
+                            {t.name} <span className="text-xs text-slate-400">({EVALUATION_TOOL_TYPE_LABEL[t.type]})</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 // Envuelve una descripción de sesión "plana" (formato antiguo, o lo que
 // sigue devolviendo el generador de IA en esta pasada) en una única
