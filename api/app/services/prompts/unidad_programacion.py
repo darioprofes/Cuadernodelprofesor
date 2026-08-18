@@ -376,15 +376,22 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
         raise ValueError(f"La respuesta pegada no es JSON válido: {exc}")
 
     saberes_por_codigo = {s.code: str(s.id) for s in list_basic_knowledge(course_id)}
-    criterios_por_codigo = {c.code: str(c.id) for c in list_criteria(course_id)}
+    criterios_por_codigo = {c.code: c for c in list_criteria(course_id)}
 
     codigos_descartados = []
+    # Un criterio ya trae su competencia específica real (competence_id,
+    # FK de verdad) -- se deriva de ahí en vez de adivinar por el prefijo
+    # del código, así que cualquier criterio que la IA active marca también
+    # su competencia, sin que la IA tenga que proponerla ella misma.
+    competencias_usadas = set()
 
     def _mapear_criterios(codigos):
         ids = []
         for codigo in (codigos or []):
-            if codigo in criterios_por_codigo:
-                ids.append(criterios_por_codigo[codigo])
+            criterio = criterios_por_codigo.get(codigo)
+            if criterio:
+                ids.append(str(criterio.id))
+                competencias_usadas.add(str(criterio.competence_id))
             else:
                 codigos_descartados.append(codigo)
         return ids
@@ -435,6 +442,9 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
         "sessionDetails": session_details,
         "linkedBasicKnowledgeIds": ids_saberes,
         "linkedCriteriaIds": ids_criterios,
+        # Derivadas de los criterios realmente usados (ver competencias_usadas
+        # arriba) -- la IA nunca las propone directamente.
+        "linkedSpecificCompetenceIds": sorted(competencias_usadas),
     }
 
     return unidad, codigos_descartados

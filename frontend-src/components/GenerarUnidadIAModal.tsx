@@ -300,6 +300,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                     sessionDetails: SessionDetail[];
                     linkedBasicKnowledgeIds: string[];
                     linkedCriteriaIds: string[];
+                    linkedSpecificCompetenceIds: string[];
                 };
                 codigosDescartados: string[];
             } = await response.json();
@@ -324,7 +325,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                 sessionDetails: data.unidad.sessionDetails,
                 linkedCriteriaIds: data.unidad.linkedCriteriaIds,
                 linkedBasicKnowledgeIds: data.unidad.linkedBasicKnowledgeIds,
-                linkedSpecificCompetenceIds: [],
+                linkedSpecificCompetenceIds: data.unidad.linkedSpecificCompetenceIds,
                 finalProduct: { incluido: false },
                 finalExam: { incluido: false },
                 startDate: '',
