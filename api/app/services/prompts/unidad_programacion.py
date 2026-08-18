@@ -110,6 +110,21 @@ _ETIQUETAS_DIVERSIDAD = {
     "unica": "Una única vía de trabajo para todo el grupo.",
 }
 
+# Descripción de qué distingue a cada formato de examen predefinido -- sin
+# esto la etiqueta sola es ambigua (probado en real: "Preguntas de
+# desarrollo/abiertas" se entendió como redacciones extensas cuando lo que
+# el profesor quería eran preguntas concretas de respuesta breve). Solo
+# cubre las opciones predefinidas del frontend -- un formato "Otro" escrito
+# a mano por el profesor se manda tal cual, sin descripción añadida.
+_DESCRIPCIONES_FORMATO_EXAMEN = {
+    "Test (opción múltiple)": "cada pregunta tiene varias opciones cerradas y el alumnado elige una.",
+    "Preguntas cortas": "preguntas concretas de respuesta breve -- una frase o, como mucho, un párrafo corto. NO son preguntas de desarrollo ni piden una redacción extensa.",
+    "Preguntas de desarrollo/abiertas": "preguntas que requieren una respuesta argumentada y extensa, relacionando varias ideas -- no una respuesta breve.",
+    "Mixto (test + desarrollo)": "combina preguntas de test (opción múltiple) con preguntas de desarrollo en el mismo examen.",
+    "Prueba práctica/de aplicación": "el alumnado aplica lo aprendido a un caso, cálculo o problema concreto, no preguntas de memoria.",
+    "Oral": "el alumnado responde de palabra, no por escrito.",
+}
+
 
 def construir_prompt(
     course_id, documento_texto, modo="documento",
@@ -346,8 +361,10 @@ def construir_prompt(
     # una lista cerrada en el frontend; la IA solo diseña los bloques dentro
     # de ese formato ya dado, nunca decide si hay examen o no.
     if examen_incluido:
+        descripcion_formato = _DESCRIPCIONES_FORMATO_EXAMEN.get(examen_formato)
+        formato_con_descripcion = f"{examen_formato} ({descripcion_formato})" if descripcion_formato else examen_formato
         instruccion_examen = (
-            f"\n\nEl profesor quiere que la unidad incluya un EXAMEN FINAL con formato \"{examen_formato}\". "
+            f"\n\nEl profesor quiere que la unidad incluya un EXAMEN FINAL con formato \"{formato_con_descripcion}\". "
             "Diseña sus bloques (uno o más): cada bloque describe qué evalúa y qué criterios de evaluación "
             "activa (de la lista dada). El examen debe evaluar contenido realmente trabajado en las sesiones "
             "diseñadas arriba, no algo que no se haya visto en clase."

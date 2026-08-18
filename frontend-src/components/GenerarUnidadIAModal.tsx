@@ -34,7 +34,7 @@ const TIPOS_PRODUCTO_DISPONIBLES = [
 ];
 
 const FORMATOS_EXAMEN_DISPONIBLES = [
-    'Test (opción múltiple)', 'Preguntas de desarrollo/abiertas', 'Mixto (test + desarrollo)',
+    'Test (opción múltiple)', 'Preguntas cortas', 'Preguntas de desarrollo/abiertas', 'Mixto (test + desarrollo)',
     'Prueba práctica/de aplicación', 'Oral',
 ];
 
