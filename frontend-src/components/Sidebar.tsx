@@ -42,7 +42,7 @@ const NAV_SECTIONS: NavSection[] = [
             // atajo de Herramientas IA -- se planifica durante todo el curso,
             // no solo al principio, así que merece acceso directo (petición
             // explícita del usuario).
-            { view: 'planner', label: 'Situaciones de Aprendizaje', icon: ListBulletIcon },
+            { view: 'planner', label: 'Planificación', icon: ListBulletIcon },
         ],
     },
     {

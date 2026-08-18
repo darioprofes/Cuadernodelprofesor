@@ -359,6 +359,13 @@ const App = () => {
     // sincronización clase→materia para todo el código que ya cambia
     // activeClassId directamente (selectores de GradebookTable, informes...).
     const [activeCourseId, setActiveCourseId] = useState<string>('');
+    // Materia elegida dentro de la propia página "Materia" (Currículo/SA) --
+    // deliberadamente aparte de activeCourseId: ese se deriva de la clase
+    // activa y lo usan Informes/Cuaderno, así que reutilizarlo aquí haría que
+    // elegir una materia distinta en esta página cambiase lo que ven esas
+    // otras vistas por detrás. Mismo patrón que "materiaSelector" en
+    // SettingsModal.tsx (independiente de la clase activa).
+    const [materiaPageCourseId, setMateriaPageCourseId] = useState<string>('');
     const [activeView, setActiveViewRaw] = useState<View>('hoy');
     // Atajo "Generar unidad con IA" desde Herramientas IA: al venir de ahí
     // (en vez del botón ya existente dentro de Planificación UD), se navega
@@ -713,7 +720,7 @@ const App = () => {
                     <AiToolsView
                         courses={curriculumCourses}
                         onGenerarUnidadIA={courseId => {
-                            setActiveCourseId(courseId);
+                            setMateriaPageCourseId(courseId);
                             setActiveView('planner');
                             setAutoAbrirGenerarUnidadIA(true);
                         }}
@@ -755,25 +762,43 @@ const App = () => {
         }
 
         if (MATERIA_VIEWS.includes(activeView)) {
-            if (!activeCourseId) {
+            // Selector propio, independiente de la clase activa (ver nota en
+            // la declaración de materiaPageCourseId) -- mismo patrón que
+            // "materiaSelector" en SettingsModal.tsx.
+            const materiasDisponibles = curriculumCourses.filter(c => c.type !== 'other');
+            const effectiveMateriaCourseId = materiaPageCourseId && materiasDisponibles.some(c => c.id === materiaPageCourseId)
+                ? materiaPageCourseId
+                : (materiasDisponibles[0]?.id ?? '');
+
+            if (materiasDisponibles.length === 0) {
                 return (
                     <div className="p-12 text-center flex flex-col items-center justify-center flex-grow">
-                        <p className="text-lg font-medium text-slate-700 mb-2">Ninguna materia seleccionada</p>
-                        <p className="text-sm text-slate-500 max-w-sm">Selecciona una materia de la barra superior para gestionar su currículo y planificación.</p>
+                        <p className="text-lg font-medium text-slate-700 mb-2">Ninguna materia dada de alta</p>
+                        <p className="text-sm text-slate-500 max-w-sm">Da de alta una materia en Ajustes → Materias antes de gestionar su currículo y planificación.</p>
                     </div>
                 );
             }
             return (
                 <>
                     <PageHeader title="Materia" subtitle="Currículo y planificación didáctica de la materia seleccionada." accent="navy" icon={<BookOpenIcon className="w-6 h-6" />} />
-                    <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit my-6">
-                        <button onClick={() => setActiveView('curriculum')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'curriculum' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Currículo</button>
-                        <button onClick={() => setActiveView('planner')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'planner' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Situaciones de Aprendizaje</button>
+                    <div className="flex items-center justify-between flex-wrap gap-3 my-6">
+                        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit">
+                            <button onClick={() => setActiveView('curriculum')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'curriculum' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Currículo</button>
+                            <button onClick={() => setActiveView('planner')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'planner' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Situaciones de Aprendizaje</button>
+                        </div>
+                        <div>
+                            <label className="text-xs text-slate-500">Materia</label>
+                            <Select value={effectiveMateriaCourseId} onChange={e => setMateriaPageCourseId(e.target.value)} className="!w-auto min-w-[14rem] font-semibold">
+                                {materiasDisponibles.map(c => (
+                                    <option key={c.id} value={c.id}>{c.level} - {c.subject}</option>
+                                ))}
+                            </Select>
+                        </div>
                     </div>
                     <React.Suspense fallback={<ViewLoadingFallback />}>
                         {activeView === 'curriculum' && (
                             <CurriculumManager
-                                courseId={activeCourseId}
+                                courseId={effectiveMateriaCourseId}
                                 courses={curriculumCourses}
                                 onUpdateCourse={handleUpdateCourse}
                                 keyCompetences={keyCompetences}
@@ -787,7 +812,7 @@ const App = () => {
                         )}
                         {activeView === 'planner' && (
                             <ProgrammingManager
-                                courseId={activeCourseId}
+                                courseId={effectiveMateriaCourseId}
                                 courses={curriculumCourses}
                                 classes={hydratedClasses}
                                 academicConfiguration={effectiveAcademicConfiguration}
@@ -910,13 +935,14 @@ const App = () => {
                                         })}
                                     </Select>
                                 )}
-                                {/* Currículo/Planificación de la materia de la clase activa
-                                    (activeCourseId se deriva de activeClassId, no es
-                                    seleccionable por separado). */}
+                                {/* Currículo/Planificación de la materia de la clase activa --
+                                    precarga materiaPageCourseId con ella, pero la página de
+                                    Materia tiene su propio selector independiente por si se
+                                    quiere cambiar de materia una vez allí. */}
                                 {activeCourseId && (
                                     <IconButton
                                         label="Gestionar esta materia (currículo y planificación)"
-                                        onClick={() => setActiveView('curriculum')}
+                                        onClick={() => { setMateriaPageCourseId(activeCourseId); setActiveView('curriculum'); }}
                                     >
                                         <BookOpenIcon className="w-5 h-5" />
                                     </IconButton>
