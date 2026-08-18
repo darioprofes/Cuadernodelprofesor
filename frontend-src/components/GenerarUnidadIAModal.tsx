@@ -187,9 +187,11 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     const [atencionDiversidad, setAtencionDiversidad] = useState<'diferenciadas' | 'unica' | 'otro'>('diferenciadas');
     const [atencionDiversidadDetalle, setAtencionDiversidadDetalle] = useState('');
 
-    // Bloque 3: Evaluación -- producto final siempre se genera (sin toggle,
-    // como hasta ahora), pero el tipo ya no lo decide la IA libremente; el
-    // examen es opcional (toggle) y su formato también se elige de lista.
+    // Bloque 3: Evaluación -- producto final y examen son opcionales
+    // (toggle); producto nace marcado porque casi siempre tiene sentido,
+    // examen no. El tipo/formato ya no los decide la IA libremente, se
+    // eligen de lista cerrada.
+    const [productoIncluido, setProductoIncluido] = useState(true);
     const [productoTipo, setProductoTipo] = useState<string>(TIPOS_PRODUCTO_DISPONIBLES[0]);
     const [productoTipoDetalle, setProductoTipoDetalle] = useState('');
     const [examenIncluido, setExamenIncluido] = useState(false);
@@ -234,6 +236,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
         setProgresionAutonomia('ia');
         setAtencionDiversidad('diferenciadas');
         setAtencionDiversidadDetalle('');
+        setProductoIncluido(true);
         setProductoTipo(TIPOS_PRODUCTO_DISPONIBLES[0]);
         setProductoTipoDetalle('');
         setExamenIncluido(false);
@@ -291,7 +294,8 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                     atencion_diversidad: atencionDiversidad,
                     atencion_diversidad_detalle: atencionDiversidad === 'otro' ? atencionDiversidadDetalle : undefined,
                     class_id: classId || undefined,
-                    producto_tipo: productoTipoResuelto,
+                    producto_incluido: productoIncluido,
+                    producto_tipo: productoIncluido ? productoTipoResuelto : undefined,
                     examen_incluido: examenIncluido,
                     examen_formato: examenIncluido ? examenFormatoResuelto : undefined,
                 }),
@@ -684,27 +688,34 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                         </div>
 
                         <div className="pt-2 border-t">
-                            <p className="text-sm font-semibold text-slate-700 mb-1.5">Tipo de producto final</p>
-                            <div className="flex gap-1.5 flex-wrap">
-                                {[...TIPOS_PRODUCTO_DISPONIBLES, 'Otro'].map(tipo => (
-                                    <button
-                                        key={tipo}
-                                        type="button"
-                                        onClick={() => setProductoTipo(tipo)}
-                                        className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${productoTipo === tipo ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
-                                    >
-                                        {tipo}
-                                    </button>
-                                ))}
-                            </div>
-                            {productoTipo === 'Otro' && (
-                                <div className="mt-2">
-                                    <Input type="text" value={productoTipoDetalle} onChange={e => setProductoTipoDetalle(e.target.value)} placeholder="Describe el tipo de producto..." />
-                                </div>
+                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1.5">
+                                <input type="checkbox" checked={productoIncluido} onChange={e => setProductoIncluido(e.target.checked)} className="rounded border-slate-300" />
+                                Incluir producto final
+                            </label>
+                            {productoIncluido && (
+                                <>
+                                    <div className="flex gap-1.5 flex-wrap">
+                                        {[...TIPOS_PRODUCTO_DISPONIBLES, 'Otro'].map(tipo => (
+                                            <button
+                                                key={tipo}
+                                                type="button"
+                                                onClick={() => setProductoTipo(tipo)}
+                                                className={`text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${productoTipo === tipo ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                            >
+                                                {tipo}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {productoTipo === 'Otro' && (
+                                        <div className="mt-2">
+                                            <Input type="text" value={productoTipoDetalle} onChange={e => setProductoTipoDetalle(e.target.value)} placeholder="Describe el tipo de producto..." />
+                                        </div>
+                                    )}
+                                    <p className="text-xs text-slate-500 mt-1.5">
+                                        La descripción del producto y la situación de partida las decide la IA, coherentes con este tipo.
+                                    </p>
+                                </>
                             )}
-                            <p className="text-xs text-slate-500 mt-1.5">
-                                La descripción del producto y la situación de partida las decide la IA, coherentes con este tipo.
-                            </p>
                         </div>
 
                         <div>

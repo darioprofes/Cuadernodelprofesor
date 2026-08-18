@@ -132,9 +132,10 @@ class GenerarUnidadRequest(BaseModel):
     class_id: Optional[str] = None
     # Bloque 3 (Evaluación). El profesor elige el tipo de producto y el
     # formato de examen de sendas listas cerradas en el frontend -- la IA ya
-    # no decide ninguno de los dos, solo redacta su contenido. El examen,
-    # además, es opcional (toggle), a diferencia del producto (que la IA
-    # siempre genera).
+    # no decide ninguno de los dos, solo redacta su contenido. Ambos son
+    # opcionales (toggle); producto_incluido nace marcado en el wizard
+    # porque casi siempre tiene sentido, examen_incluido no.
+    producto_incluido: bool = True
     producto_tipo: Optional[str] = None
     examen_incluido: bool = False
     examen_formato: Optional[str] = None
@@ -154,7 +155,7 @@ async def generar_prompt_unidad(datos: GenerarUnidadRequest):
             datos.progresion_autonomia,
             datos.atencion_diversidad, datos.atencion_diversidad_detalle,
             datos.class_id,
-            datos.producto_tipo,
+            datos.producto_incluido, datos.producto_tipo,
             datos.examen_incluido, datos.examen_formato,
         )
     except ValueError as exc:

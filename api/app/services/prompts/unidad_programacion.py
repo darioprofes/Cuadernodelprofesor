@@ -120,7 +120,7 @@ def construir_prompt(
     progresion_autonomia="ia",
     atencion_diversidad="diferenciadas", atencion_diversidad_detalle=None,
     class_id=None,
-    producto_tipo=None,
+    producto_incluido=True, producto_tipo=None,
     examen_incluido=False, examen_formato=None,
 ):
     """Devuelve (anonimizado, mapa) -- mismo formato que
@@ -164,6 +164,10 @@ def construir_prompt(
       (ver resumir_adaptaciones_neae) y se piden variantes/adaptaciones por
       actividad cuando corresponda.
 
+    `producto_incluido`: a diferencia de como funcionaba antes (la IA
+    siempre generaba un producto final), ahora también es opcional -- un
+    toggle en el wizard, preseleccionado a True porque casi siempre tiene
+    sentido, pero el profesor puede desmarcarlo.
     `producto_tipo`: igual que `examen_formato`, el profesor lo elige de una
     lista cerrada en el frontend (Infografía, Vídeo, Dossier...) antes de
     generar -- la IA ya no decide el tipo de producto final, solo su
@@ -215,7 +219,7 @@ def construir_prompt(
 
         if unidad_estructural:
             instruccion_tarea = (
-                f"Diseña una unidad de programación a partir ÚNICAMENTE del contenido del documento "
+                f"Diseña una situación de aprendizaje a partir ÚNICAMENTE del contenido del documento "
                 f"de teoría. No añadas datos, ejemplos ni conceptos que no aparezcan en él.\n\n"
                 f"El documento está dividido en {unidad_estructural}s numeradas (\"{marcador}\"). NO "
                 f"omitas ninguna, ni siquiera las que te parezcan más básicas o introductorias que el "
@@ -227,7 +231,7 @@ def construir_prompt(
             )
         else:
             instruccion_tarea = (
-                "Diseña una unidad de programación a partir ÚNICAMENTE del contenido del documento "
+                "Diseña una situación de aprendizaje a partir ÚNICAMENTE del contenido del documento "
                 "de teoría. No añadas datos, ejemplos ni conceptos que no aparezcan en él.\n\n"
                 "No omitas ningún apartado o bloque de contenido del documento, ni siquiera los que te "
                 "parezcan más básicos o introductorios que el resto. Antes de dar la respuesta final, "
@@ -305,6 +309,38 @@ def construir_prompt(
 
     seccion_diseno = "\n<diseno_didactico>\n" + "\n\n".join(partes_diseno) + "\n</diseno_didactico>\n"
 
+    # ---- Bloque 3: producto final (opcional, preseleccionado a True porque
+    # casi siempre tiene sentido) y examen final (opcional, sin preseleccionar)
+    if producto_incluido:
+        instruccion_producto = (
+            f"1. Una SITUACIÓN DE PARTIDA: un escenario, problema o pregunta real y motivadora que dé "
+            f"propósito a toda la unidad (no una lista de contenidos, sino algo que el alumnado pueda "
+            f"reconocer como relevante).\n"
+            f"2. Un PRODUCTO FINAL{f' de tipo \"{producto_tipo}\" (ya elegido por el profesor)' if producto_tipo else ''}: "
+            f"qué va a producir o conseguir el alumnado al terminar la unidad que demuestre lo aprendido, "
+            f"coherente con esa situación de partida -- no algo añadido al final sin relación con ella.\n\n"
+            f"El resto de la unidad (sesiones y actividades) tiene que construir progresivamente hacia "
+            f"ese producto final, dentro de esa situación."
+        )
+        bloque_final_product_json = (
+            '"finalProduct": {\n'
+            '    "incluido": true,\n'
+            f'''    "tipo": "{producto_tipo or 'Tipo de producto (p.ej. Infografía, Vídeo, Maqueta, Dossier, Exposición oral...)'}",\n'''
+            '    "descripcion": "Descripción del producto final, coherente con la situación de partida",\n'
+            '    "linkedCriteriaIds": ["códigos de criterios que evidencia el producto"]\n'
+            '  },'
+        )
+    else:
+        instruccion_producto = (
+            "Una SITUACIÓN DE PARTIDA: un escenario, problema o pregunta real y motivadora que dé "
+            "propósito a toda la unidad (no una lista de contenidos, sino algo que el alumnado pueda "
+            "reconocer como relevante). El profesor ha decidido que esta unidad NO termina en un "
+            "producto final tangible -- no propongas ninguno.\n\n"
+            "El resto de la unidad (sesiones y actividades) tiene que construir progresivamente dentro "
+            "de esa situación."
+        )
+        bloque_final_product_json = '"finalProduct": {"incluido": false, "tipo": null, "descripcion": null, "linkedCriteriaIds": []},'
+
     # ---- Bloque 3: examen final (opcional, a diferencia del producto final)
     # -- el profesor decide con un toggle si lo quiere y elige el formato de
     # una lista cerrada en el frontend; la IA solo diseña los bloques dentro
@@ -332,8 +368,8 @@ def construir_prompt(
         instruccion_examen = ""
         bloque_final_exam_json = '"finalExam": {"incluido": false, "formato": null, "bloques": []},'
 
-    prompt = f"""Eres un profesor de {curso.subject} de {curso.level} diseñando una unidad \
-de programación a partir de {"tu propio material de clase" if modo == "documento" else "lo que quieres trabajar"}.
+    prompt = f"""Eres un profesor de {curso.subject} de {curso.level} diseñando una situación \
+de aprendizaje a partir de {"tu propio material de clase" if modo == "documento" else "lo que quieres trabajar"}.
 
 <{etiqueta_entrada}>
 {documento_texto}
@@ -350,15 +386,8 @@ CRITERIOS DE EVALUACIÓN (usa solo estos códigos, ninguno más):
 <tarea>
 {instruccion_tarea}
 
-Antes de diseñar nada más, decide estas dos cosas -- son las que dan sentido al resto:
-1. Una SITUACIÓN DE PARTIDA: un escenario, problema o pregunta real y motivadora que dé \
-propósito a toda la unidad (no una lista de contenidos, sino algo que el alumnado pueda \
-reconocer como relevante).
-2. Un PRODUCTO FINAL{f' de tipo "{producto_tipo}" (ya elegido por el profesor)' if producto_tipo else ''}: qué va a \
-producir o conseguir el alumnado al terminar la unidad que demuestre lo aprendido, coherente \
-con esa situación de partida -- no algo añadido al final sin relación con ella.
-El resto de la unidad (sesiones y actividades) tiene que construir progresivamente hacia \
-ese producto final, dentro de esa situación.{instruccion_examen}
+Antes de diseñar nada más, decide esto -- es lo que da sentido al resto:
+{instruccion_producto}{instruccion_examen}
 
 Reparte el contenido en sesiones de clase, cubriendo todo el contenido de principio a fin, \
 en el orden que tenga más sentido pedagógico. {instruccion_sesiones}
@@ -379,7 +408,7 @@ Además, para la unidad completa:
 - Los saberes básicos que activa en conjunto (de la lista dada, cero o más -- dejar vacío si \
 ninguno encaja de verdad es preferible a forzar uno).
 - Los criterios de evaluación que activa en conjunto (mismo criterio: solo de la lista dada).
-- Los criterios de evaluación que evidencia el producto final (de la lista dada, cero o más).
+{"- Los criterios de evaluación que evidencia el producto final (de la lista dada, cero o más)." if producto_incluido else ""}
 
 No cites normativa, decretos ni URLs. No inventes códigos curriculares fuera de \
 las dos listas dadas arriba -- si lo haces, esos códigos se descartarán al guardar \
@@ -392,12 +421,7 @@ Devuelve ÚNICAMENTE un JSON con esta forma exacta, sin texto antes ni después:
 {{
   "name": "Nombre breve de la unidad",
   "context": "La situación de partida: el escenario, problema o pregunta real que da sentido a la unidad",
-  "finalProduct": {{
-    "incluido": true,
-    "tipo": "{producto_tipo or 'Tipo de producto (p.ej. Infografía, Vídeo, Maqueta, Dossier, Exposición oral...)'}",
-    "descripcion": "Descripción del producto final, coherente con la situación de partida",
-    "linkedCriteriaIds": ["códigos de criterios que evidencia el producto"]
-  }},
+  {bloque_final_product_json}
   {bloque_final_exam_json}
   "sessions": <número de sesiones>,
   "sessionDetails": [
