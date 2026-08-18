@@ -1,9 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
-import type { ProgrammingUnit, Course, SessionDetail, SessionActivity, FinalProduct, FinalExam, EvaluationCriterion, BasicKnowledge, SpecificCompetence, ClassData, AcademicConfiguration } from '../types';
+import type { ProgrammingUnit, Course, SessionDetail, SessionActivity, FinalProduct, FinalExam, EvaluationCriterion, BasicKnowledge, SpecificCompetence, EvaluationTool, ClassData, AcademicConfiguration } from '../types';
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon, SparklesIcon } from './Icons';
 import Modal from './Modal';
 import Input from './Input';
+import Select from './Select';
 import GenerarUnidadIAModal from './GenerarUnidadIAModal';
 import { TYPOGRAPHY } from '../theme/typography';
 import { checkboxClassName } from '../theme/components/Input';
@@ -12,6 +13,25 @@ import { useProgrammingUnits, useCreateProgrammingUnit, useUpdateProgrammingUnit
 import { useEvaluationCriteria } from '../hooks/useEvaluationCriteria';
 import { useBasicKnowledge } from '../hooks/useBasicKnowledge';
 import { useSpecificCompetences } from '../hooks/useSpecificCompetences';
+import { useEvaluationTools } from '../hooks/useEvaluationTools';
+
+const EVALUATION_TOOL_TYPE_LABEL: Record<EvaluationTool['type'], string> = {
+    checklist: 'Lista de cotejo',
+    rating_scale: 'Escala',
+    rubric: 'Rúbrica',
+};
+
+// Selector compacto de un EvaluationTool real (Instrumentos de Evaluación) --
+// se reutiliza en producto final, examen y cada actividad, en vez de
+// modelar una rúbrica aparte y más pobre dentro de la propia SA.
+const InstrumentoSelect: React.FC<{ evaluationTools: EvaluationTool[]; value?: string; onChange: (id: string | undefined) => void }> = ({ evaluationTools, value, onChange }) => (
+    <Select value={value || ''} onChange={e => onChange(e.target.value || undefined)}>
+        <option value="">Sin instrumento de evaluación</option>
+        {evaluationTools.map(t => (
+            <option key={t.id} value={t.id}>{t.name} ({EVALUATION_TOOL_TYPE_LABEL[t.type]})</option>
+        ))}
+    </Select>
+);
 
 // Envuelve una descripción de sesión "plana" (formato antiguo, o lo que
 // sigue devolviendo el generador de IA en esta pasada) en una única
@@ -75,6 +95,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
     const remoteCriteria = useEvaluationCriteria(selectedCourseId);
     const remoteBasicKnowledge = useBasicKnowledge(selectedCourseId);
     const remoteSpecificCompetences = useSpecificCompetences(selectedCourseId);
+    const remoteEvaluationTools = useEvaluationTools();
 
     const selectedCourse = useMemo(() => courses.find(c => c.id === selectedCourseId), [courses, selectedCourseId]);
 
@@ -90,6 +111,9 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
     const filteredSpecificCompetences = useMemo(() => (
         (remoteSpecificCompetences.data ?? []) as unknown as SpecificCompetence[]
     ), [remoteSpecificCompetences.data]);
+    const filteredEvaluationTools = useMemo(() => (
+        (remoteEvaluationTools.data ?? []) as unknown as EvaluationTool[]
+    ), [remoteEvaluationTools.data]);
 
     const unitDateRanges = useMemo(() => {
         const ranges = new Map<string, { start?: Date, end?: Date }>();
@@ -451,6 +475,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                         criteria={filteredCriteria}
                         basicKnowledge={filteredBasicKnowledge}
                         specificCompetences={filteredSpecificCompetences}
+                        evaluationTools={filteredEvaluationTools}
                     />
                 </Modal>
             )}
@@ -570,7 +595,8 @@ const UnitEditor: React.FC<{
     criteria: EvaluationCriterion[];
     basicKnowledge: BasicKnowledge[];
     specificCompetences: SpecificCompetence[];
-}> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences }) => {
+    evaluationTools: EvaluationTool[];
+}> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences, evaluationTools }) => {
     const [editedUnit, setEditedUnit] = useState(unit);
     const [activeTab, setActiveTab] = useState<'general' | 'curriculo' | 'sesiones' | 'evaluacion'>('general');
 
@@ -665,20 +691,6 @@ const UnitEditor: React.FC<{
 
     const handleExamChange = (patch: Partial<FinalExam>) => {
         handleFieldChange('finalExam', { ...finalExam, ...patch });
-    };
-
-    const handleAddRubricaRow = () => {
-        handleProductChange({ rubrica: [...(finalProduct.rubrica || []), { criterio: '', descriptor: '' }] });
-    };
-
-    const handleRubricaRowChange = (index: number, field: 'criterio' | 'descriptor', value: string) => {
-        const rows = [...(finalProduct.rubrica || [])];
-        rows[index] = { ...rows[index], [field]: value };
-        handleProductChange({ rubrica: rows });
-    };
-
-    const handleRemoveRubricaRow = (index: number) => {
-        handleProductChange({ rubrica: (finalProduct.rubrica || []).filter((_, i) => i !== index) });
     };
 
     const handleAddExamBlock = () => {
@@ -830,6 +842,9 @@ const UnitEditor: React.FC<{
                                             className="w-full text-xs"
                                         />
                                         <CriteriaChips criteria={criteria} selectedIds={act.linkedCriteriaIds || []} onChange={ids => handleActivityChange(sIndex, aIndex, { linkedCriteriaIds: ids })} />
+                                        <div className="w-64">
+                                            <InstrumentoSelect evaluationTools={evaluationTools} value={act.evaluationToolId} onChange={id => handleActivityChange(sIndex, aIndex, { evaluationToolId: id })} />
+                                        </div>
                                     </div>
                                 ))}
                                 <button type="button" onClick={() => handleAddActivity(sIndex)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">
@@ -853,18 +868,9 @@ const UnitEditor: React.FC<{
                             <Input type="text" value={finalProduct.tipo || ''} onChange={e => handleProductChange({ tipo: e.target.value })} placeholder="Tipo (ej. Infografía, Vídeo...)" className="w-full"/>
                             <textarea value={finalProduct.descripcion || ''} onChange={e => handleProductChange({ descripcion: e.target.value })} placeholder="Descripción..." className="w-full text-sm p-1.5 border rounded-md focus:border-blue-500 outline-none" rows={2}/>
                             <CriteriaChips criteria={criteria} selectedIds={finalProduct.linkedCriteriaIds || []} onChange={ids => handleProductChange({ linkedCriteriaIds: ids })} />
-                            <div className="space-y-1">
-                                <p className="text-xs font-semibold text-slate-500">Rúbrica</p>
-                                {(finalProduct.rubrica || []).map((row, i) => (
-                                    <div key={i} className="flex gap-1.5 items-center">
-                                        <div className="w-28 flex-shrink-0"><Input type="text" value={row.criterio} onChange={e => handleRubricaRowChange(i, 'criterio', e.target.value)} placeholder="Criterio (código)"/></div>
-                                        <Input type="text" value={row.descriptor} onChange={e => handleRubricaRowChange(i, 'descriptor', e.target.value)} placeholder="Descriptor de logro..." className="flex-1"/>
-                                        <button type="button" onClick={() => handleRemoveRubricaRow(i)} className="p-1.5 text-red-400 hover:text-red-600 flex-shrink-0"><TrashIcon className="w-5 h-5"/></button>
-                                    </div>
-                                ))}
-                                <button type="button" onClick={handleAddRubricaRow} className="text-xs font-semibold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">
-                                    <PlusIcon className="w-3 h-3"/> Añadir descriptor
-                                </button>
+                            <div>
+                                <p className="text-xs font-semibold text-slate-500 mb-1">Instrumento de evaluación</p>
+                                <InstrumentoSelect evaluationTools={evaluationTools} value={finalProduct.evaluationToolId} onChange={id => handleProductChange({ evaluationToolId: id })} />
                             </div>
                         </div>
                     )}
@@ -878,6 +884,10 @@ const UnitEditor: React.FC<{
                     {finalExam.incluido && (
                         <div className="space-y-2 pl-1">
                             <Input type="text" value={finalExam.formato || ''} onChange={e => handleExamChange({ formato: e.target.value })} placeholder="Formato (ej. Test, preguntas abiertas...)" className="w-full"/>
+                            <div>
+                                <p className="text-xs font-semibold text-slate-500 mb-1">Instrumento de evaluación</p>
+                                <InstrumentoSelect evaluationTools={evaluationTools} value={finalExam.evaluationToolId} onChange={id => handleExamChange({ evaluationToolId: id })} />
+                            </div>
                             <div className="space-y-1">
                                 <p className="text-xs font-semibold text-slate-500">Bloques</p>
                                 {(finalExam.bloques || []).map((block, i) => (

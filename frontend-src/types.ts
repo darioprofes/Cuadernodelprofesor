@@ -229,6 +229,9 @@ export interface SessionActivity {
     recursos?: string[];
     descripcion: string;
     linkedCriteriaIds?: string[];
+    // Opcional -- no toda actividad se califica (una explicación docente no
+    // necesita instrumento). Referencia a un EvaluationTool real.
+    evaluationToolId?: string;
 }
 
 export interface SessionDetail {
@@ -237,17 +240,16 @@ export interface SessionDetail {
     color?: string;
 }
 
-export interface RubricaDescriptor {
-    criterio: string;
-    descriptor: string;
-}
-
 export interface FinalProduct {
     incluido: boolean;
     tipo?: string;
     descripcion?: string;
     linkedCriteriaIds?: string[];
-    rubrica?: RubricaDescriptor[];
+    // Referencia a un EvaluationTool real (checklist/escala/rúbrica) de
+    // Instrumentos de Evaluación -- no se modela una rúbrica aparte aquí
+    // dentro, para no duplicar ese sistema (niveles + ítems) con una
+    // versión más pobre.
+    evaluationToolId?: string;
 }
 
 export interface FinalExamBlock {
@@ -259,6 +261,7 @@ export interface FinalExam {
     incluido: boolean;
     formato?: string;
     bloques?: FinalExamBlock[];
+    evaluationToolId?: string;
 }
 
 export interface ProgrammingUnit {
