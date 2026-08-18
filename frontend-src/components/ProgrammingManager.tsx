@@ -435,7 +435,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                     isOpen={!!unitEditorState}
                     onClose={() => setUnitEditorState(null)}
                     title={unitEditorState.mode === 'create' ? 'Nueva Situación de Aprendizaje' : 'Editar Situación de Aprendizaje'}
-                    size="3xl"
+                    size="5xl"
                 >
                      <UnitEditor
                         key={unitEditorState.mode === 'edit' ? unitEditorState.unit.id : 'create-new'}
@@ -762,10 +762,21 @@ const UnitEditor: React.FC<{
             )}
 
             {activeTab === 'curriculo' && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-4">
                     <MultiSelect title="Competencias Específicas" allItems={specificCompetences} selectedIds={new Set(editedUnit.linkedSpecificCompetenceIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedSpecificCompetenceIds', idSet)} />
                     <MultiSelect title="Criterios de Evaluación" allItems={criteria} selectedIds={new Set(editedUnit.linkedCriteriaIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedCriteriaIds', idSet)} />
-                    <MultiSelect title="Saberes Básicos" allItems={basicKnowledge} selectedIds={new Set(editedUnit.linkedBasicKnowledgeIds || [])} setSelectedIds={(idSet) => handleMultiSelectChange('linkedBasicKnowledgeIds', idSet)} />
+                    <MultiSelect
+                        title="Saberes Básicos"
+                        allItems={basicKnowledge}
+                        selectedIds={new Set(editedUnit.linkedBasicKnowledgeIds || [])}
+                        setSelectedIds={(idSet) => handleMultiSelectChange('linkedBasicKnowledgeIds', idSet)}
+                        groupBy={item => {
+                            const sb = item as BasicKnowledge;
+                            if (!sb.blockName) return null;
+                            const letra = sb.code.match(/^([A-Za-z]+)/)?.[1]?.toUpperCase();
+                            return letra ? `${letra}. ${sb.blockName}` : sb.blockName;
+                        }}
+                    />
                 </div>
             )}
 
@@ -897,25 +908,68 @@ const UnitEditor: React.FC<{
     );
 };
 
-const MultiSelect = ({ title, allItems, selectedIds, setSelectedIds } : {title:string, allItems: (EvaluationCriterion | BasicKnowledge | SpecificCompetence)[], selectedIds: Set<string>, setSelectedIds: (ids: Set<string>) => void}) => {
-    
+type SelectableItem = EvaluationCriterion | BasicKnowledge | SpecificCompetence;
+
+const MultiSelect = ({ title, allItems, selectedIds, setSelectedIds, groupBy } : {
+    title: string;
+    allItems: SelectableItem[];
+    selectedIds: Set<string>;
+    setSelectedIds: (ids: Set<string>) => void;
+    // Opcional -- agrupa los ítems bajo un encabezado (p.ej. bloques de
+    // Saberes Básicos). Sin esto se listan planos, como antes.
+    groupBy?: (item: SelectableItem) => string | null;
+}) => {
+
     const handleSelect = (id: string, checked: boolean) => {
         const newIds = new Set(selectedIds);
         if (checked) newIds.add(id);
         else newIds.delete(id);
         setSelectedIds(newIds);
     }
-    
+
+    const renderItem = (item: SelectableItem) => (
+        <label key={item.id} className="flex items-start gap-2 p-1.5 rounded-md hover:bg-slate-50 cursor-pointer">
+            <input type="checkbox" checked={selectedIds.has(item.id)} onChange={e => handleSelect(item.id, e.target.checked)} className={`mt-0.5 ${checkboxClassName}`}/>
+            <span className="text-sm text-slate-600"><span className="font-bold">{item.code}:</span> {item.description}</span>
+        </label>
+    );
+
+    let content: React.ReactNode;
+
+    if (groupBy) {
+        const grupos = new Map<string, SelectableItem[]>();
+        const sinGrupo: SelectableItem[] = [];
+        for (const item of allItems) {
+            const nombreGrupo = groupBy(item);
+            if (!nombreGrupo) { sinGrupo.push(item); continue; }
+            if (!grupos.has(nombreGrupo)) grupos.set(nombreGrupo, []);
+            grupos.get(nombreGrupo)!.push(item);
+        }
+        content = (
+            <>
+                {Array.from(grupos.entries()).map(([nombreGrupo, items]) => (
+                    <div key={nombreGrupo}>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mt-2 mb-1 first:mt-0">{nombreGrupo}</p>
+                        {items.map(renderItem)}
+                    </div>
+                ))}
+                {sinGrupo.length > 0 && (
+                    <div>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mt-2 mb-1">Sin bloque asignado</p>
+                        {sinGrupo.map(renderItem)}
+                    </div>
+                )}
+            </>
+        );
+    } else {
+        content = allItems.map(renderItem);
+    }
+
     return (
         <div className="p-3 border rounded-lg bg-white">
             <h4 className="font-semibold text-slate-700 mb-2">{title}</h4>
-            <div className="max-h-40 overflow-y-auto space-y-1 pr-2">
-                {allItems.map(item => (
-                    <label key={item.id} className="flex items-start gap-2 p-1.5 rounded-md hover:bg-slate-50 cursor-pointer">
-                        <input type="checkbox" checked={selectedIds.has(item.id)} onChange={e => handleSelect(item.id, e.target.checked)} className={`mt-0.5 ${checkboxClassName}`}/>
-                        <span className="text-sm text-slate-600"><span className="font-bold">{item.code}:</span> {item.description}</span>
-                    </label>
-                ))}
+            <div className="max-h-56 overflow-y-auto space-y-1 pr-2">
+                {content}
             </div>
         </div>
     )
