@@ -215,7 +215,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                 )}
             </div>
 
-            <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={editingId ? 'Editar reunión' : 'Nueva reunión'} size="3xl">
+            <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={editingId ? 'Editar reunión' : 'Nueva reunión'} size="full">
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
