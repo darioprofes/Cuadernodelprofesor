@@ -11,7 +11,6 @@ import { checkboxClassName } from '../theme/components/Input';
 import { linkClassName } from '../theme/components/Link';
 import { SparklesIcon } from './Icons';
 import GenerarInstrumentoIAModal from './GenerarInstrumentoIAModal';
-import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 
 // Forma "de borrador" usada mientras se edita un instrumento: unifica
 // BaseEvaluationItem y RubricItem en un único tipo con `levelDescriptions`
@@ -53,7 +52,6 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     const [showCriteriaPickerParaIA, setShowCriteriaPickerParaIA] = useState(false);
     const [criteriosParaIA, setCriteriosParaIA] = useState<{ courseId: string; ids: string[] } | null>(null);
     const [showGenerarIA, setShowGenerarIA] = useState(false);
-    const iaLocalDisponible = useIaLocalDisponible();
 
     const handleSave = (tool: EvaluationTool) => {
         if (toolToEdit && !instrumentoGeneradoPendiente) {
@@ -284,9 +282,8 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                     </button>
                     <button
                         onClick={() => setShowCriteriaPickerParaIA(true)}
-                        disabled={!iaLocalDisponible}
-                        title={iaLocalDisponible ? 'Elegir criterios y generar un instrumento con IA local' : 'IA local no disponible ahora mismo'}
-                        className="inline-flex items-center justify-center py-2 px-3 border border-purple-300 shadow-sm text-sm font-medium rounded-lg text-purple-700 bg-white hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                        title="Elegir criterios y generar un instrumento con IA"
+                        className="inline-flex items-center justify-center py-2 px-3 border border-purple-300 shadow-sm text-sm font-medium rounded-lg text-purple-700 bg-white hover:bg-purple-50"
                     >
                         <SparklesIcon className="w-4 h-4 mr-1" />
                         Generar con IA

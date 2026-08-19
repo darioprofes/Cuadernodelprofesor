@@ -419,8 +419,11 @@ def construir_prompt(
         instruccion_examen = (
             f"\n\nEl profesor quiere que la unidad incluya un EXAMEN FINAL con formato \"{formato_con_descripcion}\". "
             "Diseña sus bloques (uno o más): cada bloque describe qué evalúa y qué criterios de evaluación "
-            "activa (de la lista dada). El examen debe evaluar contenido realmente trabajado en las sesiones "
-            "diseñadas arriba, no algo que no se haya visto en clase."
+            "activa (de la lista dada), y sus preguntas concretas -- cada pregunta con un enunciado breve, "
+            "sus puntos reales (el valor real de esa pregunta en el examen, no una importancia abstracta) y "
+            "los criterios de evaluación que evidencia. Los puntos de TODAS las preguntas del examen "
+            "(sumando todos los bloques) deben sumar 10. El examen debe evaluar contenido realmente "
+            "trabajado en las sesiones diseñadas arriba, no algo que no se haya visto en clase."
         )
         bloque_final_exam_json = (
             '"finalExam": {\n'
@@ -429,7 +432,10 @@ def construir_prompt(
             '    "bloques": [\n'
             '      {\n'
             '        "descripcion": "Qué evalúa este bloque del examen",\n'
-            '        "linkedCriteriaIds": ["códigos de criterios que activa este bloque"]\n'
+            '        "linkedCriteriaIds": ["códigos de criterios que activa este bloque"],\n'
+            '        "preguntas": [\n'
+            '          {"enunciado": "Enunciado breve de la pregunta", "puntos": 2, "linkedCriteriaIds": ["códigos de criterios que evidencia esta pregunta"]}\n'
+            '        ]\n'
             '      }\n'
             '    ]\n'
             '  },'
@@ -569,12 +575,17 @@ def _reintegrar_texto(texto, mapa):
 def procesar_respuesta(course_id, respuesta_texto, mapa):
     """Recibe el texto que ha pegado el profesor (la respuesta JSON de la
     IA) y el mapa código->dato real del paso de anonimización. Devuelve
-    (unidad, codigos_descartados) -- `unidad` ya tiene los códigos de
-    saberes/criterios (a nivel de unidad Y de cada actividad) convertidos a
-    los UUID reales del curso (nunca se guardan códigos inventados por la
-    IA) y los datos personales reintegrados, lista para el formulario de
-    revisión del frontend (mismo esquema que SessionActivity en
-    types.ts)."""
+    (unidad, codigos_descartados, instrumento_examen) -- `unidad` ya tiene
+    los códigos de saberes/criterios (a nivel de unidad Y de cada
+    actividad) convertidos a los UUID reales del curso (nunca se guardan
+    códigos inventados por la IA) y los datos personales reintegrados,
+    lista para el formulario de revisión del frontend (mismo esquema que
+    SessionActivity en types.ts). `instrumento_examen` es un borrador de
+    instrumento "Examen criterial" (mismo formato que
+    instrumento_evaluacion.py) armado con las preguntas/puntos que la IA
+    ya desglosó dentro de los bloques del examen -- o None si la
+    respuesta no incluye ese desglose (p.ej. sin examen, o respuesta de
+    antes de este cambio)."""
 
     import json
 
@@ -657,6 +668,7 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
     # el prompt (ver construir_prompt), aquí solo se parsea lo que haya
     # devuelto la IA dentro de ese acuerdo.
     examen_datos = datos.get("finalExam") or {}
+    bloques_examen = examen_datos.get("bloques") or []
     final_exam = {
         "incluido": bool(examen_datos.get("incluido")),
         "formato": examen_datos.get("formato") or None,
@@ -665,9 +677,33 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
                 "descripcion": _reintegrar_texto(bloque.get("descripcion", ""), mapa),
                 "linkedCriteriaIds": _mapear_criterios(bloque.get("linkedCriteriaIds")),
             }
-            for bloque in (examen_datos.get("bloques") or [])
+            for bloque in bloques_examen
         ],
     }
+
+    # Si la IA ha desglosado preguntas con puntos dentro de los bloques del
+    # examen (se le pide siempre que hay examen, ver construir_prompt), se
+    # arma de paso un borrador de instrumento "Examen criterial" -- mismo
+    # formato que produce services/prompts/instrumento_evaluacion.py, para
+    # que el frontend pueda ofrecerlo directamente sin una llamada de
+    # generación aparte. None si la respuesta no trajo preguntas (p.ej.
+    # respuestas antiguas, o sin examen).
+    instrumento_examen = None
+    preguntas_out = []
+    for bloque in bloques_examen:
+        for pregunta in (bloque.get("preguntas") or []):
+            preguntas_out.append({
+                "id": f"item-{len(preguntas_out)}",
+                "description": _reintegrar_texto(pregunta.get("enunciado", ""), mapa),
+                "weight": pregunta.get("puntos", 1),
+                "linkedCriteriaIds": _mapear_criterios(pregunta.get("linkedCriteriaIds")),
+            })
+    if preguntas_out:
+        instrumento_examen = {
+            "type": "criterial_exam",
+            "name": f"Examen final -- {_reintegrar_texto(datos.get('name', ''), mapa)}",
+            "items": preguntas_out,
+        }
 
     unidad = {
         "name": _reintegrar_texto(datos.get("name", ""), mapa),
@@ -683,4 +719,4 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
         "linkedSpecificCompetenceIds": sorted(competencias_usadas),
     }
 
-    return unidad, codigos_descartados
+    return unidad, codigos_descartados, instrumento_examen

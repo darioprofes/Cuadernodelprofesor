@@ -16,6 +16,11 @@ export interface GenerarInstrumentoResultado {
 const INTERVALO_SONDEO_MS = 3000;
 const MAX_INTENTOS_SONDEO = 150; // ~7,5 min de margen -- la generación real ronda el minuto
 
+const extraerDetalle = async (response: Response): Promise<string> => {
+    const data = await response.json().catch(() => null);
+    return data?.detail || `Error HTTP ${response.status}`;
+};
+
 // El backend responde al instante con un jobId y hace la generación real
 // (llamada al ia-server, puede tardar cerca de un minuto) en segundo plano
 // -- ver la nota en routers/prompts.py sobre por qué se abandonó la
@@ -35,7 +40,7 @@ export async function generarInstrumentoConIA(params: GenerarInstrumentoParams):
             num_niveles: params.numNiveles,
         }),
     });
-    if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
+    if (!response.ok) throw new Error(await extraerDetalle(response));
     const { jobId }: { jobId: string } = await response.json();
 
     for (let intento = 0; intento < MAX_INTENTOS_SONDEO; intento++) {
@@ -54,4 +59,35 @@ export async function generarInstrumentoConIA(params: GenerarInstrumentoParams):
     }
 
     throw new Error('La generación está tardando demasiado. Inténtalo de nuevo más tarde.');
+}
+
+// Vía alternativa a la IA local -- por si va lenta o no está disponible:
+// mismo prompt de siempre, pero para copiar y pegar en cualquier IA
+// online (como ya hace el generador de Situación de Aprendizaje), en vez
+// de llamar al ia-server.
+export async function generarPromptInstrumento(params: GenerarInstrumentoParams): Promise<string> {
+    const response = await fetch('/api/prompts/instrumento-evaluacion/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            course_id: params.courseId,
+            criterion_ids: params.criterionIds,
+            tool_type: params.toolType,
+            contexto: params.contexto,
+            num_niveles: params.numNiveles,
+        }),
+    });
+    if (!response.ok) throw new Error(await extraerDetalle(response));
+    const data: { prompt: string } = await response.json();
+    return data.prompt;
+}
+
+export async function validarRespuestaInstrumento(courseId: string, toolType: string, respuesta: string): Promise<GenerarInstrumentoResultado> {
+    const response = await fetch('/api/prompts/instrumento-evaluacion/validar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ course_id: courseId, tool_type: toolType, respuesta }),
+    });
+    if (!response.ok) throw new Error(await extraerDetalle(response));
+    return await response.json();
 }

@@ -15,7 +15,6 @@ import { useSpecificCompetences } from '../hooks/useSpecificCompetences';
 import { useEvaluationTools, useCreateEvaluationTool, useUpdateEvaluationTool } from '../hooks/useEvaluationTools';
 import { EvaluationToolEditorModal } from './EvaluationToolManager';
 import GenerarInstrumentoIAModal from './GenerarInstrumentoIAModal';
-import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 
 const EVALUATION_TOOL_TYPE_LABEL: Record<EvaluationTool['type'], string> = {
     checklist: 'Lista de cotejo',
@@ -106,7 +105,6 @@ const InstrumentoSelectConIA: React.FC<{
     const [editando, setEditando] = useState(false);
     const createToolMutation = useCreateEvaluationTool();
     const updateToolMutation = useUpdateEvaluationTool();
-    const iaLocalDisponible = useIaLocalDisponible();
     // Solo el curso de esta SA -- si no, el selector "Filtrar por Curso" del
     // formulario de revisión ofrece todas las etapas/niveles/materias de la
     // app, cuando aquí solo tiene sentido vincular criterios de este curso.
@@ -142,9 +140,8 @@ const InstrumentoSelectConIA: React.FC<{
             <button
                 type="button"
                 onClick={() => setShowGenerar(true)}
-                disabled={!iaLocalDisponible}
-                title={iaLocalDisponible ? 'Generar instrumento con IA local a partir de los criterios vinculados aquí' : 'IA local no disponible ahora mismo'}
-                className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-md flex-shrink-0 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                title="Generar instrumento con IA a partir de los criterios vinculados aquí"
+                className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-md flex-shrink-0"
             >
                 <SparklesIcon className="w-4 h-4" />
             </button>

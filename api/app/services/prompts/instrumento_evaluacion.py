@@ -160,12 +160,9 @@ def _extraer_json(texto):
 
 def generar_instrumento(course_id, criterion_ids, tool_type, contexto=None, num_niveles=None):
     """Llama al ia-server, valida la respuesta contra los criterios reales
-    del curso y devuelve (instrumento, codigos_descartados). `instrumento`
-    ya tiene la forma de un EvaluationTool sin `id` (lo pone el frontend al
-    guardar), listo para abrir en el formulario de edición y revisar antes
-    de guardar. Lanza ValueError si el ia-server no responde o la
-    respuesta no es JSON válido -- nunca se devuelve nada a medio
-    procesar."""
+    del curso y devuelve (instrumento, codigos_descartados). Lanza
+    ValueError si el ia-server no responde. El resto de la validación es
+    idéntica a la vía "IA online" -- ver procesar_respuesta()."""
 
     prompt = construir_prompt(course_id, criterion_ids, tool_type, contexto, num_niveles)
 
@@ -174,8 +171,20 @@ def generar_instrumento(course_id, criterion_ids, tool_type, contexto=None, num_
     if respuesta_texto is None:
         raise ValueError(
             "El servidor de IA local no está disponible ahora mismo. Inténtalo de nuevo en unos "
-            "minutos."
+            "minutos, o usa la opción de IA online."
         )
+
+    return procesar_respuesta(course_id, tool_type, respuesta_texto)
+
+
+def procesar_respuesta(course_id, tool_type, respuesta_texto):
+    """Valida el JSON de la IA (venga del ia-server o pegado a mano de una
+    IA online) contra los criterios reales del curso y devuelve
+    (instrumento, codigos_descartados). `instrumento` ya tiene la forma de
+    un EvaluationTool sin `id` (lo pone el frontend al guardar), listo
+    para abrir en el formulario de edición y revisar antes de guardar.
+    Lanza ValueError si la respuesta no es JSON válido -- nunca se
+    devuelve nada a medio procesar."""
 
     try:
         datos = json.loads(_extraer_json(respuesta_texto))

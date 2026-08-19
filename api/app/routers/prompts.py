@@ -21,7 +21,7 @@ from services.extraccion_docx import extraer_markdown_docx
 from services.extraccion_pdf import extraer_texto_pdf
 from services.extraccion_pptx import extraer_texto_pptx
 from services.llm_client import esta_disponible as ia_local_esta_disponible
-from services.prompts.instrumento_evaluacion import generar_instrumento
+from services.prompts import instrumento_evaluacion as prompt_instrumento
 from services.prompts.unidad_programacion import construir_prompt, procesar_respuesta
 
 router = APIRouter(prefix="/prompts", tags=["Generadores de prompts"], dependencies=[Depends(require_auth)])
@@ -195,11 +195,11 @@ class ValidarUnidadRequest(BaseModel):
 async def validar_respuesta_unidad(datos: ValidarUnidadRequest):
 
     try:
-        unidad, codigos_descartados = procesar_respuesta(datos.course_id, datos.respuesta, datos.mapa)
+        unidad, codigos_descartados, instrumento_examen = procesar_respuesta(datos.course_id, datos.respuesta, datos.mapa)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    return {"unidad": unidad, "codigosDescartados": codigos_descartados}
+    return {"unidad": unidad, "codigosDescartados": codigos_descartados, "instrumentoExamen": instrumento_examen}
 
 
 class GenerarInstrumentoRequest(BaseModel):
@@ -235,7 +235,7 @@ def _limpiar_trabajos_viejos():
 
 def _ejecutar_generacion_instrumento(job_id: str, datos: GenerarInstrumentoRequest):
     try:
-        instrumento, codigos_descartados = generar_instrumento(
+        instrumento, codigos_descartados = prompt_instrumento.generar_instrumento(
             datos.course_id, datos.criterion_ids, datos.tool_type, datos.contexto, datos.num_niveles,
         )
         resultado = {"estado": "listo", "instrumento": instrumento, "codigosDescartados": codigos_descartados}
@@ -267,3 +267,36 @@ async def estado_prompt_instrumento(job_id: str):
     if trabajo is None:
         raise HTTPException(status_code=404, detail="Trabajo no encontrado (o ya expiró).")
     return trabajo
+
+
+# Vía alternativa a la IA local -- por si va lenta o no está disponible, el
+# mismo prompt para copiar y pegar en cualquier IA online (como ya hace el
+# generador de Unidad de programación/SA), sin llamar al ia-server para
+# nada. Los dos pasos son rápidos de por sí (solo texto, sin IA) -- no hace
+# falta el patrón job+polling aquí.
+@router.post("/instrumento-evaluacion/prompt")
+async def generar_prompt_instrumento_texto(datos: GenerarInstrumentoRequest):
+    try:
+        prompt = prompt_instrumento.construir_prompt(
+            datos.course_id, datos.criterion_ids, datos.tool_type, datos.contexto, datos.num_niveles,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"prompt": prompt}
+
+
+class ValidarInstrumentoRequest(BaseModel):
+    course_id: str
+    tool_type: str
+    respuesta: str
+
+
+@router.post("/instrumento-evaluacion/validar")
+async def validar_respuesta_instrumento(datos: ValidarInstrumentoRequest):
+    try:
+        instrumento, codigos_descartados = prompt_instrumento.procesar_respuesta(
+            datos.course_id, datos.tool_type, datos.respuesta,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"instrumento": instrumento, "codigosDescartados": codigos_descartados}
