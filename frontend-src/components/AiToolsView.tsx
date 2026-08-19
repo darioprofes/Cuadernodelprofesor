@@ -107,7 +107,7 @@ const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingm
 interface AiToolsViewProps {
     courses: Course[];
     // Navega a Materia → Planificación UD para ese curso y abre allí
-    // GenerarUnidadIAModal -- el formulario de revisión final vive en
+    // GenerarSituacionAprendizajeModal -- el formulario de revisión final vive en
     // ProgrammingManager.tsx (reutiliza el mismo UnitEditor que la creación
     // manual), no aquí. Este es solo un atajo para no tener que ir a elegir
     // la materia primero "a mano".

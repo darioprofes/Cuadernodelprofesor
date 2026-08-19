@@ -89,7 +89,7 @@ entorno de los lanzadores lleva un comentario avisando de esto.
 
 ## 3. Pendiente para conectar ambos (módulo de IA)
 
-Detalle completo en [ai-generacion-unidades.md](ai-generacion-unidades.md).
+Detalle completo en [ai-generacion-situaciones-aprendizaje.md](ai-generacion-situaciones-aprendizaje.md).
 
 - **Red `redis-shared`** en el compose de Redis, siguiendo el patrón de
   `postgres_db-shared`. Hoy Redis está solo en `proxy` y `profe-api` no está en

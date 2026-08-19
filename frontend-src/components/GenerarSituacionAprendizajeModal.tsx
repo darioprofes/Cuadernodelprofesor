@@ -111,7 +111,7 @@ const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
     );
 };
 
-interface GenerarUnidadIAModalProps {
+interface GenerarSituacionAprendizajeModalProps {
     isOpen: boolean;
     courseId: string;
     courses: Course[];
@@ -133,7 +133,7 @@ interface GenerarUnidadIAModalProps {
 type Modo = 'documento' | 'descripcion';
 type SesionesModo = 'fijo' | 'rango';
 
-const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, courseId, courses, onClose, onDraftReady }) => {
+const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModalProps> = ({ isOpen, courseId, courses, onClose, onDraftReady }) => {
     const [paso, setPaso] = useState<Paso>(1);
     const [modo, setModo] = useState<Modo>('documento');
     const [documento, setDocumento] = useState('');
@@ -233,7 +233,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
 
     // Paso 7 (tras procesar la respuesta): el propio prompt de la SA ya pide
     // el desglose de preguntas/puntos del examen como un elemento más de esa
-    // misma respuesta (ver instrumentoExamen en unidad_programacion.py), así
+    // misma respuesta (ver instrumentoExamen en situacion_aprendizaje.py), así
     // que lo normal es llegar aquí con el instrumento ya armado, listo para
     // revisar. Si la respuesta no lo trajo (formatos antiguos, o la IA no lo
     // dio), se ofrece generarlo aparte -- con el mismo modal de siempre
@@ -424,7 +424,7 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
                 };
                 codigosDescartados: string[];
                 // El propio prompt ya pide el desglose de preguntas/puntos
-                // del examen (ver instrucción en unidad_programacion.py) --
+                // del examen (ver instrucción en situacion_aprendizaje.py) --
                 // si la IA lo dio, llega aquí ya listo para revisar, sin
                 // hacer falta una generación aparte en el Paso 7.
                 instrumentoExamen: Omit<EvaluationTool, 'id'> | null;
@@ -1077,4 +1077,4 @@ const GenerarUnidadIAModal: React.FC<GenerarUnidadIAModalProps> = ({ isOpen, cou
     );
 };
 
-export default GenerarUnidadIAModal;
+export default GenerarSituacionAprendizajeModal;

@@ -425,7 +425,7 @@ export interface AcademicConfiguration {
   defaultCalendarView?: 'month' | 'week' | 'day';
   gradeScale?: GradeScaleRule[];
   // Rasgos de estilo docente -- se inyectan en el prompt de cada SA
-  // generada con IA (ver services/prompts/unidad_programacion.py).
+  // generada con IA (ver services/prompts/situacion_aprendizaje.py).
   teacherProfile?: string[];
 }
 

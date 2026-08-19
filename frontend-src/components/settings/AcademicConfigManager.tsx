@@ -9,7 +9,7 @@ import { linkClassName } from '../../theme/components/Link';
 import { useCurrentAcademicYear, useUpdateAcademicYear, useEvaluationPeriods, useCreateEvaluationPeriod, useUpdateEvaluationPeriod, useDeleteEvaluationPeriod } from '../../hooks/useAcademicYears';
 
 // Rasgos de estilo docente habituales -- se inyectan en el prompt de cada
-// SA generada con IA (ver services/prompts/unidad_programacion.py) para que
+// SA generada con IA (ver services/prompts/situacion_aprendizaje.py) para que
 // escriba coherente con cómo enseña este profesor, no con un "eres un
 // profesor" genérico. Se guardan una sola vez aquí y se reutilizan siempre,
 // sin repreguntarse en cada wizard -- mismo patrón que

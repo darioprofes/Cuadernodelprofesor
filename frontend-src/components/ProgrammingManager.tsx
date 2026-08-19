@@ -4,7 +4,7 @@ import type { ProgrammingUnit, Course, SessionDetail, SessionActivity, FinalProd
 import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon, SparklesIcon, ChevronDownIcon, ChevronRightIcon } from './Icons';
 import Modal from './Modal';
 import Input from './Input';
-import GenerarUnidadIAModal from './GenerarUnidadIAModal';
+import GenerarSituacionAprendizajeModal from './GenerarSituacionAprendizajeModal';
 import { TYPOGRAPHY } from '../theme/typography';
 import { checkboxClassName } from '../theme/components/Input';
 import { formatFechaEs } from '../utils';
@@ -195,7 +195,7 @@ interface ProgrammingManagerProps {
     classes: ClassData[];
     academicConfiguration: AcademicConfiguration;
     // Atajo desde Herramientas IA (AiToolsView): App.tsx navega aquí y pide
-    // abrir GenerarUnidadIAModal directamente, sin que el profesor tenga que
+    // abrir GenerarSituacionAprendizajeModal directamente, sin que el profesor tenga que
     // pulsar el botón otra vez.
     autoOpenGenerarIA?: boolean;
     onAutoOpenGenerarIAHandled?: () => void;
@@ -218,7 +218,7 @@ const addDays = (date: Date, days: number): Date => {
 const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, classes, academicConfiguration, autoOpenGenerarIA, onAutoOpenGenerarIAHandled }) => {
     const selectedCourseId = courseId;
     // "create" admite un `draft` opcional -- el borrador que entrega
-    // GenerarUnidadIAModal para revisar en el mismo formulario que ya usa la
+    // GenerarSituacionAprendizajeModal para revisar en el mismo formulario que ya usa la
     // creación manual, en vez de tener un formulario de revisión aparte.
     const [unitEditorState, setUnitEditorState] = useState<{ mode: 'create', draft?: ProgrammingUnit } | { mode: 'edit', unit: ProgrammingUnit } | null>(null);
     const [showImportHelp, setShowImportHelp] = useState(false);
@@ -644,7 +644,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                     />
                 </Modal>
             )}
-            <GenerarUnidadIAModal
+            <GenerarSituacionAprendizajeModal
                 isOpen={showGenerarIA}
                 courseId={selectedCourseId}
                 courses={courses}
