@@ -21,7 +21,7 @@ import { TrashIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon } from './Icons'
 interface AssignmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (assignment: Omit<Assignment, 'id' | 'categoryId'> & { id?: string; categoryId?: string }) => void;
+  onSave: (assignment: Omit<Assignment, 'id' | 'categoryId'> & { id?: string; categoryId?: string }) => Promise<void> | void;
   assignmentToEdit: Assignment | null;
   category: Category;
   criteria: EvaluationCriterion[];
@@ -52,6 +52,8 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
   const [importanciaAvanzada, setImportanciaAvanzada] = useState(false);
   const [importanciaPersonalizada, setImportanciaPersonalizada] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(category.id);
+  const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
 
   const [isCriteriaSelectorOpen, setIsCriteriaSelectorOpen] = useState(false);
   const [expandedCompetences, setExpandedCompetences] = useState<Set<string>>(new Set());
@@ -88,6 +90,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
   }, [criteria, criterionToCompetenceMap]);
 
   useEffect(() => {
+    setError(null);
     if (assignmentToEdit) {
       setSelectedCategoryId(assignmentToEdit.categoryId);
       setName(assignmentToEdit.name);
@@ -206,7 +209,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
 
   const totalRatio = linkedCriteria.reduce((sum, lc) => sum + lc.ratio, 0);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (name) {
       // Logic to ensure consistency: if tool is selected but "useGlobal" is unchecked, clear criteria
@@ -218,7 +221,11 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
       const assignmentData = {
         name,
         shortName: shortName.trim() || undefined,
-        date,
+        // "" (sin fecha) rompe la validación del backend (espera null o una
+        // fecha válida, nunca cadena vacía) -- bug real encontrado al probar
+        // el alias: el 422 resultante tumbaba TODO el guardado, no solo la
+        // fecha, así que name/shortName tampoco se aplicaban.
+        date: date || undefined,
         evaluationPeriodId,
         programmingUnitId,
         evaluationMethod,
@@ -229,12 +236,24 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
         importancia,
         importanciaPersonalizada: importanciaAvanzada && importanciaPersonalizada.trim() ? Number(importanciaPersonalizada) : undefined,
       };
-      if (assignmentToEdit) {
-        onSave({ ...assignmentData, id: assignmentToEdit.id, categoryId: selectedCategoryId });
-      } else {
-        onSave(assignmentData);
+      setError(null);
+      setGuardando(true);
+      try {
+        if (assignmentToEdit) {
+          await onSave({ ...assignmentData, id: assignmentToEdit.id, categoryId: selectedCategoryId });
+        } else {
+          await onSave(assignmentData);
+        }
+        onClose();
+      } catch (err) {
+        // No se cierra el modal en caso de error -- antes sí se cerraba
+        // incondicionalmente, así que un fallo de guardado (p.ej. un 422 del
+        // backend) parecía "no hacer nada" porque el modal desaparecía sin
+        // avisar y los cambios se perdían.
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setGuardando(false);
       }
-      onClose();
     }
   };
 
@@ -560,9 +579,13 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
             </div>
         )}
 
+        {error && (
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</p>
+        )}
+
         <div className="flex justify-end pt-4 space-x-2 border-t mt-6">
           <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" variant="primary">Guardar Tarea</Button>
+          <Button type="submit" variant="primary" disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar Tarea'}</Button>
         </div>
       </form>
     </Modal>
