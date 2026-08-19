@@ -367,6 +367,7 @@ export interface Assignment {
     evaluationToolId?: string;
     programmingUnitId?: string;
     name: string;
+    shortName?: string;
     date?: string;
     evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam';
     linkedCriteria: LinkedCriterion[];
@@ -384,6 +385,7 @@ export interface AssignmentInput {
     evaluationToolId?: string;
     programmingUnitId?: string;
     name: string;
+    shortName?: string;
     date?: string;
     evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam';
     linkedCriteria?: LinkedCriterion[];

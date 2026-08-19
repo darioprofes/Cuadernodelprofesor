@@ -188,6 +188,7 @@ export const apiCategoryToLocal = (c: ApiCategory): Category => ({
 export const apiAssignmentToLocal = (a: ApiAssignment): Assignment => ({
     id: a.id,
     name: a.name,
+    shortName: a.shortName,
     categoryId: a.categoryId,
     evaluationPeriodId: a.evaluationPeriodId,
     date: a.date,

@@ -23,12 +23,12 @@ interface PickerStudent {
 // hay tal registro aparte del embebido por clase, así que este bloque no
 // se renderiza ahí.
 //
-// Siempre visible (no escondido detrás de un "Matricular alumn@ ya
-// existente"): la confusión real que reportó el usuario era que "Importar
-// de SAUCE" parecía matricular directamente en la clase activa, cuando en
-// realidad solo llena este mismo listado — verlo siempre a la vista deja
-// claro que importar y matricular son dos pasos distintos, y que un mismo
-// alumno importado puede acabar matriculado en varias clases.
+// En GradebookTable.tsx vive detrás de un botón "+ Matricular alumn@ ya
+// existente" (dentro de un Modal), no siempre visible en la pantalla del
+// cuaderno -- se probó primero siempre visible para dejar claro que
+// "Importar de SAUCE" no matricula por sí solo (solo rellena este
+// listado), pero el usuario prefirió el cuaderno más limpio; esa
+// aclaración se quedó como una frase dentro del propio modal.
 //
 // Por defecto solo se lista el alumnado importado (SAUCE) en el curso
 // académico actual — el listado global crece con los años y mezclar ahí

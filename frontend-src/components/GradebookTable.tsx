@@ -158,6 +158,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [fichaEditTarget, setFichaEditTarget] = useState<Student | null>(null);
   const [isPlanoOpen, setIsPlanoOpen] = useState(false);
   const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
+  const [isEnrollExistingOpen, setIsEnrollExistingOpen] = useState(false);
   const [studentSearch, setStudentSearch] = useState('');
   const [drawnStudentIds, setDrawnStudentIds] = useState<Set<string>>(new Set());
   const [lastDrawnStudent, setLastDrawnStudent] = useState<Student | null>(null);
@@ -913,7 +914,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                     return [
                         ...assignmentsForCat.map((a, idx) => (
                             <th key={a.id} className={`${cellPad} font-normal text-center border-l border-slate-200 ${idx === assignmentsForCat.length - 1 ? 'border-r border-r-slate-200' : ''} min-w-[120px] bg-white`} title={a.name} style={{ color: categoryColorMap.get(cat.id) }}>
-                              <div className="truncate w-full mx-auto px-1">{a.name}</div>
+                              <div className="truncate w-full mx-auto px-1">{a.shortName || a.name}</div>
                               <div className="flex justify-center items-center gap-1 mt-1">
                                 <IconButton label="Editar tarea" size="sm" onClick={() => handleEditAssignment(a)}><PencilIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Eliminar tarea" tone="danger" size="sm" onClick={() => handleDeleteAssignment(a.id)}><TrashIcon className="w-3 h-3"/></IconButton>
@@ -1005,12 +1006,9 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           <button onClick={() => setIsBulkAddOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-green-600 hover:bg-green-100 bg-white rounded-md border border-slate-200 shadow-sm">
               + Añadir alumn@
           </button>
-          <ExistingStudentPicker
-              allStudents={remoteStudents.data ?? []}
-              currentYearId={yearId}
-              alreadyEnrolledIds={new Set(classData.students.map(s => s.id))}
-              onEnroll={handleEnrollExisting}
-          />
+          <button onClick={() => setIsEnrollExistingOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-blue-600 hover:bg-blue-100 bg-white rounded-md border border-slate-200 shadow-sm">
+              + Matricular alumn@ ya existente
+          </button>
       </div>
        {activePeriodId !== 'final' && (
           <div className="p-4 border-t flex justify-start items-center bg-slate-200 rounded-b-xl">
@@ -1232,6 +1230,19 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       {gradeEntryData && <GradeEntryModal isOpen={isGradeEntryModalOpen} onClose={() => setIsGradeEntryModalOpen(false)} student={gradeEntryData.student} assignment={gradeEntryData.assignment} grade={gradeEntryData.grade} criteriaList={criteria} onSave={handleSaveGrade} evaluationTools={evaluationTools} allAssignments={classData.assignments} students={classData.students} />}
       {assignmentForImport && <BulkGradeImportModal isOpen={isBulkImportModalOpen} onClose={() => setIsBulkImportModalOpen(false)} onSave={handleBulkSaveGrades} assignment={assignmentForImport} students={classData.students} />}
       <BulkAddStudentModal isOpen={isBulkAddOpen} onClose={() => setIsBulkAddOpen(false)} onSave={handleBulkAddStudents} />
+      <Modal isOpen={isEnrollExistingOpen} onClose={() => setIsEnrollExistingOpen(false)} title="Matricular alumnado ya existente" size="lg">
+          <p className="text-xs text-slate-500 mb-3">
+              Esto matricula en esta clase a alumnado que ya existe en el registro (por ejemplo, importado
+              desde SAUCE o matriculado en otra clase) — importar desde SAUCE por sí solo no matricula en
+              ninguna clase, solo rellena este listado.
+          </p>
+          <ExistingStudentPicker
+              allStudents={remoteStudents.data ?? []}
+              currentYearId={yearId}
+              alreadyEnrolledIds={new Set(classData.students.map(s => s.id))}
+              onEnroll={handleEnrollExisting}
+          />
+      </Modal>
       <StudentPersonalDataModal
           isOpen={!!fichaEditTarget}
           onClose={() => setFichaEditTarget(null)}

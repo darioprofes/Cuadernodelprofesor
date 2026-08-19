@@ -39,6 +39,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
   const { isOpen, onClose, onSave, assignmentToEdit, category, criteria, specificCompetences, keyCompetences, evaluationPeriods, academicConfiguration, evaluationTools, allAssignments, allCategories } = props;
   
   const [name, setName] = useState('');
+  const [shortName, setShortName] = useState('');
   const [date, setDate] = useState<string>('');
   const [evaluationPeriodId, setEvaluationPeriodId] = useState<string>(category.evaluationPeriodId);
   const [linkedCriteria, setLinkedCriteria] = useState<LinkedCriterion[]>([]);
@@ -90,6 +91,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
     if (assignmentToEdit) {
       setSelectedCategoryId(assignmentToEdit.categoryId);
       setName(assignmentToEdit.name);
+      setShortName(assignmentToEdit.shortName || '');
       setDate(assignmentToEdit.date || '');
       setEvaluationPeriodId(assignmentToEdit.evaluationPeriodId);
       setProgrammingUnitId(assignmentToEdit.programmingUnitId);
@@ -121,6 +123,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
     } else {
       setSelectedCategoryId(category.id);
       setName('');
+      setShortName('');
       setDate('');
       setEvaluationPeriodId(category.evaluationPeriodId);
       setProgrammingUnitId(undefined);
@@ -214,6 +217,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
 
       const assignmentData = {
         name,
+        shortName: shortName.trim() || undefined,
         date,
         evaluationPeriodId,
         programmingUnitId,
@@ -253,6 +257,13 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
             <Input
               type="text" id="name" value={name} onChange={(e) => setName(e.target.value)}
               className="mt-1" required
+            />
+            <label htmlFor="short-name" className="block text-xs font-medium text-slate-500 mt-2">
+              Alias corto (opcional, para la columna del cuaderno)
+            </label>
+            <Input
+              type="text" id="short-name" value={shortName} onChange={(e) => setShortName(e.target.value)}
+              className="mt-1" placeholder={name || 'Se usará el nombre completo'}
             />
           </div>
           <div>

@@ -194,6 +194,10 @@ export type ImportanciaActividad = 'muy_baja' | 'baja' | 'normal' | 'alta' | 'mu
 export interface Assignment {
   id: string;
   name: string;
+  // Alias corto opcional para la columna del cuaderno de notas -- si no
+  // se pone, la columna muestra `name` (truncado); el nombre real
+  // siempre se ve al pasar el ratón por encima.
+  shortName?: string;
   categoryId: string;
   evaluationPeriodId: string;
   date?: string; // YYYY-MM-DD

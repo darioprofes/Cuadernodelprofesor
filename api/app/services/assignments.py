@@ -13,7 +13,7 @@ from services.schemas import ApiModel, updated_at_matches
 
 _COLUMNS = """
     id, class_id, category_id, evaluation_period_id, evaluation_tool_id,
-    programming_unit_id, name, date, evaluation_method, linked_criteria,
+    programming_unit_id, name, short_name, date, evaluation_method, linked_criteria,
     recovers_assignment_ids, peso_en_categoria, importancia,
     importancia_personalizada, created_at, updated_at
 """
@@ -35,6 +35,9 @@ class AssignmentInput(ApiModel):
     evaluation_tool_id: Optional[uuid.UUID] = None
     programming_unit_id: Optional[uuid.UUID] = None
     name: str
+    # Alias corto opcional para la columna del cuaderno de notas -- si no
+    # se pone, se sigue usando `name` (truncado) como hasta ahora.
+    short_name: Optional[str] = None
     date: Optional[date_type] = None
     evaluation_method: str
     linked_criteria: list[LinkedCriterion] = []
@@ -50,6 +53,7 @@ class AssignmentPatch(ApiModel):
     evaluation_tool_id: Optional[uuid.UUID] = None
     programming_unit_id: Optional[uuid.UUID] = None
     name: Optional[str] = None
+    short_name: Optional[str] = None
     date: Optional[date_type] = None
     evaluation_method: Optional[str] = None
     linked_criteria: Optional[list[LinkedCriterion]] = None
@@ -68,6 +72,7 @@ class Assignment(ApiModel):
     evaluation_tool_id: Optional[uuid.UUID] = None
     programming_unit_id: Optional[uuid.UUID] = None
     name: str
+    short_name: Optional[str] = None
     date: Optional[date_type] = None
     evaluation_method: str
     linked_criteria: list[LinkedCriterion] = []
