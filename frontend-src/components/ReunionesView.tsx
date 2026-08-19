@@ -215,7 +215,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                 )}
             </div>
 
-            <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={editingId ? 'Editar reunión' : 'Nueva reunión'} size="lg">
+            <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={editingId ? 'Editar reunión' : 'Nueva reunión'} size="3xl">
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
@@ -246,11 +246,11 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                     </div>
                     <div>
                         <label className="text-xs font-medium text-slate-600">Acuerdos</label>
-                        <Textarea value={acuerdos} onChange={e => setAcuerdos(e.target.value)} rows={2} className="w-full mt-1" />
+                        <Textarea value={acuerdos} onChange={e => setAcuerdos(e.target.value)} rows={6} className="w-full mt-1" placeholder="Notas de la reunión: lo que se ha hablado y acordado..." />
                     </div>
                     <div>
                         <label className="text-xs font-medium text-slate-600">Seguimiento</label>
-                        <Textarea value={seguimiento} onChange={e => setSeguimiento(e.target.value)} rows={2} className="w-full mt-1" />
+                        <Textarea value={seguimiento} onChange={e => setSeguimiento(e.target.value)} rows={3} className="w-full mt-1" />
                     </div>
                     <div className="flex items-center justify-end gap-2 pt-2">
                         <Button type="button" variant="secondary" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
