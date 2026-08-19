@@ -658,6 +658,36 @@ const ToolEditorFields: React.FC<ToolEditorFieldsProps> = ({tool, setTool, crite
     );
 };
 
+// Chips de solo lectura con los criterios ya vinculados + un botón para
+// abrir el selector -- mismo estilo visual que CriteriaChips
+// (ProgrammingManager.tsx), pero sin los chips de TODOS los criterios como
+// botones de toggle (petición explícita: aquí solo se quiere ver lo ya
+// elegido, la edición pasa por el botón/modal).
+const LinkedCriteriaChips: React.FC<{ criteria: EvaluationCriterion[]; linkedIds: string[]; onEdit: () => void }> = ({ criteria, linkedIds, onEdit }) => {
+    const seleccionados = criteria.filter(c => linkedIds.includes(c.id));
+    return (
+        <div className="flex flex-wrap items-center gap-1">
+            {seleccionados.map(c => (
+                <span
+                    key={c.id}
+                    title={c.description}
+                    className="text-xs font-medium px-2 py-0.5 rounded-full border bg-slate-700 text-white border-slate-700"
+                >
+                    {c.code}
+                </span>
+            ))}
+            <button
+                type="button"
+                onClick={onEdit}
+                className="flex items-center gap-1 text-xs text-blue-600 px-2 py-0.5 hover:bg-blue-50 rounded-full border border-dashed border-blue-300"
+            >
+                <LinkIcon className="w-3 h-3" />
+                {seleccionados.length === 0 ? 'Vincular criterios' : 'Editar criterios'}
+            </button>
+        </div>
+    );
+};
+
 interface ItemEditorProps {
     item: ToolItemDraft;
     onItemChange: <K extends keyof ToolItemDraft>(field: K, value: ToolItemDraft[K]) => void;
@@ -690,11 +720,8 @@ const ItemEditor: React.FC<ItemEditorProps> = ({ item, onItemChange, onRemove, c
                         onChange={e => onItemChange('weight', Number(e.target.value))}
                         className="w-24"
                     />
-                    <button type="button" onClick={() => setIsCriteriaModalOpen(true)} className="flex items-center gap-1 text-sm text-blue-600 p-2 hover:bg-blue-50 rounded-md">
-                        <LinkIcon className="w-4 h-4" />
-                        Vincular Criterios ({item.linkedCriteriaIds.length})
-                    </button>
                 </div>
+                <LinkedCriteriaChips criteria={criteria} linkedIds={item.linkedCriteriaIds} onEdit={() => setIsCriteriaModalOpen(true)} />
             </div>
             <button type="button" onClick={onRemove} className="p-2 text-red-500 hover:bg-red-100 rounded-full flex-shrink-0"><TrashIcon className="w-4 h-4" /></button>
             {isCriteriaModalOpen && (
@@ -749,11 +776,8 @@ const RubricItemEditor: React.FC<RubricItemEditorProps> = ({item, levels, onItem
                             onChange={e => onItemChange('weight', Number(e.target.value))}
                             className="w-24"
                         />
-                        <button type="button" onClick={() => setIsCriteriaModalOpen(true)} className="flex items-center gap-1 text-sm text-blue-600 p-2 hover:bg-blue-50 rounded-md">
-                            <LinkIcon className="w-4 h-4" />
-                            Vincular Criterios LOMLOE ({item.linkedCriteriaIds.length})
-                        </button>
                     </div>
+                    <LinkedCriteriaChips criteria={criteria} linkedIds={item.linkedCriteriaIds} onEdit={() => setIsCriteriaModalOpen(true)} />
                 </div>
                 <button type="button" onClick={onRemove} className="p-2 text-red-500 hover:bg-red-100 rounded-full flex-shrink-0"><TrashIcon className="w-4 h-4" /></button>
             </div>
