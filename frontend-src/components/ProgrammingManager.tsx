@@ -12,7 +12,7 @@ import { useProgrammingUnits, useCreateProgrammingUnit, useUpdateProgrammingUnit
 import { useEvaluationCriteria } from '../hooks/useEvaluationCriteria';
 import { useBasicKnowledge } from '../hooks/useBasicKnowledge';
 import { useSpecificCompetences } from '../hooks/useSpecificCompetences';
-import { useEvaluationTools, useCreateEvaluationTool } from '../hooks/useEvaluationTools';
+import { useEvaluationTools, useCreateEvaluationTool, useUpdateEvaluationTool } from '../hooks/useEvaluationTools';
 import { EvaluationToolEditorModal } from './EvaluationToolManager';
 import GenerarInstrumentoIAModal from './GenerarInstrumentoIAModal';
 import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
@@ -103,12 +103,15 @@ const InstrumentoSelectConIA: React.FC<{
 }> = ({ evaluationTools, value, onChange, courseId, courses, criteria, linkedCriteriaIds, contexto }) => {
     const [showGenerar, setShowGenerar] = useState(false);
     const [draft, setDraft] = useState<EvaluationTool | null>(null);
+    const [editando, setEditando] = useState(false);
     const createToolMutation = useCreateEvaluationTool();
+    const updateToolMutation = useUpdateEvaluationTool();
     const iaLocalDisponible = useIaLocalDisponible();
     // Solo el curso de esta SA -- si no, el selector "Filtrar por Curso" del
     // formulario de revisión ofrece todas las etapas/niveles/materias de la
     // app, cuando aquí solo tiene sentido vincular criterios de este curso.
     const cursoDeEstaSA = useMemo(() => courses.filter(c => c.id === courseId), [courses, courseId]);
+    const instrumentoActual = evaluationTools.find(t => t.id === value);
 
     const handleGuardarDraft = async (tool: EvaluationTool) => {
         const { id: _unused, ...data } = tool;
@@ -117,9 +120,25 @@ const InstrumentoSelectConIA: React.FC<{
         setDraft(null);
     };
 
+    const handleGuardarEdicion = async (tool: EvaluationTool) => {
+        const { id, ...data } = tool;
+        await updateToolMutation.mutateAsync({ id, data });
+        setEditando(false);
+    };
+
     return (
         <div className="flex items-center gap-1.5">
             <div className="flex-1"><InstrumentoSelect evaluationTools={evaluationTools} value={value} onChange={onChange} /></div>
+            {instrumentoActual && (
+                <button
+                    type="button"
+                    onClick={() => setEditando(true)}
+                    title="Editar este instrumento sin salir de la SA"
+                    className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md flex-shrink-0"
+                >
+                    <PencilIcon className="w-4 h-4" />
+                </button>
+            )}
             <button
                 type="button"
                 onClick={() => setShowGenerar(true)}
@@ -143,6 +162,16 @@ const InstrumentoSelectConIA: React.FC<{
                     onClose={() => setDraft(null)}
                     onSave={handleGuardarDraft}
                     toolToEdit={draft}
+                    criteria={criteria}
+                    courses={cursoDeEstaSA}
+                />
+            )}
+            {editando && instrumentoActual && (
+                <EvaluationToolEditorModal
+                    isOpen={true}
+                    onClose={() => setEditando(false)}
+                    onSave={handleGuardarEdicion}
+                    toolToEdit={instrumentoActual}
                     criteria={criteria}
                     courses={cursoDeEstaSA}
                 />
