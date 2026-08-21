@@ -1,11 +1,11 @@
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import type { EvaluationTool } from '../types';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import Textarea from './Textarea';
-import { ClipboardDocumentIcon } from './Icons';
+import { ArrowUpTrayIcon, ClipboardDocumentIcon, ExclamationTriangleIcon } from './Icons';
 import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 import { generarInstrumentoConIA, generarPromptInstrumento, validarRespuestaInstrumento } from '../services/generarInstrumentoIA';
 
@@ -18,6 +18,10 @@ interface GenerarInstrumentoIAModalProps {
     // usado en la importación al cuaderno de notas (Fase 7).
     linkedCriteriaIds: string[];
     contexto?: string;
+    // Prellena "Contenido visto en clase" cuando ya se conoce (p.ej. el
+    // wizard de Situación de Aprendizaje ya tiene el documento/descripción
+    // de esa SA) -- evita pedirlo dos veces. Editable igualmente.
+    documentoClaseInicial?: string;
     onDraftReady: (draft: EvaluationTool) => void;
 }
 
@@ -55,17 +59,21 @@ const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
 // formulario de edición de instrumentos que ya existe, nunca se guarda a
 // ciegas.
 const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
-    isOpen, onClose, courseId, linkedCriteriaIds, contexto, onDraftReady,
+    isOpen, onClose, courseId, linkedCriteriaIds, contexto, documentoClaseInicial, onDraftReady,
 }) => {
     const [via, setVia] = useState<Via>('local');
     const [tipo, setTipo] = useState<ToolType>('rubric');
     const [numNiveles, setNumNiveles] = useState(4);
+    const [documentoClase, setDocumentoClase] = useState(documentoClaseInicial || '');
+    const [subiendoDocumento, setSubiendoDocumento] = useState(false);
+    const [avisoExtraccion, setAvisoExtraccion] = useState<string | null>(null);
     const [generando, setGenerando] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [promptGenerado, setPromptGenerado] = useState<string | null>(null);
     const [respuestaPegada, setRespuestaPegada] = useState('');
     const [procesandoRespuesta, setProcesandoRespuesta] = useState(false);
     const iaLocalDisponible = useIaLocalDisponible();
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const tipoInfo = TIPOS.find(t => t.value === tipo)!;
     const sinCriterios = linkedCriteriaIds.length === 0;
@@ -74,9 +82,33 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
         setVia('local');
         setTipo('rubric');
         setNumNiveles(4);
+        setDocumentoClase(documentoClaseInicial || '');
+        setAvisoExtraccion(null);
         setError(null);
         setPromptGenerado(null);
         setRespuestaPegada('');
+    };
+
+    const handleSubirDocumento = async (file: File) => {
+        setSubiendoDocumento(true);
+        setAvisoExtraccion(null);
+        setError(null);
+        try {
+            const formData = new FormData();
+            formData.append('archivo', file);
+            const response = await fetch('/api/prompts/extraer-documento', { method: 'POST', body: formData });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.detail || `Error HTTP ${response.status}`);
+            }
+            const data: { texto: string; aviso: string | null } = await response.json();
+            setDocumentoClase(data.texto);
+            setAvisoExtraccion(data.aviso);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+        } finally {
+            setSubiendoDocumento(false);
+        }
     };
 
     const handleClose = () => {
@@ -107,6 +139,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                 toolType: tipo,
                 contexto,
                 numNiveles: tipoInfo.necesitaNiveles ? numNiveles : undefined,
+                documento: documentoClase.trim() || undefined,
             });
             entregarResultado(data);
         } catch (err) {
@@ -126,6 +159,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                 toolType: tipo,
                 contexto,
                 numNiveles: tipoInfo.necesitaNiveles ? numNiveles : undefined,
+                documento: documentoClase.trim() || undefined,
             });
             setPromptGenerado(prompt);
         } catch (err) {
@@ -208,6 +242,47 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                                         <div className="w-24"><Input type="number" min={2} max={6} value={numNiveles} onChange={e => setNumNiveles(parseInt(e.target.value, 10) || 2)} /></div>
                                     </div>
                                 )}
+
+                                <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <p className="text-sm font-semibold text-slate-700">Contenido visto en clase (opcional)</p>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                accept=".docx,.pptx,.pdf"
+                                                className="hidden"
+                                                onChange={e => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) handleSubirDocumento(file);
+                                                    e.target.value = '';
+                                                }}
+                                            />
+                                            <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={subiendoDocumento}>
+                                                <ArrowUpTrayIcon className="w-4 h-4" />
+                                                {subiendoDocumento ? 'Extrayendo...' : 'Subir documento'}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mb-1.5">
+                                        Sin esto, la IA solo tiene la descripción abstracta de cada criterio -- con
+                                        el contenido real, las preguntas/ítems se ajustan a lo que de verdad se ha
+                                        trabajado en clase.
+                                    </p>
+                                    {avisoExtraccion && (
+                                        <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-1.5">
+                                            <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                            {avisoExtraccion}
+                                        </p>
+                                    )}
+                                    <Textarea
+                                        value={documentoClase}
+                                        onChange={e => setDocumentoClase(e.target.value)}
+                                        rows={5}
+                                        placeholder="...o pega aquí el texto de lo visto en clase (apuntes, resumen...)"
+                                        className="text-sm"
+                                    />
+                                </div>
 
                                 <p className="text-xs text-slate-500">
                                     Se generará a partir de {linkedCriteriaIds.length} criterio(s) de evaluación vinculado(s)

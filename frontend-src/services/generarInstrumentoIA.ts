@@ -6,6 +6,9 @@ export interface GenerarInstrumentoParams {
     toolType: string;
     contexto?: string;
     numNiveles?: number;
+    // Texto (pegado o extraído de un documento) de lo que se ha visto de
+    // verdad en clase -- opcional, ver nota en el backend.
+    documento?: string;
 }
 
 export interface GenerarInstrumentoResultado {
@@ -38,6 +41,7 @@ export async function generarInstrumentoConIA(params: GenerarInstrumentoParams):
             tool_type: params.toolType,
             contexto: params.contexto,
             num_niveles: params.numNiveles,
+            documento: params.documento,
         }),
     });
     if (!response.ok) throw new Error(await extraerDetalle(response));
@@ -75,6 +79,7 @@ export async function generarPromptInstrumento(params: GenerarInstrumentoParams)
             tool_type: params.toolType,
             contexto: params.contexto,
             num_niveles: params.numNiveles,
+            documento: params.documento,
         }),
     });
     if (!response.ok) throw new Error(await extraerDetalle(response));

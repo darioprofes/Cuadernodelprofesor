@@ -1057,6 +1057,7 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                                     courseId={courseId}
                                     linkedCriteriaIds={criteriosDelExamen(draftPendiente)}
                                     contexto={`Examen final${draftPendiente.finalExam?.formato ? `: ${draftPendiente.finalExam.formato}` : ''} de la SA "${draftPendiente.name}"`}
+                                    documentoClaseInicial={textoEntrada}
                                     onDraftReady={setInstrumentoDraft}
                                 />
                             </>

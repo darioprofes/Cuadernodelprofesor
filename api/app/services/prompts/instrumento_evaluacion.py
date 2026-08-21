@@ -57,11 +57,20 @@ _INSTRUCCIONES_TIPO = {
 }
 
 
-def construir_prompt(course_id, criterion_ids, tool_type, contexto=None, num_niveles=None):
+def construir_prompt(course_id, criterion_ids, tool_type, contexto=None, num_niveles=None, documento_clase=None):
     """Devuelve el texto del prompt (no hay paso de copiar/pegar -- se pasa
     directo a generar_texto(), pero se deja como función separada para
     poder inspeccionarlo/probarlo suelto igual que el resto de
-    generadores)."""
+    generadores).
+
+    `documento_clase` -- texto opcional (pegado o extraído de un
+    documento) con lo que se ha visto de verdad en clase. Sin esto, la IA
+    solo tenía la DESCRIPCIÓN de cada criterio (una frase curricular
+    abstracta) para inventar preguntas/ítems -- con un examen criterial en
+    particular, eso podía dar preguntas correctas en la forma pero ajenas
+    a lo que realmente se trabajó en el aula. Si se da, el instrumento
+    tiene que basarse en ese contenido concreto, no solo en la
+    descripción del criterio."""
 
     if tool_type not in _ETIQUETAS_TIPO:
         raise ValueError(f"Tipo de instrumento desconocido: {tool_type}")
@@ -88,6 +97,17 @@ def construir_prompt(course_id, criterion_ids, tool_type, contexto=None, num_niv
     instruccion_tipo = _INSTRUCCIONES_TIPO[tool_type].format(n=n) if necesita_niveles else _INSTRUCCIONES_TIPO[tool_type]
 
     seccion_contexto = f"\nLo que se va a evaluar con este instrumento: {contexto}\n" if contexto else ""
+
+    seccion_documento = (
+        f"\n<contenido_visto_en_clase>\n{documento_clase}\n</contenido_visto_en_clase>\n"
+        if documento_clase else ""
+    )
+    instruccion_documento = (
+        "\nBasa el instrumento en el contenido de <contenido_visto_en_clase> -- las preguntas/ítems "
+        "tienen que ser sobre lo que realmente se ha trabajado ahí, no una elaboración genérica de la "
+        "descripción de cada criterio."
+        if documento_clase else ""
+    )
 
     if tool_type in ("checklist", "criterial_exam"):
         formato = """{
@@ -120,7 +140,7 @@ def construir_prompt(course_id, criterion_ids, tool_type, contexto=None, num_niv
 
     prompt = f"""Eres un profesor de {curso.subject} de {curso.level} diseñando un instrumento de \
 evaluación de tipo {_ETIQUETAS_TIPO[tool_type]}.
-{seccion_contexto}
+{seccion_contexto}{seccion_documento}
 <criterios_de_evaluacion>
 Debe cubrir estos criterios de evaluación (usa SOLO estos códigos, ninguno más):
 {lista_criterios}
@@ -132,7 +152,7 @@ Debe cubrir estos criterios de evaluación (usa SOLO estos códigos, ninguno má
 Reparte los criterios dados entre {"las preguntas" if tool_type == "criterial_exam" else "los ítems"} de \
 forma equilibrada -- que cada criterio quede cubierto por al menos uno, sin forzar {"preguntas" if tool_type == "criterial_exam" else "ítems"} \
 que no aporten nada real. No inventes criterios fuera de la lista dada -- si lo haces, esos \
-códigos se descartarán al procesar la respuesta.
+códigos se descartarán al procesar la respuesta.{instruccion_documento}
 </tarea>
 
 <formato_de_salida>
@@ -158,13 +178,13 @@ def _extraer_json(texto):
     return texto.strip()
 
 
-def generar_instrumento(course_id, criterion_ids, tool_type, contexto=None, num_niveles=None):
+def generar_instrumento(course_id, criterion_ids, tool_type, contexto=None, num_niveles=None, documento_clase=None):
     """Llama al ia-server, valida la respuesta contra los criterios reales
     del curso y devuelve (instrumento, codigos_descartados). Lanza
     ValueError si el ia-server no responde. El resto de la validación es
     idéntica a la vía "IA online" -- ver procesar_respuesta()."""
 
-    prompt = construir_prompt(course_id, criterion_ids, tool_type, contexto, num_niveles)
+    prompt = construir_prompt(course_id, criterion_ids, tool_type, contexto, num_niveles, documento_clase)
 
     respuesta_texto = generar_texto(prompt)
 

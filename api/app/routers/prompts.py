@@ -208,6 +208,10 @@ class GenerarInstrumentoRequest(BaseModel):
     tool_type: str
     contexto: Optional[str] = None
     num_niveles: Optional[int] = None
+    # Texto (pegado o extraído con /prompts/extraer-documento) de lo que se
+    # ha visto de verdad en clase -- opcional, ver nota en
+    # instrumento_evaluacion.py::construir_prompt.
+    documento: Optional[str] = None
 
 
 # La generación real puede tardar cerca de un minuto (llamada al ia-server).
@@ -237,6 +241,7 @@ def _ejecutar_generacion_instrumento(job_id: str, datos: GenerarInstrumentoReque
     try:
         instrumento, codigos_descartados = prompt_instrumento.generar_instrumento(
             datos.course_id, datos.criterion_ids, datos.tool_type, datos.contexto, datos.num_niveles,
+            datos.documento,
         )
         resultado = {"estado": "listo", "instrumento": instrumento, "codigosDescartados": codigos_descartados}
     except ValueError as exc:
@@ -279,6 +284,7 @@ async def generar_prompt_instrumento_texto(datos: GenerarInstrumentoRequest):
     try:
         prompt = prompt_instrumento.construir_prompt(
             datos.course_id, datos.criterion_ids, datos.tool_type, datos.contexto, datos.num_niveles,
+            datos.documento,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
