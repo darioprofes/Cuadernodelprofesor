@@ -51,18 +51,20 @@ const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
     );
 };
 
-// Dos vías para lo mismo: IA local (llama directo al ia-server, sin
-// copiar/pegar -- los criterios de evaluación no son un dato personal que
-// proteger) o IA online (mismo prompt, pero para copiar y pegar en
-// cualquier IA online, por si la local va lenta o no está disponible --
-// mismo patrón ya usado en el generador de Situación de Aprendizaje). En
-// ambas, el resultado se entrega como borrador para revisar en el mismo
+// Tres vías para lo mismo. Groq es la que arranca por defecto -- rápida
+// (segundos) y gratuita/casi gratuita, con retención cero activada en el
+// panel de Groq. IA local (llama directo al ia-server, sin copiar/pegar)
+// queda como alternativa si Groq no está configurado o falla. IA online
+// (mismo prompt, pero para copiar y pegar en cualquier IA online -- mismo
+// patrón que el generador de Situación de Aprendizaje) es la de última
+// instancia, para cuando ni Groq ni el ia-server responden. En las tres,
+// el resultado se entrega como borrador para revisar en el mismo
 // formulario de edición de instrumentos que ya existe, nunca se guarda a
 // ciegas.
 const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
     isOpen, onClose, courseId, linkedCriteriaIds, contexto, documentoClaseInicial, onDraftReady,
 }) => {
-    const [via, setVia] = useState<Via>('local');
+    const [via, setVia] = useState<Via>('groq');
     const [tipo, setTipo] = useState<ToolType>('rubric');
     const [numNiveles, setNumNiveles] = useState(4);
     const [documentoClase, setDocumentoClase] = useState(documentoClaseInicial || '');
@@ -81,7 +83,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
     const sinCriterios = linkedCriteriaIds.length === 0;
 
     const reset = () => {
-        setVia('local');
+        setVia('groq');
         setTipo('rubric');
         setNumNiveles(4);
         setDocumentoClase(documentoClaseInicial || '');
@@ -219,13 +221,6 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                         <div className="flex gap-1.5">
                             <button
                                 type="button"
-                                onClick={() => { setVia('local'); setPromptGenerado(null); }}
-                                className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === 'local' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
-                            >
-                                IA local
-                            </button>
-                            <button
-                                type="button"
                                 onClick={() => { setVia('groq'); setPromptGenerado(null); }}
                                 className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === 'groq' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
                             >
@@ -233,10 +228,17 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                             </button>
                             <button
                                 type="button"
+                                onClick={() => { setVia('local'); setPromptGenerado(null); }}
+                                className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === 'local' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                            >
+                                IA local
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => { setVia('online'); setPromptGenerado(null); }}
                                 className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === 'online' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
                             >
-                                IA online (copiar/pegar)
+                                IA online (última opción)
                             </button>
                         </div>
 
