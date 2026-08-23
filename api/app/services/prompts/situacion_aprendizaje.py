@@ -745,10 +745,16 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
 
 PRESUPUESTO_TPM_GROQ = 6000
 _MARGEN_SEGURIDAD_TPM = 5500
-# sessionDetails + el resto del JSON -- no se conoce el tamaño real de la
-# salida hasta que la IA responde, así que se reserva un margen generoso
-# fijo en vez de intentar estimarlo sesión a sesión.
-_SALIDA_ESTIMADA_TOKENS = 3500
+# Tokens por sesión de sessionDetails -- calibrado contra una respuesta
+# real (2 sesiones sin producto/examen -> ~1.369 tokens, unos 685/sesión;
+# se redondea al alza para dejar margen). Una constante fija (probada
+# primero, 3.500) resultó demasiado pesimista -- rechazaba de más SA
+# pequeñas que en realidad sí cabían, confirmado probando la llamada real
+# sin la comprobación previa.
+_TOKENS_POR_SESION = 750
+_TOKENS_BASE_SALIDA = 400  # name, context, linkedBasicKnowledgeIds/linkedCriteriaIds
+_TOKENS_PRODUCTO = 300
+_TOKENS_EXAMEN = 800  # bloques + preguntas con puntos
 
 
 def estimar_tokens(texto):
@@ -758,6 +764,19 @@ def estimar_tokens(texto):
     de la capa gratuita."""
 
     return max(1, len(texto) // 4)
+
+
+def _estimar_salida(sesiones_fijo, sesiones_max, producto_incluido, examen_incluido):
+    """Nº de sesiones real si se fijó, el máximo del rango si se dio un
+    rango, o una suposición conservadora (6) si se deja decidir a la IA."""
+
+    num_sesiones = sesiones_fijo or sesiones_max or 6
+    salida = _TOKENS_BASE_SALIDA + num_sesiones * _TOKENS_POR_SESION
+    if producto_incluido:
+        salida += _TOKENS_PRODUCTO
+    if examen_incluido:
+        salida += _TOKENS_EXAMEN
+    return salida
 
 
 def _resumir_documento_groq(documento_texto):
@@ -783,22 +802,53 @@ def _resumir_documento_groq(documento_texto):
     return resumen
 
 
-def generar_situacion_aprendizaje_groq(course_id, documento_texto, modo, *args, **kwargs):
-    """Mismos argumentos que construir_prompt() (se reenvían tal cual, ver
-    su firma) -- arma el prompt, comprueba si cabe en Groq y, si no y hay
+def generar_situacion_aprendizaje_groq(
+    course_id, documento_texto, modo="documento",
+    sesiones_modo="ia", sesiones_fijo=None, sesiones_min=None, sesiones_max=None,
+    caracteristicas_grupo=None,
+    tipos_actividad=None, estructuras_cooperativas=None, actividades_obligatorias=None,
+    estructura_sesion="ia", estructura_sesion_detalle=None,
+    progresion_autonomia="ia",
+    atencion_diversidad="diferenciadas", atencion_diversidad_detalle=None,
+    class_id=None,
+    producto_incluido=True, producto_tipo=None,
+    examen_incluido=False, examen_formato=None,
+    duracion_sesion_min=55,
+    diagnostico_incluido=False, diagnostico_minutos=None,
+):
+    """Mismos argumentos que construir_prompt() (misma firma, se reenvían
+    tal cual) -- arma el prompt, comprueba si cabe en Groq y, si no y hay
     margen para intentarlo, resume el documento y reintenta. Devuelve
     (unidad, codigos_descartados, instrumento_examen, documento_resumido).
     Lanza ValueError si no hay forma de que quepa, o si Groq no responde."""
 
-    prompt, mapa = construir_prompt(course_id, documento_texto, modo, *args, **kwargs)
-    estimado = estimar_tokens(prompt) + _SALIDA_ESTIMADA_TOKENS
+    def _construir():
+        return construir_prompt(
+            course_id, documento_texto, modo,
+            sesiones_modo, sesiones_fijo, sesiones_min, sesiones_max,
+            caracteristicas_grupo,
+            tipos_actividad, estructuras_cooperativas, actividades_obligatorias,
+            estructura_sesion, estructura_sesion_detalle,
+            progresion_autonomia,
+            atencion_diversidad, atencion_diversidad_detalle,
+            class_id,
+            producto_incluido, producto_tipo,
+            examen_incluido, examen_formato,
+            duracion_sesion_min,
+            diagnostico_incluido, diagnostico_minutos,
+        )
+
+    salida_estimada = _estimar_salida(sesiones_fijo, sesiones_max, producto_incluido, examen_incluido)
+
+    prompt, mapa = _construir()
+    estimado = estimar_tokens(prompt) + salida_estimada
 
     documento_resumido = False
 
     if estimado > _MARGEN_SEGURIDAD_TPM and modo == "documento":
         documento_texto = _resumir_documento_groq(documento_texto)
-        prompt, mapa = construir_prompt(course_id, documento_texto, modo, *args, **kwargs)
-        estimado = estimar_tokens(prompt) + _SALIDA_ESTIMADA_TOKENS
+        prompt, mapa = _construir()
+        estimado = estimar_tokens(prompt) + salida_estimada
         documento_resumido = True
 
     if estimado > _MARGEN_SEGURIDAD_TPM:
