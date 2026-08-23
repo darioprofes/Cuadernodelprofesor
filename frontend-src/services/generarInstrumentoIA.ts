@@ -65,6 +65,26 @@ export async function generarInstrumentoConIA(params: GenerarInstrumentoParams):
     throw new Error('La generación está tardando demasiado. Inténtalo de nuevo más tarde.');
 }
 
+// Vía Groq -- rápida (segundos, no minuto) y gratuita/casi gratuita, con
+// retención cero activada en el panel de Groq. Petición síncrona normal,
+// sin el patrón job+polling que sí hace falta con el ia-server local.
+export async function generarInstrumentoConGroq(params: GenerarInstrumentoParams): Promise<GenerarInstrumentoResultado> {
+    const response = await fetch('/api/prompts/instrumento-evaluacion/generar-groq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            course_id: params.courseId,
+            criterion_ids: params.criterionIds,
+            tool_type: params.toolType,
+            contexto: params.contexto,
+            num_niveles: params.numNiveles,
+            documento: params.documento,
+        }),
+    });
+    if (!response.ok) throw new Error(await extraerDetalle(response));
+    return await response.json();
+}
+
 // Vía alternativa a la IA local -- por si va lenta o no está disponible:
 // mismo prompt de siempre, pero para copiar y pegar en cualquier IA
 // online (como ya hace el generador de Situación de Aprendizaje), en vez

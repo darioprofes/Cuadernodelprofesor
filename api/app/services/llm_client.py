@@ -21,6 +21,52 @@ import requests
 
 IASERVER_VISION_URL = os.environ.get("IASERVER_VISION_URL", "http://192.168.10.13:8081")
 
+# ==========================================================
+# Cliente de Groq (API remota, gratuita/casi gratuita, con retención cero
+# activada en el panel de Groq) -- tercera vía junto al ia-server local y
+# al copiar/pegar en una IA online, para cuando el ia-server va lento.
+# Mismo criterio de "nunca fatal" que el resto de este módulo: si no hay
+# clave configurada o Groq no responde, se devuelve None y quien llame cae
+# a las otras vías, nunca rompe la petición entera.
+# ==========================================================
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+
+def groq_disponible():
+    """A diferencia de esta_disponible() (ia-server local), no hace una
+    petición de comprobación -- Groq es un servicio remoto de pago por uso
+    con límite de peticiones/minuto, así que una comprobación de estado en
+    cada carga de página gastaría cuota sin necesidad. Basta con saber si
+    hay clave configurada."""
+
+    return bool(GROQ_API_KEY)
+
+
+def generar_texto_groq(prompt, max_tokens=3000):
+    """Igual que generar_texto() pero contra la API de Groq en vez del
+    ia-server local -- mismo formato de petición (compatible con OpenAI),
+    mismo contrato de devolver None si algo falla en vez de lanzar."""
+
+    if not GROQ_API_KEY:
+        return None
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+    }
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+
+    try:
+        respuesta = requests.post(GROQ_URL, json=payload, headers=headers, timeout=30)
+        respuesta.raise_for_status()
+        return respuesta.json()["choices"][0]["message"]["content"].strip()
+    except (requests.RequestException, KeyError, IndexError, ValueError):
+        return None
+
 _INSTRUCCION_TRANSCRIPCION = (
     "Transcribe fielmente todo el texto legible de esta imagen, tal cual aparece, "
     "sin resumir ni interpretar ni traducir. Si hay una tabla, represéntala en "

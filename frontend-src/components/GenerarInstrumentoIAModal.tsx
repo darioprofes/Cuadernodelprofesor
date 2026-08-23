@@ -7,7 +7,8 @@ import Input from './Input';
 import Textarea from './Textarea';
 import { ArrowUpTrayIcon, ClipboardDocumentIcon, ExclamationTriangleIcon } from './Icons';
 import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
-import { generarInstrumentoConIA, generarPromptInstrumento, validarRespuestaInstrumento } from '../services/generarInstrumentoIA';
+import { useGroqDisponible } from '../hooks/useGroqDisponible';
+import { generarInstrumentoConGroq, generarInstrumentoConIA, generarPromptInstrumento, validarRespuestaInstrumento } from '../services/generarInstrumentoIA';
 
 interface GenerarInstrumentoIAModalProps {
     isOpen: boolean;
@@ -26,7 +27,7 @@ interface GenerarInstrumentoIAModalProps {
 }
 
 type ToolType = 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam';
-type Via = 'local' | 'online';
+type Via = 'local' | 'groq' | 'online';
 
 const TIPOS: { value: ToolType; label: string; necesitaNiveles: boolean }[] = [
     { value: 'rubric', label: 'Rúbrica', necesitaNiveles: true },
@@ -73,6 +74,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
     const [respuestaPegada, setRespuestaPegada] = useState('');
     const [procesandoRespuesta, setProcesandoRespuesta] = useState(false);
     const iaLocalDisponible = useIaLocalDisponible();
+    const groqDisponible = useGroqDisponible();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const tipoInfo = TIPOS.find(t => t.value === tipo)!;
@@ -149,6 +151,26 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
         }
     };
 
+    const handleGenerarGroq = async () => {
+        setGenerando(true);
+        setError(null);
+        try {
+            const data = await generarInstrumentoConGroq({
+                courseId,
+                criterionIds: linkedCriteriaIds,
+                toolType: tipo,
+                contexto,
+                numNiveles: tipoInfo.necesitaNiveles ? numNiveles : undefined,
+                documento: documentoClase.trim() || undefined,
+            });
+            entregarResultado(data);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+        } finally {
+            setGenerando(false);
+        }
+    };
+
     const handleGenerarPromptOnline = async () => {
         setGenerando(true);
         setError(null);
@@ -182,7 +204,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
         }
     };
 
-    const bloqueado = sinCriterios || (via === 'local' && !iaLocalDisponible);
+    const bloqueado = sinCriterios || (via === 'local' && !iaLocalDisponible) || (via === 'groq' && !groqDisponible);
 
     return (
         <Modal isOpen={isOpen} onClose={handleClose} title="Generar instrumento con IA" size="lg">
@@ -204,6 +226,13 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                             </button>
                             <button
                                 type="button"
+                                onClick={() => { setVia('groq'); setPromptGenerado(null); }}
+                                className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === 'groq' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                            >
+                                Groq (rápido)
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => { setVia('online'); setPromptGenerado(null); }}
                                 className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === 'online' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
                             >
@@ -213,8 +242,14 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
 
                         {via === 'local' && !iaLocalDisponible && (
                             <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                El servidor de IA local no está disponible ahora mismo -- usa la IA online o
+                                El servidor de IA local no está disponible ahora mismo -- usa Groq, la IA online, o
                                 inténtalo de nuevo en unos minutos.
+                            </p>
+                        )}
+
+                        {via === 'groq' && !groqDisponible && (
+                            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                Groq no está configurado en el servidor todavía -- usa la IA local o la IA online.
                             </p>
                         )}
 
@@ -288,6 +323,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                                     Se generará a partir de {linkedCriteriaIds.length} criterio(s) de evaluación vinculado(s)
                                     a este elemento. El resultado se abre para revisar y editar antes de guardar.
                                     {via === 'local' && ' Puede tardar cerca de un minuto.'}
+                                    {via === 'groq' && ' Suele tardar solo unos segundos.'}
                                 </p>
                             </>
                         )}
@@ -325,6 +361,11 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                     {via === 'local' && (
                         <Button type="button" onClick={handleGenerarLocal} disabled={bloqueado || generando}>
                             {generando ? 'Generando... (puede tardar un poco)' : 'Generar'}
+                        </Button>
+                    )}
+                    {via === 'groq' && (
+                        <Button type="button" onClick={handleGenerarGroq} disabled={bloqueado || generando}>
+                            {generando ? 'Generando...' : 'Generar'}
                         </Button>
                     )}
                     {via === 'online' && promptGenerado === null && (

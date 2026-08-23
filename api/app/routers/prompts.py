@@ -21,6 +21,7 @@ from services.extraccion_docx import extraer_markdown_docx
 from services.extraccion_pdf import extraer_texto_pdf
 from services.extraccion_pptx import extraer_texto_pptx
 from services.llm_client import esta_disponible as ia_local_esta_disponible
+from services.llm_client import groq_disponible
 from services.prompts import instrumento_evaluacion as prompt_instrumento
 from services.prompts.situacion_aprendizaje import construir_prompt, procesar_respuesta
 
@@ -30,6 +31,11 @@ router = APIRouter(prefix="/prompts", tags=["Generadores de prompts"], dependenc
 @router.get("/ia-local/estado")
 async def estado_ia_local():
     return {"disponible": ia_local_esta_disponible()}
+
+
+@router.get("/groq/estado")
+async def estado_groq():
+    return {"disponible": groq_disponible()}
 
 # Por debajo de esto, caracteres de media por página/diapositiva, se avisa de
 # que puede faltar contenido (probable diapositiva/página hecha de imágenes,
@@ -272,6 +278,21 @@ async def estado_prompt_instrumento(job_id: str):
     if trabajo is None:
         raise HTTPException(status_code=404, detail="Trabajo no encontrado (o ya expiró).")
     return trabajo
+
+
+# A diferencia del ia-server local (lento, necesita el patrón job+polling de
+# arriba), Groq responde en segundos -- una petición síncrona normal no
+# tiene riesgo de que ningún proxy la corte por tardar demasiado.
+@router.post("/instrumento-evaluacion/generar-groq")
+async def generar_prompt_instrumento_groq(datos: GenerarInstrumentoRequest):
+    try:
+        instrumento, codigos_descartados = prompt_instrumento.generar_instrumento_groq(
+            datos.course_id, datos.criterion_ids, datos.tool_type, datos.contexto, datos.num_niveles,
+            datos.documento,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"instrumento": instrumento, "codigosDescartados": codigos_descartados}
 
 
 # Vía alternativa a la IA local -- por si va lenta o no está disponible, el

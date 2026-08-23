@@ -20,7 +20,7 @@ import re
 
 from services.courses import get_course
 from services.criteria import list_criteria
-from services.llm_client import generar_texto
+from services.llm_client import generar_texto, generar_texto_groq
 
 _ETIQUETAS_TIPO = {
     "checklist": "Lista de cotejo",
@@ -192,6 +192,25 @@ def generar_instrumento(course_id, criterion_ids, tool_type, contexto=None, num_
         raise ValueError(
             "El servidor de IA local no está disponible ahora mismo. Inténtalo de nuevo en unos "
             "minutos, o usa la opción de IA online."
+        )
+
+    return procesar_respuesta(course_id, tool_type, respuesta_texto)
+
+
+def generar_instrumento_groq(course_id, criterion_ids, tool_type, contexto=None, num_niveles=None, documento_clase=None):
+    """Igual que generar_instrumento() pero contra la API de Groq -- rápida
+    de sobra (unos segundos) para no necesitar el patrón job+polling que sí
+    hace falta con el ia-server local (ver routers/prompts.py). Lanza
+    ValueError si no hay clave configurada o Groq no responde."""
+
+    prompt = construir_prompt(course_id, criterion_ids, tool_type, contexto, num_niveles, documento_clase)
+
+    respuesta_texto = generar_texto_groq(prompt)
+
+    if respuesta_texto is None:
+        raise ValueError(
+            "Groq no está disponible ahora mismo (o falta configurar la clave). Inténtalo de nuevo, "
+            "o usa la IA local o la IA online."
         )
 
     return procesar_respuesta(course_id, tool_type, respuesta_texto)
