@@ -357,30 +357,7 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
             const response = await fetch('/api/prompts/unidad-programacion/generar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    course_id: courseId, documento: textoEntrada, modo,
-                    sesiones_modo: sesionesModo,
-                    sesiones_fijo: sesionesModo === 'fijo' ? sesionesFijo : undefined,
-                    sesiones_min: sesionesModo === 'rango' ? sesionesMin : undefined,
-                    sesiones_max: sesionesModo === 'rango' ? sesionesMax : undefined,
-                    caracteristicas_grupo: caracteristicasGrupo,
-                    tipos_actividad: tiposActividad,
-                    estructuras_cooperativas: tiposActividad.includes('Trabajo cooperativo/grupal') ? estructurasCooperativas : [],
-                    actividades_obligatorias: actividadesObligatorias.map(a => ({ texto: a.texto, sesion: a.sesion })),
-                    estructura_sesion: estructuraSesion,
-                    estructura_sesion_detalle: (estructuraSesion === 'rutina_propia' || estructuraSesion === 'otro') ? estructuraSesionDetalle : undefined,
-                    progresion_autonomia: progresionAutonomia,
-                    atencion_diversidad: atencionDiversidad,
-                    atencion_diversidad_detalle: atencionDiversidad === 'otro' ? atencionDiversidadDetalle : undefined,
-                    class_id: classId || undefined,
-                    producto_incluido: productoIncluido,
-                    producto_tipo: productoIncluido ? productoTipoResuelto : undefined,
-                    examen_incluido: examenIncluido,
-                    examen_formato: examenIncluido ? examenFormatoResuelto : undefined,
-                    duracion_sesion_min: duracionSesionMin,
-                    diagnostico_incluido: diagnosticoIncluido,
-                    diagnostico_minutos: diagnosticoIncluido ? diagnosticoMinutos : undefined,
-                }),
+                body: JSON.stringify(payloadGeneracion()),
             });
             if (!response.ok) {
                 const body = await response.json().catch(() => ({}));
@@ -393,6 +370,67 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
             setErrorPaso1(err instanceof Error ? err.message : String(err));
         } finally {
             setGenerando(false);
+        }
+    };
+
+    // Compartido por la vía de copiar/pegar (handleProcesarRespuesta) y por
+    // Groq (handleGenerarConGroq) -- ambas acaban con la misma forma de
+    // respuesta ({unidad, codigosDescartados, instrumentoExamen}), solo
+    // cambia cómo se consigue.
+    const entregarUnidadGenerada = (data: {
+        unidad: {
+            name: string;
+            context: string;
+            sessions: number;
+            sessionDetails: SessionDetail[];
+            finalProduct: FinalProduct;
+            finalExam: FinalExam;
+            linkedBasicKnowledgeIds: string[];
+            linkedCriteriaIds: string[];
+            linkedSpecificCompetenceIds: string[];
+        };
+        codigosDescartados: string[];
+        instrumentoExamen: Omit<EvaluationTool, 'id'> | null;
+    }) => {
+        if (data.codigosDescartados.length > 0) {
+            // El profesor revisa el borrador de todas formas en el
+            // formulario de siempre -- este aviso es solo para que sepa
+            // POR QUÉ algún criterio/saber que esperaba no aparece
+            // marcado, no bloquea nada.
+            window.alert(
+                `La IA usó ${data.codigosDescartados.length} código(s) que no existen en este curso ` +
+                `y se han descartado: ${data.codigosDescartados.join(', ')}. Revisa la unidad antes de guardar.`
+            );
+        }
+
+        const draft: ProgrammingUnit = {
+            id: 'new',
+            courseId,
+            name: data.unidad.name,
+            sessions: data.unidad.sessions,
+            context: data.unidad.context,
+            sessionDetails: data.unidad.sessionDetails,
+            linkedCriteriaIds: data.unidad.linkedCriteriaIds,
+            linkedBasicKnowledgeIds: data.unidad.linkedBasicKnowledgeIds,
+            linkedSpecificCompetenceIds: data.unidad.linkedSpecificCompetenceIds,
+            finalProduct: data.unidad.finalProduct,
+            finalExam: data.unidad.finalExam,
+            startDate: '',
+        };
+
+        // Si el examen final tiene criterios, se pasa por el Paso 7 --
+        // normalmente ya con el instrumento listo para revisar (ver
+        // arriba), o si no, con la opción de generarlo aparte. Si no hay
+        // examen con criterios, se entrega directo como hasta ahora.
+        if (draft.finalExam?.incluido && criteriosDelExamen(draft).length > 0) {
+            setDraftPendiente(draft);
+            if (data.instrumentoExamen) {
+                setInstrumentoDraft({ ...data.instrumentoExamen, id: 'draft' } as EvaluationTool);
+            }
+            setPaso(7);
+        } else {
+            handleClose();
+            onDraftReady(draft);
         }
     };
 
@@ -410,70 +448,76 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                 const body = await response.json().catch(() => ({}));
                 throw new Error(body.detail || `Error HTTP ${response.status}`);
             }
-            const data: {
-                unidad: {
-                    name: string;
-                    context: string;
-                    sessions: number;
-                    sessionDetails: SessionDetail[];
-                    finalProduct: FinalProduct;
-                    finalExam: FinalExam;
-                    linkedBasicKnowledgeIds: string[];
-                    linkedCriteriaIds: string[];
-                    linkedSpecificCompetenceIds: string[];
-                };
-                codigosDescartados: string[];
-                // El propio prompt ya pide el desglose de preguntas/puntos
-                // del examen (ver instrucción en situacion_aprendizaje.py) --
-                // si la IA lo dio, llega aquí ya listo para revisar, sin
-                // hacer falta una generación aparte en el Paso 7.
-                instrumentoExamen: Omit<EvaluationTool, 'id'> | null;
-            } = await response.json();
-
-            if (data.codigosDescartados.length > 0) {
-                // El profesor revisa el borrador de todas formas en el
-                // formulario de siempre -- este aviso es solo para que sepa
-                // POR QUÉ algún criterio/saber que esperaba no aparece
-                // marcado, no bloquea nada.
-                window.alert(
-                    `La IA usó ${data.codigosDescartados.length} código(s) que no existen en este curso ` +
-                    `y se han descartado: ${data.codigosDescartados.join(', ')}. Revisa la unidad antes de guardar.`
-                );
-            }
-
-            const draft: ProgrammingUnit = {
-                id: 'new',
-                courseId,
-                name: data.unidad.name,
-                sessions: data.unidad.sessions,
-                context: data.unidad.context,
-                sessionDetails: data.unidad.sessionDetails,
-                linkedCriteriaIds: data.unidad.linkedCriteriaIds,
-                linkedBasicKnowledgeIds: data.unidad.linkedBasicKnowledgeIds,
-                linkedSpecificCompetenceIds: data.unidad.linkedSpecificCompetenceIds,
-                finalProduct: data.unidad.finalProduct,
-                finalExam: data.unidad.finalExam,
-                startDate: '',
-            };
-
-            // Si el examen final tiene criterios, se pasa por el Paso 7 --
-            // normalmente ya con el instrumento listo para revisar (ver
-            // arriba), o si no, con la opción de generarlo aparte. Si no hay
-            // examen con criterios, se entrega directo como hasta ahora.
-            if (draft.finalExam?.incluido && criteriosDelExamen(draft).length > 0) {
-                setDraftPendiente(draft);
-                if (data.instrumentoExamen) {
-                    setInstrumentoDraft({ ...data.instrumentoExamen, id: 'draft' } as EvaluationTool);
-                }
-                setPaso(7);
-            } else {
-                handleClose();
-                onDraftReady(draft);
-            }
+            entregarUnidadGenerada(await response.json());
         } catch (err) {
             setErrorPaso3(err instanceof Error ? err.message : String(err));
         } finally {
             setProcesando(false);
+        }
+    };
+
+    // Payload compartido por /generar (prompt para copiar/pegar) y
+    // /generar-groq (llamada directa) -- mismos campos, solo cambia el
+    // endpoint y qué se hace con la respuesta.
+    const payloadGeneracion = () => ({
+        course_id: courseId, documento: textoEntrada, modo,
+        sesiones_modo: sesionesModo,
+        sesiones_fijo: sesionesModo === 'fijo' ? sesionesFijo : undefined,
+        sesiones_min: sesionesModo === 'rango' ? sesionesMin : undefined,
+        sesiones_max: sesionesModo === 'rango' ? sesionesMax : undefined,
+        caracteristicas_grupo: caracteristicasGrupo,
+        tipos_actividad: tiposActividad,
+        estructuras_cooperativas: tiposActividad.includes('Trabajo cooperativo/grupal') ? estructurasCooperativas : [],
+        actividades_obligatorias: actividadesObligatorias.map(a => ({ texto: a.texto, sesion: a.sesion })),
+        estructura_sesion: estructuraSesion,
+        estructura_sesion_detalle: (estructuraSesion === 'rutina_propia' || estructuraSesion === 'otro') ? estructuraSesionDetalle : undefined,
+        progresion_autonomia: progresionAutonomia,
+        atencion_diversidad: atencionDiversidad,
+        atencion_diversidad_detalle: atencionDiversidad === 'otro' ? atencionDiversidadDetalle : undefined,
+        class_id: classId || undefined,
+        producto_incluido: productoIncluido,
+        producto_tipo: productoIncluido ? productoTipoResuelto : undefined,
+        examen_incluido: examenIncluido,
+        examen_formato: examenIncluido ? examenFormatoResuelto : undefined,
+        duracion_sesion_min: duracionSesionMin,
+        diagnostico_incluido: diagnosticoIncluido,
+        diagnostico_minutos: diagnosticoIncluido ? diagnosticoMinutos : undefined,
+    });
+
+    // Vía rápida con Groq -- solo funciona para SA pequeñas (el currículo
+    // completo del curso ya ocupa buena parte del presupuesto gratuito de
+    // Groq, antes incluso de contar sesiones/producto/examen -- ver nota en
+    // situacion_aprendizaje.py). Si no cabe, el backend lo dice con
+    // claridad y aquí se deja tal cual como error -- copiar/pegar sigue
+    // siendo la vía por defecto (botón principal) precisamente por esto.
+    const [probandoGroq, setProbandoGroq] = useState(false);
+    const [errorGroq, setErrorGroq] = useState<string | null>(null);
+
+    const handleGenerarConGroq = async () => {
+        setProbandoGroq(true);
+        setErrorGroq(null);
+        try {
+            const response = await fetch('/api/prompts/unidad-programacion/generar-groq', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payloadGeneracion()),
+            });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.detail || `Error HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            if (data.documentoResumido) {
+                window.alert(
+                    'El documento era demasiado largo para Groq y se ha resumido automáticamente antes de ' +
+                    'generar -- revisa que la unidad no se haya dejado nada importante fuera.'
+                );
+            }
+            entregarUnidadGenerada(data);
+        } catch (err) {
+            setErrorGroq(err instanceof Error ? err.message : String(err));
+        } finally {
+            setProbandoGroq(false);
         }
     };
 
@@ -982,11 +1026,22 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                                 {errorPaso1}
                             </p>
                         )}
+                        {errorGroq && (
+                            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-start gap-1.5">
+                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                {errorGroq} Sigue con "Generar prompt" para copiar/pegar en su lugar.
+                            </p>
+                        )}
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
-                            <Button type="button" onClick={handleGenerarPrompt} disabled={generando}>
-                                {generando ? 'Generando...' : 'Generar prompt'}
-                            </Button>
+                            <div className="flex gap-2">
+                                <Button type="button" variant="secondary" onClick={handleGenerarConGroq} disabled={probandoGroq || generando}>
+                                    {probandoGroq ? 'Probando con Groq...' : 'Probar con Groq (rápido, solo SA pequeñas)'}
+                                </Button>
+                                <Button type="button" onClick={handleGenerarPrompt} disabled={generando || probandoGroq}>
+                                    {generando ? 'Generando...' : 'Generar prompt'}
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 )}
