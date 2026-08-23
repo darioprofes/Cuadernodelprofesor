@@ -34,6 +34,7 @@ from services.basic_knowledge import list_basic_knowledge
 from services.courses import get_course
 from services.criteria import list_criteria
 from services.enrollments import list_enrollments
+from services.llm_client import generar_texto_groq
 from services.preferences import get_preferences
 from services.programming_units import list_programming_units
 
@@ -720,3 +721,100 @@ def procesar_respuesta(course_id, respuesta_texto, mapa):
     }
 
     return unidad, codigos_descartados, instrumento_examen
+
+
+# ==========================================================
+# Generación automática con Groq
+# ==========================================================
+#
+# A diferencia del resto de este módulo (que arma un prompt para copiar y
+# pegar en una IA online), esto llama DIRECTAMENTE a Groq -- mismo criterio
+# ya aplicado en instrumento_evaluacion.py. La diferencia real con
+# Instrumentos es el tamaño: una SA mete el currículo completo Y el
+# documento de teoría entero en un único prompt, que fácilmente supera el
+# límite de la capa gratuita de Groq (6.000 tokens/minuto, compartidos
+# entre entrada y salida de TODAS las llamadas de ese minuto, no por
+# llamada). Antes de generar, se estima el tamaño; si no cabe y el motivo
+# es un documento largo (Modo A), se resume el documento con la propia
+# Groq y se reintenta con la versión corta -- sin trocear la generación en
+# varias llamadas (eso exigiría fusionar JSON parcial de varias respuestas
+# manteniendo coherencia entre ellas, un riesgo real que no compensa para
+# el caso raro de una SA enorme). Si aun así no cabe, se avisa con
+# claridad en vez de intentarlo a ciegas -- para esos casos sigue estando
+# la IA local (sin límite de tamaño, solo más lenta) o la IA online.
+
+PRESUPUESTO_TPM_GROQ = 6000
+_MARGEN_SEGURIDAD_TPM = 5500
+# sessionDetails + el resto del JSON -- no se conoce el tamaño real de la
+# salida hasta que la IA responde, así que se reserva un margen generoso
+# fijo en vez de intentar estimarlo sesión a sesión.
+_SALIDA_ESTIMADA_TOKENS = 3500
+
+
+def estimar_tokens(texto):
+    """Heurística simple (caracteres/4) -- Groq no expone aquí un
+    tokenizador propio fácil de usar, y no hace falta más precisión que la
+    necesaria para decidir con margen si un prompt cabe en el presupuesto
+    de la capa gratuita."""
+
+    return max(1, len(texto) // 4)
+
+
+def _resumir_documento_groq(documento_texto):
+    """Resume el documento de teoría con la propia Groq -- solo se llama
+    cuando el prompt completo no cabe en el presupuesto gratuito. Pide
+    conservar TODOS los temas/apartados (ni uno menos), solo comprimidos,
+    para no perder cobertura curricular real por el camino."""
+
+    prompt_resumen = (
+        "Resume el siguiente documento de teoría de forma MUY compacta pero fiel: conserva TODOS "
+        "los temas o apartados que trata (ni uno menos), reduciendo cada uno a sus ideas clave en "
+        "una o dos líneas. No añadas nada que no esté ya en el original -- el resultado se usará "
+        "para diseñar una unidad didáctica real, tiene que seguir sirviendo como referencia fiel "
+        "del contenido, no quedarse en una frase genérica.\n\n"
+        f"<documento>\n{documento_texto}\n</documento>"
+    )
+
+    resumen = generar_texto_groq(prompt_resumen, max_tokens=1500)
+
+    if resumen is None:
+        raise ValueError("Groq no está disponible ahora mismo para resumir el documento.")
+
+    return resumen
+
+
+def generar_situacion_aprendizaje_groq(course_id, documento_texto, modo, *args, **kwargs):
+    """Mismos argumentos que construir_prompt() (se reenvían tal cual, ver
+    su firma) -- arma el prompt, comprueba si cabe en Groq y, si no y hay
+    margen para intentarlo, resume el documento y reintenta. Devuelve
+    (unidad, codigos_descartados, instrumento_examen, documento_resumido).
+    Lanza ValueError si no hay forma de que quepa, o si Groq no responde."""
+
+    prompt, mapa = construir_prompt(course_id, documento_texto, modo, *args, **kwargs)
+    estimado = estimar_tokens(prompt) + _SALIDA_ESTIMADA_TOKENS
+
+    documento_resumido = False
+
+    if estimado > _MARGEN_SEGURIDAD_TPM and modo == "documento":
+        documento_texto = _resumir_documento_groq(documento_texto)
+        prompt, mapa = construir_prompt(course_id, documento_texto, modo, *args, **kwargs)
+        estimado = estimar_tokens(prompt) + _SALIDA_ESTIMADA_TOKENS
+        documento_resumido = True
+
+    if estimado > _MARGEN_SEGURIDAD_TPM:
+        raise ValueError(
+            f"Esta situación de aprendizaje es demasiado grande para Groq en el nivel gratuito "
+            f"(~{estimado} tokens estimados, el límite es {PRESUPUESTO_TPM_GROQ}/minuto) -- usa la "
+            "IA local o la IA online (copiar/pegar) para esta."
+        )
+
+    respuesta_texto = generar_texto_groq(prompt, max_tokens=4000)
+
+    if respuesta_texto is None:
+        raise ValueError(
+            "Groq no está disponible ahora mismo. Inténtalo de nuevo, o usa la IA local o la IA online."
+        )
+
+    unidad, codigos_descartados, instrumento_examen = procesar_respuesta(course_id, respuesta_texto, mapa)
+
+    return unidad, codigos_descartados, instrumento_examen, documento_resumido

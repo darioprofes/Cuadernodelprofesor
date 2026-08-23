@@ -23,7 +23,7 @@ from services.extraccion_pptx import extraer_texto_pptx
 from services.llm_client import esta_disponible as ia_local_esta_disponible
 from services.llm_client import groq_disponible
 from services.prompts import instrumento_evaluacion as prompt_instrumento
-from services.prompts.situacion_aprendizaje import construir_prompt, procesar_respuesta
+from services.prompts.situacion_aprendizaje import construir_prompt, generar_situacion_aprendizaje_groq, procesar_respuesta
 
 router = APIRouter(prefix="/prompts", tags=["Generadores de prompts"], dependencies=[Depends(require_auth)])
 
@@ -189,6 +189,40 @@ async def generar_prompt_unidad(datos: GenerarUnidadRequest):
     # mantiene en la respuesta por si esta decisión se revisa más adelante,
     # no porque se use ahora mismo.
     return {"prompt": prompt, "mapa": mapa}
+
+
+# Genera la SA automáticamente con Groq en vez de copiar/pegar -- rápido
+# (unos segundos, incluso con el resumen previo si hace falta) así que,
+# igual que el resto de endpoints de Groq, no necesita el patrón
+# job+polling que sí hace falta con el ia-server local.
+@router.post("/unidad-programacion/generar-groq")
+async def generar_unidad_groq(datos: GenerarUnidadRequest):
+
+    try:
+        unidad, codigos_descartados, instrumento_examen, documento_resumido = generar_situacion_aprendizaje_groq(
+            datos.course_id, datos.documento, datos.modo,
+            datos.sesiones_modo, datos.sesiones_fijo, datos.sesiones_min, datos.sesiones_max,
+            datos.caracteristicas_grupo,
+            datos.tipos_actividad, datos.estructuras_cooperativas,
+            [a.model_dump() for a in datos.actividades_obligatorias],
+            datos.estructura_sesion, datos.estructura_sesion_detalle,
+            datos.progresion_autonomia,
+            datos.atencion_diversidad, datos.atencion_diversidad_detalle,
+            datos.class_id,
+            datos.producto_incluido, datos.producto_tipo,
+            datos.examen_incluido, datos.examen_formato,
+            datos.duracion_sesion_min,
+            datos.diagnostico_incluido, datos.diagnostico_minutos,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {
+        "unidad": unidad,
+        "codigosDescartados": codigos_descartados,
+        "instrumentoExamen": instrumento_examen,
+        "documentoResumido": documento_resumido,
+    }
 
 
 class ValidarUnidadRequest(BaseModel):
