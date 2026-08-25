@@ -447,5 +447,6 @@ export type View =
   | 'descriptors'
   | 'curriculum'
   | 'planner'
+  | 'evaluation-tools'
   | 'ai-tools';
 

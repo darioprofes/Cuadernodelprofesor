@@ -46,12 +46,16 @@ const DescriptorAchievement = React.lazy(() => import('./components/DescriptorAc
 // Vista de Materia (Fase 8) — antes solo se cargaban dentro de Ajustes.
 const CurriculumManager = React.lazy(() => import('./components/CurriculumManager'));
 const ProgrammingManager = React.lazy(() => import('./components/ProgrammingManager'));
+// Acceso directo desde el Sidebar (antes solo dentro de Ajustes), mismo
+// criterio que Planificación SA arriba -- se usa a diario al calificar, no
+// solo al preparar la programación.
+const EvaluationToolManager = React.lazy(() => import('./components/EvaluationToolManager'));
 // Herramientas IA depende del backend Python (spaCy) -- solo se enlaza desde
 // el Sidebar en web (ver Sidebar.tsx), pero se carga bajo demanda igual que
 // el resto de vistas poco visitadas.
 const AiToolsView = React.lazy(() => import('./components/AiToolsView'));
 import ClassJournal from './components/ClassJournal';
-import { Cog8ToothIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon } from './components/Icons';
+import { Cog8ToothIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon, BeakerIcon } from './components/Icons';
 import PageHeader from './components/PageHeader';
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
 import ExportModal from './components/ExportModal';
@@ -715,6 +719,30 @@ const App = () => {
                 setActiveClassId={setActiveClassId}
                 onOpenAddTask={() => setIsFavoritoAssignmentOpen(true)}
             />;
+        }
+
+        if (activeView === 'evaluation-tools') {
+            // No depende de ninguna clase/materia activa (a diferencia de
+            // curriculum/planner en MATERIA_VIEWS) -- EvaluationToolManager
+            // ya lista los instrumentos de TODOS los cursos por su cuenta,
+            // igual que dentro de Ajustes.
+            return (
+                <>
+                    <PageHeader title="Instrumentos de Evaluación" subtitle="Rúbricas, escalas de valoración, listas de cotejo y exámenes criteriales reutilizables en tus tareas." accent="green" icon={<BeakerIcon className="w-6 h-6" />} />
+                    <div className="mt-6">
+                        <React.Suspense fallback={<ViewLoadingFallback />}>
+                            <EvaluationToolManager
+                                evaluationTools={evaluationTools}
+                                onCreate={handleCreateEvaluationTool}
+                                onUpdate={handleUpdateEvaluationTool}
+                                onDelete={handleDeleteEvaluationTool}
+                                criteria={allCriteria}
+                                courses={curriculumCourses}
+                            />
+                        </React.Suspense>
+                    </div>
+                </>
+            );
         }
 
         if (activeView === 'ai-tools') {

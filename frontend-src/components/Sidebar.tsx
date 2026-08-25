@@ -4,7 +4,7 @@ import type { View } from '../types';
 import {
     HomeIcon, ClockIcon, CalendarDaysIcon, BookOpenIcon, ClipboardDocumentIcon,
     UsersIcon, ClipboardDocumentCheckIcon, ChartBarIcon, SparklesIcon,
-    StarIcon, ChevronRightIcon, Bars3Icon, XMarkIcon, ListBulletIcon,
+    StarIcon, ChevronRightIcon, Bars3Icon, XMarkIcon, ListBulletIcon, BeakerIcon,
 } from './Icons';
 import Logo from './Logo';
 import { PALETTE } from '../theme/palette';
@@ -43,6 +43,11 @@ const NAV_SECTIONS: NavSection[] = [
             // no solo al principio, así que merece acceso directo (petición
             // explícita del usuario).
             { view: 'planner', label: 'Planificación SA', icon: ListBulletIcon },
+            // Mismo criterio que "Planificación SA" -- se usan durante todo
+            // el curso al calificar, no solo al preparar la programación, así
+            // que también merece acceso directo (sigue disponible en Ajustes
+            // también, igual que Planificación SA).
+            { view: 'evaluation-tools', label: 'Instrumentos Evaluación', icon: BeakerIcon },
         ],
     },
     {
