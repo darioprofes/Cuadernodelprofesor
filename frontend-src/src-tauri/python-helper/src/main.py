@@ -38,8 +38,23 @@ def cmd_importar_horario(args):
     return {"filas": filas, "errores": errores}
 
 
+def cmd_educastur_sincronizar(args):
+    """educastur-sincronizar -- lee por stdin un JSON con credenciales +
+    las faltas ya resueltas por Rust (ver educastur_orchestrator.py para
+    el contrato exacto). NO toca ninguna base de datos -- Rust es quien
+    consulta qué está pendiente antes de llamar, y quien escribe los
+    resultados después."""
+
+    from educastur_orchestrator import sincronizar
+
+    datos = json.loads(sys.stdin.buffer.read())
+
+    return sincronizar(datos)
+
+
 COMANDOS = {
     "importar-horario": cmd_importar_horario,
+    "educastur-sincronizar": cmd_educastur_sincronizar,
 }
 
 

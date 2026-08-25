@@ -4,7 +4,7 @@ use serde_json::Value;
 use crate::error::ApiError;
 use crate::services::{
     absences, academic_years, agenda_notes, assignments, basic_knowledge, categories, classes,
-    courses, evaluation_criteria, evaluation_tools, enrollments, grades, journal_entries,
+    courses, educastur, evaluation_criteria, evaluation_tools, enrollments, grades, journal_entries,
     key_competences, meetings, preferences, programming_units, shortcuts, specific_competences,
     students, tasks,
 };
@@ -145,8 +145,17 @@ pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>
         ("PATCH", ["enrollments", id]) => enrollments::update(conn, id, require_body(body)?),
         ("DELETE", ["enrollments", id]) => enrollments::delete(conn, id),
 
-        // ---- Faltas de asistencia (migración 0002) — sin sincronización
-        // con Educastur en escritorio, ver comentario de esa migración.
+        // Activación + aviso de responsabilidad de la sincronización con
+        // Educastur (migración 0005) -- lectura/escritura simple, sí puede
+        // ir por este despachador genérico (a diferencia de la propia
+        // sincronización, que necesita AppHandle, ver más abajo).
+        ("GET", ["educastur", "settings"]) => educastur::get_settings(conn),
+        ("PUT", ["educastur", "settings"]) => educastur::save_settings(conn, require_body(body)?),
+
+        // ---- Faltas de asistencia (migración 0002). La sincronización
+        // con Educastur (comando educastur_sincronizar en lib.rs, no aquí
+        // -- necesita AppHandle para el sidecar, que este despachador
+        // genérico no recibe) actualiza las mismas filas por su cuenta.
         ("GET", ["classes", class_id, "absences"]) => absences::list_for_class(conn, class_id),
         ("PUT", ["enrollments", enrollment_id, "absences"]) => absences::put(conn, enrollment_id, require_body(body)?),
         ("DELETE", ["enrollments", enrollment_id, "absences"]) => {

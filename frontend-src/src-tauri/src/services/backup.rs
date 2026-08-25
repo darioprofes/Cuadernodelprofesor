@@ -4,16 +4,17 @@ use serde_json::{json, Map, Value};
 
 use crate::error::ApiError;
 
-// Mismo orden y mismas 24 tablas que _TABLES_IN_DEPENDENCY_ORDER en
-// api/app/services/backup.py -- padres antes que hijos, para que
-// import_all pueda insertar en este orden sin violar ninguna FK (el
-// borrado previo va en orden inverso, ver import_all).
+// Mismo orden que _TABLES_IN_DEPENDENCY_ORDER en api/app/services/backup.py
+// -- padres antes que hijos, para que import_all pueda insertar en este
+// orden sin violar ninguna FK (el borrado previo va en orden inverso, ver
+// import_all). educastur_config (migración 0004) se añadió aquí más
+// tarde que en la web -- hasta entonces no existía este lado de la
+// sincronización con Educastur en escritorio (ver services/educastur.rs).
 const TABLES_IN_DEPENDENCY_ORDER: &[&str] = &[
     "app_preferences",
     "shortcuts",
+    "educastur_config",
     "students",
-    // (educastur_config queda fuera a propósito: no existe en escritorio,
-    // no hay sincronización con Educastur aquí -- ver migración 0002)
     "key_competences",
     "operational_descriptors",
     "courses",

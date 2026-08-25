@@ -22,6 +22,7 @@ pub mod agenda_notes;
 pub mod photos;
 pub mod backup;
 pub mod python_helper;
+pub mod educastur;
 
 use serde_json::Value;
 

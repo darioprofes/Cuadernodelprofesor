@@ -57,3 +57,10 @@ fn ejecutar(app: &tauri::AppHandle, subcomando: &str, entrada: &[u8]) -> Result<
 pub fn importar_horario_pdf(app: &tauri::AppHandle, bytes: Vec<u8>) -> Result<serde_json::Value, ApiError> {
     ejecutar(app, "importar-horario", &bytes)
 }
+
+// Subcomandos cuya entrada es JSON (no bytes crudos como el PDF de arriba)
+// -- serializa y reutiliza el mismo mecanismo.
+pub fn educastur_sincronizar(app: &tauri::AppHandle, payload: serde_json::Value) -> Result<serde_json::Value, ApiError> {
+    let entrada = serde_json::to_vec(&payload).map_err(ApiError::internal)?;
+    ejecutar(app, "educastur-sincronizar", &entrada)
+}

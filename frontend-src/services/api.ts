@@ -46,6 +46,11 @@ async function requestDesktop<T>(path: string, options: RequestInit): Promise<T>
         if (path === '/backup/import' && method === 'POST') {
             return (await invoke<unknown>('backup_import', { dump: body })) as T;
         }
+        // Igual motivo que backup/*: necesita un AppHandle para el sidecar
+        // Python (ver services/educastur.rs), que api_request no recibe.
+        if (path === '/educastur/sincronizar' && method === 'POST') {
+            return (await invoke<unknown>('educastur_sincronizar', { body })) as T;
+        }
         const result = await invoke<unknown>('api_request', { method, path, body });
         return result as T;
     } catch (err) {

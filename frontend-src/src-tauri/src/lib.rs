@@ -67,6 +67,20 @@ fn importar_horario_pdf(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<serde_j
   services::python_helper::importar_horario_pdf(&app, bytes)
 }
 
+// Igual criterio que backup_export/backup_import: aparte de api_request
+// porque necesita algo que el despachador genérico no recibe -- aquí, un
+// AppHandle para localizar y lanzar el sidecar Python (ver
+// services/educastur.rs y services/python_helper.rs).
+#[tauri::command]
+fn educastur_sincronizar(
+  app: tauri::AppHandle,
+  state: tauri::State<db::DbState>,
+  body: serde_json::Value,
+) -> Result<serde_json::Value, error::ApiError> {
+  let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::educastur::sincronizar(&conn, &app, body)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -111,7 +125,8 @@ pub fn run() {
       delete_student_photo,
       backup_export,
       backup_import,
-      importar_horario_pdf
+      importar_horario_pdf,
+      educastur_sincronizar
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

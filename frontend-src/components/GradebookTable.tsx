@@ -34,21 +34,13 @@ import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '.
 import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
 import { useApiStudents, useUpdateStudent } from '../hooks/useApiStudents';
 import { useAbsences, usePutAbsence, useDeleteAbsence } from '../hooks/useAbsences';
-import { useSincronizarEducastur } from '../hooks/useEducastur';
+import { useSincronizarEducastur, useEducasturSettings } from '../hooks/useEducastur';
+import { isTauri } from '@tauri-apps/api/core';
 import type { TipoFalta, SincronizarEducasturResult } from '../types/api';
 import { useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from '../hooks/useEnrollments';
 import { useUpdateClass } from '../hooks/useApiClasses';
 import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { encodeGradeInput, splitStudentPatch, syncStudentPhoto } from '../services/apiAdapters';
-import { isTauri } from '@tauri-apps/api/core';
-
-// Sincronización con Educastur: necesita hacer peticiones HTTP reales al
-// propio Educastur (login, tramos, faltas) — solo existe en el backend
-// Python (services/educastur_client.py), sin equivalente en Rust, mismo
-// criterio ya aplicado a la importación de horario en PDF
-// (ScheduleManager.tsx::PDF_IMPORT_AVAILABLE).
-const EDUCASTUR_SYNC_AVAILABLE = !isTauri();
-
 
 interface GradebookTableProps {
   classData: ClassData;
@@ -384,6 +376,11 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
 
   const sincronizarMutation = useSincronizarEducastur();
+  // En web no hay ajuste que activar/desactivar (siempre disponible). En
+  // escritorio hay que haberlo activado a mano en Ajustes tras leer el
+  // aviso de responsabilidad -- ver EducasturSyncSettings.tsx.
+  const { data: educasturSettings } = useEducasturSettings();
+  const educasturSyncAvailable = !isTauri() || educasturSettings?.enabled === true;
 
   const handleSyncSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -1087,7 +1084,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                     Añadir
                 </button>
             </div>
-            {EDUCASTUR_SYNC_AVAILABLE && (
+            {educasturSyncAvailable && (
                 <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-500">{pendingSyncCount} falta(s) sin subir a Educastur</span>
                     <button

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import Modal from './Modal';
-import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon, AcademicCapIcon, ListBulletIcon, InformationCircleIcon } from './Icons';
+import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon, AcademicCapIcon, ListBulletIcon, InformationCircleIcon, ExclamationTriangleIcon } from './Icons';
 import type { ClassData, Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
 import EvaluationToolManager from './EvaluationToolManager';
 import CurriculumManager from './CurriculumManager';
@@ -12,8 +12,10 @@ import CourseManager from './settings/CourseManager';
 import AcademicConfigManager from './settings/AcademicConfigManager';
 import AcademicYearManager from './settings/AcademicYearManager';
 import BackupManager from './settings/BackupManager';
+import EducasturSyncSettings from './settings/EducasturSyncSettings';
 import Select from './Select';
 import { SEMANTIC } from '../theme/palette';
+import { isTauri } from '@tauri-apps/api/core';
 
 export interface SettingsModalProps {
     isOpen: boolean;
@@ -48,7 +50,7 @@ export interface SettingsModalProps {
     onDeleteEvaluationTool: (id: string) => void;
 }
 
-type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup';
+type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup' | 'educastur';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const {
@@ -157,6 +159,8 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                 return <EvaluationInfoPanel />;
             case 'backup':
                 return <BackupManager {...props} onOpenExportModal={onOpenExportModal} />;
+            case 'educastur':
+                return <EducasturSyncSettings />;
             default:
                 return null;
         }
@@ -197,6 +201,12 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                     </div>
                     <div className="mt-4 pt-4 border-t">
                          <SettingsNavItem icon={<ArrowDownTrayIcon />} label="Restablecer y Copia de Seguridad" view="backup" activeView={activeView} setActiveView={setActiveView} />
+                         {/* Solo tiene sentido en escritorio -- en web la
+                             sincronización con Educastur ya funciona sin
+                             este aviso, ver EducasturSyncSettings.tsx. */}
+                         {isTauri() && (
+                             <SettingsNavItem icon={<ExclamationTriangleIcon />} label="Sincronización Educastur" view="educastur" activeView={activeView} setActiveView={setActiveView} />
+                         )}
                     </div>
                 </nav>
                 <main className="flex-grow min-w-0 pr-2">

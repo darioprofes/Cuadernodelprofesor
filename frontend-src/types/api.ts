@@ -460,6 +460,15 @@ export interface SincronizarEducasturResult {
     nombreProfesor?: string;
 }
 
+// Solo tiene sentido en escritorio (ver services/educastur.rs, migración
+// 0005) -- la sincronización es una pieza nueva y sin verificar en real
+// ahí, a diferencia de la web, que ya lleva tiempo en producción sin este
+// aviso. En web no existe esta ruta ni este concepto de "activar".
+export interface EducasturSettings {
+    enabled: boolean;
+    disclaimerAcceptedAt: string | null;
+}
+
 // Fase 6: journalEntries/tasks/meetings/agendaNotes eran las últimas
 // entidades que en web seguían gobernadas por el blob (autoguardado vía
 // PUT /db) — backend ya las tenía completas desde antes, solo faltaban

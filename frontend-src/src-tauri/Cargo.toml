@@ -27,3 +27,8 @@ tauri-plugin-opener = "2"
 rusqlite = { version = "0.31", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
+# Solo para educastur.rs: extraer "HH:MM-HH:MM" de una etiqueta de franja
+# horaria -- mismo patrón que parsePeriodRange en utils.ts (TS) y
+# _PERIOD_RANGE_RE en api/app/services/educastur_sync.py (Python), las
+# tres versiones tienen que coincidir en qué reconocen como rango válido.
+regex = "1"
