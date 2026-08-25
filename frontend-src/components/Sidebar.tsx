@@ -4,7 +4,7 @@ import type { View } from '../types';
 import {
     HomeIcon, ClockIcon, CalendarDaysIcon, BookOpenIcon, ClipboardDocumentIcon,
     UsersIcon, ClipboardDocumentCheckIcon, ChartBarIcon, SparklesIcon,
-    StarIcon, ChevronRightIcon, Bars3Icon, XMarkIcon, ListBulletIcon, BeakerIcon,
+    StarIcon, ChevronRightIcon, ChevronDownIcon, Bars3Icon, XMarkIcon, ListBulletIcon, BeakerIcon,
 } from './Icons';
 import Logo from './Logo';
 import { PALETTE } from '../theme/palette';
@@ -36,18 +36,22 @@ const NAV_SECTIONS: NavSection[] = [
         label: 'Enseñanza',
         items: [
             { view: 'gradebook', label: 'Cuaderno', icon: BookOpenIcon },
-            { view: 'journal', label: 'Diario', icon: ClipboardDocumentIcon },
-            { view: 'exams', label: 'Tareas evaluables', icon: ClipboardDocumentCheckIcon },
-            // Antes solo se llegaba aquí escondido dentro de Ajustes -- se
-            // usan durante todo el curso al calificar, así que merece acceso
-            // directo (sigue disponible en Ajustes también). Va antes que
-            // Planificación SA (orden pedido explícitamente).
-            { view: 'evaluation-tools', label: 'Instrumentos Evaluación', icon: BeakerIcon },
             // Antes solo se llegaba aquí escondido dentro de Ajustes o vía el
             // atajo de Herramientas IA -- se planifica durante todo el curso,
             // no solo al principio, así que merece acceso directo (petición
             // explícita del usuario).
             { view: 'planner', label: 'Planificación SA', icon: ListBulletIcon },
+            { view: 'journal', label: 'Diario', icon: ClipboardDocumentIcon },
+        ],
+    },
+    {
+        label: 'Evaluación',
+        items: [
+            { view: 'exams', label: 'Tareas evaluables', icon: ClipboardDocumentCheckIcon },
+            // Antes solo se llegaba aquí escondido dentro de Ajustes -- se
+            // usan durante todo el curso al calificar, así que merece acceso
+            // directo (sigue disponible en Ajustes también).
+            { view: 'evaluation-tools', label: 'Instrumentos Evaluación', icon: BeakerIcon },
         ],
     },
     {
@@ -61,7 +65,7 @@ const NAV_SECTIONS: NavSection[] = [
     // sin equivalente en escritorio (Tauri/Rust), mismo criterio ya aplicado a
     // la importación de horario en PDF (ImportScheduleModal.tsx::PDF_IMPORT_AVAILABLE).
     ...(isTauri() ? [] : [{
-        label: null,
+        label: 'Herramientas',
         items: [
             { view: 'ai-tools' as View, label: 'Herramientas IA', icon: SparklesIcon },
         ],
@@ -114,28 +118,39 @@ const SidebarContent: React.FC<{
             </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-2 space-y-4">
-            {NAV_SECTIONS.map((section, i) => (
-                <div key={section.label ?? `sec-${i}`} className="space-y-1">
-                    {section.label && (
-                        <p className="px-3 pt-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{section.label}</p>
-                    )}
-                    {section.items.map(item => {
-                        const Icon = item.icon;
-                        const active = isActive(item, activeView);
-                        return (
-                            <button
-                                key={item.view}
-                                onClick={() => onNavigate(item.view)}
-                                className={navButtonClass(active)}
-                                style={active ? { backgroundColor: PALETTE.navy.header } : undefined}
-                            >
-                                <Icon className="w-5 h-5 flex-shrink-0" />
-                                {item.label}
-                            </button>
-                        );
-                    })}
-                </div>
-            ))}
+            {NAV_SECTIONS.map((section, i) => {
+                const items = section.items.map(item => {
+                    const Icon = item.icon;
+                    const active = isActive(item, activeView);
+                    return (
+                        <button
+                            key={item.view}
+                            onClick={() => onNavigate(item.view)}
+                            className={navButtonClass(active)}
+                            style={active ? { backgroundColor: PALETTE.navy.header } : undefined}
+                        >
+                            <Icon className="w-5 h-5 flex-shrink-0" />
+                            {item.label}
+                        </button>
+                    );
+                });
+
+                // Sin etiqueta (Hoy/Horario/Agenda) no tiene sentido plegarla --
+                // es la primera sección, siempre visible, no un grupo temático.
+                if (!section.label) {
+                    return <div key={`sec-${i}`} className="space-y-1">{items}</div>;
+                }
+
+                return (
+                    <details key={section.label} open className="group">
+                        <summary className="flex items-center gap-1 px-3 pt-2 pb-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wide cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden hover:text-slate-600">
+                            <ChevronDownIcon className="w-3 h-3 flex-shrink-0 transition-transform group-open:rotate-0 -rotate-90" />
+                            {section.label}
+                        </summary>
+                        <div className="space-y-1">{items}</div>
+                    </details>
+                );
+            })}
 
             <div className="pt-2 border-t border-slate-200">
                 <button
