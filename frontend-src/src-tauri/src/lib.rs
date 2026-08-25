@@ -59,6 +59,14 @@ fn backup_import(state: tauri::State<db::DbState>, dump: serde_json::Value) -> R
   services::backup::import_all(&mut conn, &dump)
 }
 
+// Sidecar Python (ver services/python_helper.rs) -- comando aparte, no en
+// api_request, porque no toca la base de datos y sus bytes de entrada
+// (el PDF) no tienen sitio natural en ese contrato JSON genérico.
+#[tauri::command]
+fn importar_horario_pdf(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<serde_json::Value, error::ApiError> {
+  services::python_helper::importar_horario_pdf(&app, bytes)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -102,7 +110,8 @@ pub fn run() {
       set_student_photo,
       delete_student_photo,
       backup_export,
-      backup_import
+      backup_import,
+      importar_horario_pdf
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

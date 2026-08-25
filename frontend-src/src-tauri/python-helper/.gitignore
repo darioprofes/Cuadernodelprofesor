@@ -1,0 +1,15 @@
+# Entorno virtual y artefactos de PyInstaller -- se regeneran con
+# `python -m venv .venv && .venv/Scripts/pip install -r requirements.txt`
+# y `.venv/Scripts/pyinstaller --onedir --name python-helper --distpath dist --workpath build src/main.py`.
+# dist/ es lo que tauri.conf.json referencia como recurso -- hace falta
+# compilarlo antes de `npm run tauri:build`, no se versiona (pesa decenas
+# de MB y es 100% reproducible desde requirements.txt).
+.venv/
+build/
+dist/
+__pycache__/
+*.pyc
+# Autogenerado por el comando de PyInstaller del README -- versionar solo
+# si en algún momento hace falta tocarlo a mano (p.ej. hidden-imports para
+# spaCy en el futuro subcomando "anonimizar").
+*.spec

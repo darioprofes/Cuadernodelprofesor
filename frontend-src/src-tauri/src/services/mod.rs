@@ -21,6 +21,7 @@ pub mod meetings;
 pub mod agenda_notes;
 pub mod photos;
 pub mod backup;
+pub mod python_helper;
 
 use serde_json::Value;
 
