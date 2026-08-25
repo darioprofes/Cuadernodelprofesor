@@ -151,7 +151,10 @@ const InstrumentoSelectConIA: React.FC<{
                 courseId={courseId}
                 linkedCriteriaIds={linkedCriteriaIds}
                 contexto={contexto}
-                onDraftReady={setDraft}
+                // La materia ya se sabe (es la de esta SA) -- se asigna
+                // directamente al borrador generado, sin obligar a elegirla
+                // otra vez en el formulario de revisión.
+                onDraftReady={(d) => setDraft({ ...d, courseId })}
             />
             {draft && (
                 <EvaluationToolEditorModal

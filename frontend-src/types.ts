@@ -143,6 +143,10 @@ export interface Checklist {
   id: string;
   type: 'checklist';
   name: string;
+  // Opcional a propósito -- los instrumentos ya existentes no la tienen
+  // (ver migración 0017 web / 0006 escritorio) y agrupar/filtrar por
+  // materia no debe exigirla retroactivamente.
+  courseId?: string;
   items: BaseEvaluationItem[];
 }
 
@@ -150,6 +154,7 @@ export interface RatingScale {
   id: string;
   type: 'rating_scale';
   name: string;
+  courseId?: string;
   levels: EvaluationLevel[];
   items: BaseEvaluationItem[];
 }
@@ -162,6 +167,7 @@ export interface Rubric {
   id: string;
   type: 'rubric';
   name: string;
+  courseId?: string;
   levels: EvaluationLevel[];
   items: RubricItem[];
 }
@@ -178,6 +184,7 @@ export interface CriterialExam {
   id: string;
   type: 'criterial_exam';
   name: string;
+  courseId?: string;
   items: BaseEvaluationItem[];
 }
 

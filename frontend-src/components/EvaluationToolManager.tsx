@@ -25,6 +25,7 @@ interface ToolDraft {
     id?: string;
     name: string;
     type: 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam';
+    courseId?: string;
     items: ToolItemDraft[];
     levels?: EvaluationLevel[];
 }
@@ -52,6 +53,14 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     const [showCriteriaPickerParaIA, setShowCriteriaPickerParaIA] = useState(false);
     const [criteriosParaIA, setCriteriosParaIA] = useState<{ courseId: string; ids: string[] } | null>(null);
     const [showGenerarIA, setShowGenerarIA] = useState(false);
+    // Buscador + filtro por materia: con muchos instrumentos, una lista
+    // plana por tipo se vuelve difícil de recorrer (petición explícita del
+    // usuario). '' = todas las materias, 'sin-materia' = solo los que no
+    // tienen courseId todavía (la mayoría, mientras no se hayan revisado
+    // uno a uno tras la migración).
+    const [busqueda, setBusqueda] = useState('');
+    const [filtroMateriaId, setFiltroMateriaId] = useState('');
+    const materiasDisponibles = courses.filter(c => c.type !== 'other');
 
     const handleSave = (tool: EvaluationTool) => {
         if (toolToEdit && !instrumentoGeneradoPendiente) {
@@ -94,7 +103,10 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     const handleInstrumentoGenerado = (draft: EvaluationTool) => {
         setShowGenerarIA(false);
         setInstrumentoGeneradoPendiente(true);
-        setToolToEdit(draft);
+        // La IA ya generó el instrumento a partir de criterios de una
+        // materia concreta -- se le asigna directamente, sin obligar a
+        // repetir la elección que ya se hizo en el selector de criterios.
+        setToolToEdit({ ...draft, courseId: criteriosParaIA?.courseId });
         setIsModalOpen(true);
     };
 
@@ -263,10 +275,16 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
         }
     };
 
-    const checklists = evaluationTools.filter(t => t.type === 'checklist');
-    const ratingScales = evaluationTools.filter(t => t.type === 'rating_scale');
-    const rubrics = evaluationTools.filter(t => t.type === 'rubric');
-    const criterialExams = evaluationTools.filter(t => t.type === 'criterial_exam');
+    const toolsFiltrados = evaluationTools.filter(t => {
+        if (busqueda.trim() && !t.name.toLowerCase().includes(busqueda.trim().toLowerCase())) return false;
+        if (filtroMateriaId === 'sin-materia') return !t.courseId;
+        if (filtroMateriaId) return t.courseId === filtroMateriaId;
+        return true;
+    });
+    const checklists = toolsFiltrados.filter(t => t.type === 'checklist');
+    const ratingScales = toolsFiltrados.filter(t => t.type === 'rating_scale');
+    const rubrics = toolsFiltrados.filter(t => t.type === 'rubric');
+    const criterialExams = toolsFiltrados.filter(t => t.type === 'criterial_exam');
 
     return (
         <div>
@@ -281,19 +299,24 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                         Importar CSV
                     </button>
                     <button
-                        onClick={() => setShowCriteriaPickerParaIA(true)}
-                        title="Elegir criterios y generar un instrumento con IA"
-                        className="inline-flex items-center justify-center py-2 px-3 border border-purple-300 shadow-sm text-sm font-medium rounded-lg text-purple-700 bg-white hover:bg-purple-50"
-                    >
-                        <SparklesIcon className="w-4 h-4 mr-1" />
-                        Generar con IA
-                    </button>
-                    <button
                         onClick={() => { setInstrumentoGeneradoPendiente(false); setToolToEdit(null); setIsModalOpen(true); }}
                         className="inline-flex items-center justify-center py-2 px-3 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700"
                     >
                         <PlusIcon className="w-4 h-4 mr-1" />
                         Nuevo Instrumento
+                    </button>
+                    {/* Mismo orden y estilo (ámbar sólido) que "Generar con
+                        IA" en el header de Situaciones de Aprendizaje
+                        (ProgrammingManager.tsx) -- uniformidad de diseño
+                        entre los dos generadores con IA que van en la
+                        cabecera de una lista, pedida explícitamente. */}
+                    <button
+                        onClick={() => setShowCriteriaPickerParaIA(true)}
+                        title="Elegir criterios y generar un instrumento con IA"
+                        className="inline-flex items-center justify-center py-2 px-3 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700"
+                    >
+                        <SparklesIcon className="w-4 h-4 mr-1" />
+                        Generar con IA
                     </button>
                 </div>
             </div>
@@ -330,11 +353,28 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                 Crea y gestiona plantillas de Listas de Cotejo, Escalas de Valoración y Rúbricas para reutilizarlas en tus tareas.
             </p>
 
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+                <Input
+                    type="text"
+                    value={busqueda}
+                    onChange={e => setBusqueda(e.target.value)}
+                    placeholder="Buscar por nombre..."
+                    className="max-w-xs"
+                />
+                <Select value={filtroMateriaId} onChange={e => setFiltroMateriaId(e.target.value)} className="!w-auto min-w-[12rem]">
+                    <option value="">Todas las materias</option>
+                    <option value="sin-materia">Sin materia asignada</option>
+                    {materiasDisponibles.map(c => (
+                        <option key={c.id} value={c.id}>{c.level} - {c.subject}</option>
+                    ))}
+                </Select>
+            </div>
+
             <div className="space-y-6">
-                <ToolSection type="checklist" tools={checklists} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
-                <ToolSection type="rating_scale" tools={ratingScales} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
-                <ToolSection type="rubric" tools={rubrics} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
-                <ToolSection type="criterial_exam" tools={criterialExams} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="checklist" tools={checklists} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="rating_scale" tools={ratingScales} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="rubric" tools={rubrics} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="criterial_exam" tools={criterialExams} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
             </div>
 
             {isModalOpen && (
@@ -345,6 +385,7 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                     toolToEdit={toolToEdit}
                     criteria={criteria}
                     courses={courses}
+                    defaultCourseId={filtroMateriaId && filtroMateriaId !== 'sin-materia' ? filtroMateriaId : undefined}
                 />
             )}
             {showCriteriaPickerParaIA && (
@@ -370,7 +411,7 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     );
 };
 
-const ToolSection: React.FC<{ type: 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam', tools: EvaluationTool[], onEdit: (tool: EvaluationTool) => void, onDelete: (id: string) => void, onOpenModal: () => void }> = ({ type, tools, onEdit, onDelete, onOpenModal }) => {
+const ToolSection: React.FC<{ type: 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam', tools: EvaluationTool[], courses: Course[], onEdit: (tool: EvaluationTool) => void, onDelete: (id: string) => void, onOpenModal: () => void }> = ({ type, tools, courses, onEdit, onDelete, onOpenModal }) => {
     const title = {
         checklist: 'Listas de Cotejo',
         rating_scale: 'Escalas de Valoración',
@@ -378,20 +419,31 @@ const ToolSection: React.FC<{ type: 'checklist' | 'rating_scale' | 'rubric' | 'c
         criterial_exam: 'Exámenes Criteriales'
     }[type];
 
+    const materiaLabel = (courseId?: string) => {
+        if (!courseId) return null;
+        const c = courses.find(c => c.id === courseId);
+        return c ? `${c.level} - ${c.subject}` : null;
+    };
+
     return (
         <div>
             <h4 className="text-lg font-semibold text-slate-700 mb-2">{title}</h4>
             <div className="space-y-2">
                 {tools.length > 0 ? tools.map(tool => (
                     <div key={tool.id} className="flex items-center justify-between p-3 border rounded-lg bg-white group">
-                        <span className="font-medium">{tool.name}</span>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-medium truncate">{tool.name}</span>
+                            {materiaLabel(tool.courseId) && (
+                                <span className="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{materiaLabel(tool.courseId)}</span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                             <button onClick={() => { onEdit(tool); onOpenModal(); }} className="p-2 hover:bg-slate-200 rounded-full"><PencilIcon className="w-4 h-4 text-slate-600" /></button>
                             <button onClick={() => onDelete(tool.id)} className="p-2 hover:bg-red-100 rounded-full"><TrashIcon className="w-4 h-4 text-red-500" /></button>
                         </div>
                     </div>
                 )) : (
-                    <p className="text-slate-500 text-center py-4 bg-slate-50 rounded-lg">No hay {title.toLowerCase()} creadas.</p>
+                    <p className="text-slate-500 text-center py-4 bg-slate-50 rounded-lg">No hay {title.toLowerCase()} que coincidan.</p>
                 )}
             </div>
         </div>
@@ -407,14 +459,18 @@ interface EditorModalProps {
     toolToEdit: EvaluationTool | null;
     criteria: EvaluationCriterion[];
     courses: Course[];
+    // Materia preseleccionada al crear uno nuevo -- p.ej. el filtro activo
+    // en la lista, o (desde InstrumentoSelectConIA) la única materia de la
+    // SA en curso. Ignorado si toolToEdit ya trae la suya.
+    defaultCourseId?: string;
 }
 
 // Exportado -- reutilizado tal cual por InstrumentoSelectConIA
 // (ProgrammingManager.tsx) para revisar/editar un instrumento recién
 // generado con IA antes de guardarlo, sin duplicar este formulario.
-export const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, onClose, onSave, toolToEdit, criteria, courses }) => {
+export const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, onClose, onSave, toolToEdit, criteria, courses, defaultCourseId }) => {
     const [tool, setTool] = useState<ToolDraft>(() =>
-        toolToEdit || { name: '', type: 'checklist', items: [] }
+        toolToEdit || { name: '', type: 'checklist', courseId: defaultCourseId, items: [] }
     );
 
     const handleFieldChange = <K extends keyof ToolDraft>(field: K, value: ToolDraft[K]) => {
@@ -426,6 +482,7 @@ export const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, 
             if (prev.type === newType) return prev;
             const baseProps = {
                 name: prev.name,
+                courseId: prev.courseId,
                 items: prev.items.map(item => 'levelDescriptions' in item ? { id: item.id, description: item.description, weight: item.weight, linkedCriteriaIds: item.linkedCriteriaIds } : item)
             };
 
@@ -460,7 +517,7 @@ export const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={toolToEdit ? 'Editar Instrumento' : 'Nuevo Instrumento'} size={tool.type === 'rubric' ? '5xl' : '4xl'}>
             <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-slate-700">Nombre del Instrumento</label>
                         <Input type="text" value={tool.name} onChange={e => handleFieldChange('name', e.target.value)} required className="mt-1" />
@@ -479,8 +536,17 @@ export const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, 
                             <option value="criterial_exam">Examen criterial</option>
                         </Select>
                     </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700">Materia (opcional)</label>
+                        <Select value={tool.courseId ?? ''} onChange={e => handleFieldChange('courseId', e.target.value || undefined)} className="mt-1">
+                            <option value="">Sin materia asignada</option>
+                            {courses.filter(c => c.type !== 'other').map(c => (
+                                <option key={c.id} value={c.id}>{c.level} - {c.subject}</option>
+                            ))}
+                        </Select>
+                    </div>
                 </div>
-                
+
                 <ToolEditorFields tool={tool} setTool={setTool} criteria={criteria} courses={courses} />
 
                 <div className="flex justify-end pt-4 space-x-2 border-t">

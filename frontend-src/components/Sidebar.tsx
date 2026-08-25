@@ -38,16 +38,16 @@ const NAV_SECTIONS: NavSection[] = [
             { view: 'gradebook', label: 'Cuaderno', icon: BookOpenIcon },
             { view: 'journal', label: 'Diario', icon: ClipboardDocumentIcon },
             { view: 'exams', label: 'Tareas evaluables', icon: ClipboardDocumentCheckIcon },
+            // Antes solo se llegaba aquí escondido dentro de Ajustes -- se
+            // usan durante todo el curso al calificar, así que merece acceso
+            // directo (sigue disponible en Ajustes también). Va antes que
+            // Planificación SA (orden pedido explícitamente).
+            { view: 'evaluation-tools', label: 'Instrumentos Evaluación', icon: BeakerIcon },
             // Antes solo se llegaba aquí escondido dentro de Ajustes o vía el
             // atajo de Herramientas IA -- se planifica durante todo el curso,
             // no solo al principio, así que merece acceso directo (petición
             // explícita del usuario).
             { view: 'planner', label: 'Planificación SA', icon: ListBulletIcon },
-            // Mismo criterio que "Planificación SA" -- se usan durante todo
-            // el curso al calificar, no solo al preparar la programación, así
-            // que también merece acceso directo (sigue disponible en Ajustes
-            // también, igual que Planificación SA).
-            { view: 'evaluation-tools', label: 'Instrumentos Evaluación', icon: BeakerIcon },
         ],
     },
     {

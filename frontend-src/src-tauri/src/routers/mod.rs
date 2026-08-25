@@ -297,6 +297,26 @@ mod tests {
         assert_eq!(err.status, 404);
     }
 
+    // courseId (migración 0006) es opcional -- creable sin él, asignable
+    // después, y limpiable explícitamente con null (no solo "ausente en el
+    // patch").
+    #[test]
+    fn evaluation_tools_course_id_is_optional_and_clearable() {
+        let conn = db::test_connection();
+        let course = dispatch(&conn, "POST", "/courses", Some(json!({"level": "1 ESO", "subject": "Música"}))).unwrap();
+        let course_id = course["id"].as_str().unwrap().to_string();
+
+        let sin_materia = dispatch(&conn, "POST", "/evaluation-tools", Some(json!({"type": "checklist", "name": "Genérica"}))).unwrap();
+        assert_eq!(sin_materia["courseId"], Value::Null);
+        let id = sin_materia["id"].as_str().unwrap().to_string();
+
+        let asignada = dispatch(&conn, "PATCH", &format!("/evaluation-tools/{id}"), Some(json!({"courseId": course_id}))).unwrap();
+        assert_eq!(asignada["courseId"], course_id);
+
+        let desasignada = dispatch(&conn, "PATCH", &format!("/evaluation-tools/{id}"), Some(json!({"courseId": Value::Null}))).unwrap();
+        assert_eq!(desasignada["courseId"], Value::Null);
+    }
+
     #[test]
     fn students_crud_round_trip() {
         let conn = db::test_connection();

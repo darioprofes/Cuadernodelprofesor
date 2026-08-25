@@ -6,12 +6,13 @@ from psycopg.types.json import Json
 from services.db import get_conn
 from services.schemas import ApiModel
 
-_COLUMNS = "id, type, name, levels, items"
+_COLUMNS = "id, type, name, course_id, levels, items"
 
 
 class EvaluationToolInput(ApiModel):
     type: str
     name: str
+    course_id: Optional[uuid.UUID] = None
     levels: list = []
     items: list = []
 
@@ -19,6 +20,7 @@ class EvaluationToolInput(ApiModel):
 class EvaluationToolPatch(ApiModel):
     type: Optional[str] = None
     name: Optional[str] = None
+    course_id: Optional[uuid.UUID] = None
     levels: Optional[list] = None
     items: Optional[list] = None
 
@@ -45,8 +47,8 @@ def create_evaluation_tool(data: EvaluationToolInput) -> EvaluationTool:
         with conn.cursor() as cur:
 
             cur.execute(
-                f"INSERT INTO evaluation_tools (type, name, levels, items) VALUES (%s, %s, %s, %s) RETURNING {_COLUMNS}",
-                [data.type, data.name, Json(data.levels), Json(data.items)]
+                f"INSERT INTO evaluation_tools (type, name, course_id, levels, items) VALUES (%s, %s, %s, %s, %s) RETURNING {_COLUMNS}",
+                [data.type, data.name, data.course_id, Json(data.levels), Json(data.items)]
             )
 
             return EvaluationTool.model_validate(cur.fetchone())

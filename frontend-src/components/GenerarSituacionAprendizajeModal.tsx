@@ -551,7 +551,7 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                         {modo === 'documento' ? (
                             <>
                                 <p className="text-sm text-slate-600">
-                                    ¡Sube o pega tus contenidos a trabajar (temario, unidad o material didáctico ya
+                                    Sube o pega tus contenidos a trabajar (temario, unidad o material didáctico ya
                                     creado). Si lo deseas, puedes incluir también la metodología y la evaluación. Se
                                     generará un prompt optimizado junto con el currículo oficial para tu IA.
                                 </p>
