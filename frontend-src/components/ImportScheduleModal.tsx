@@ -11,14 +11,12 @@ import { useCreateClass, useUpdateClass, useDeleteClass } from '../hooks/useApiC
 import { useAcademicYearCourses, useAddAcademicYearCourse, useRemoveAcademicYearCourse, useEvaluationPeriods } from '../hooks/useAcademicYears';
 import { useCreateCategory } from '../hooks/useCategories';
 import { generateHorarioTemplate, parseHorarioWorkbook } from '../services/scheduleWizard';
-import { isTauri } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 
-// El PDF oficial necesita pdfplumber (solo backend Python) -- sin
-// equivalente en Rust, mismo criterio ya aplicado a la importación de
-// horario del asistente de inicio de curso. El Excel es puro cálculo en
-// memoria (exceljs), funciona igual en las dos plataformas -- en
-// escritorio es la única opción, así que ni se muestra el selector de modo.
-const PDF_IMPORT_AVAILABLE = !isTauri();
+// El PDF oficial necesita pdfplumber -- en escritorio lo sirve el sidecar
+// python-helper (services::python_helper::importar_horario_pdf, ver
+// src-tauri/python-helper/), no el backend web. El Excel es puro cálculo
+// en memoria (exceljs), funciona igual en las dos plataformas sin más.
 
 const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
@@ -34,9 +32,9 @@ interface ImportScheduleModalProps {
     onClose: () => void;
     // courses/classes: ya resueltos por ScheduleManager (curriculumCourses /
     // clases del backend nuevo mapeadas a la forma local). Se renderiza en
-    // las dos plataformas (ver PDF_IMPORT_AVAILABLE más arriba) — el plan
-    // se aplica siempre contra el backend "nuevo" sin rama isDesktop propia
-    // porque services/api.ts ya enruta esas mutaciones por su cuenta.
+    // las dos plataformas — el plan se aplica siempre contra el backend
+    // "nuevo" sin rama isDesktop propia porque services/api.ts ya enruta
+    // esas mutaciones por su cuenta.
     courses: Course[];
     classes: ClassData[];
     yearId: string;
@@ -253,7 +251,7 @@ export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes
 const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClose, courses, classes, yearId, academicConfiguration, setAcademicConfiguration }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const excelFileInputRef = useRef<HTMLInputElement>(null);
-    const [modo, setModo] = useState<'pdf' | 'excel'>(PDF_IMPORT_AVAILABLE ? 'pdf' : 'excel');
+    const [modo, setModo] = useState<'pdf' | 'excel'>('pdf');
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [filas, setFilas] = useState<FilaHorario[] | null>(null);
@@ -337,20 +335,38 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
         setFilas(null);
 
         try {
-            const formData = new FormData();
-            formData.append('archivo', file);
-            const response = await fetch('/api/horario/importar-pdf', { method: 'POST', body: formData });
+            let data: { filas?: FilaHorario[]; errores?: string[] };
 
-            if (!response.ok) {
-                const body = await response.json().catch(() => null);
-                throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+            if (isTauri()) {
+                // Mismo patrón que syncStudentPhoto en apiAdapters.ts --
+                // bytes crudos, no JSON, así que va por un comando propio
+                // en vez del despachador genérico api_request.
+                const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+                data = await invoke('importar_horario_pdf', { bytes });
+            } else {
+                const formData = new FormData();
+                formData.append('archivo', file);
+                const response = await fetch('/api/horario/importar-pdf', { method: 'POST', body: formData });
+
+                if (!response.ok) {
+                    const body = await response.json().catch(() => null);
+                    throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+                }
+
+                data = await response.json();
             }
 
-            const data = await response.json();
             setFilas(data.filas || []);
             setErroresExtraccion(data.errores || []);
         } catch (err) {
-            setErrorMsg(err instanceof Error ? err.message : String(err));
+            // invoke() rechaza con el propio objeto ApiError ({status, detail})
+            // del lado Rust, no con una instancia de Error -- distinto del
+            // fetch() de arriba.
+            if (err && typeof err === 'object' && 'detail' in err) {
+                setErrorMsg(String((err as { detail: unknown }).detail));
+            } else {
+                setErrorMsg(err instanceof Error ? err.message : String(err));
+            }
         } finally {
             setLoading(false);
         }
@@ -454,24 +470,22 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                     </div>
                 ) : (
                     <>
-                        {PDF_IMPORT_AVAILABLE && (
-                            <div className="flex gap-2 border-b border-slate-200">
-                                <button
-                                    type="button"
-                                    onClick={() => { setModo('pdf'); setFilas(null); setErroresExtraccion([]); setErrorMsg(null); }}
-                                    className={`px-3 py-2 text-sm font-medium border-b-2 ${modo === 'pdf' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                                >
-                                    PDF oficial (SAUCE)
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => { setModo('excel'); setFilas(null); setErroresExtraccion([]); setErrorMsg(null); }}
-                                    className={`px-3 py-2 text-sm font-medium border-b-2 ${modo === 'excel' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                                >
-                                    Excel
-                                </button>
-                            </div>
-                        )}
+                        <div className="flex gap-2 border-b border-slate-200">
+                            <button
+                                type="button"
+                                onClick={() => { setModo('pdf'); setFilas(null); setErroresExtraccion([]); setErrorMsg(null); }}
+                                className={`px-3 py-2 text-sm font-medium border-b-2 ${modo === 'pdf' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                            >
+                                PDF oficial (SAUCE)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => { setModo('excel'); setFilas(null); setErroresExtraccion([]); setErrorMsg(null); }}
+                                className={`px-3 py-2 text-sm font-medium border-b-2 ${modo === 'excel' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                            >
+                                Excel
+                            </button>
+                        </div>
 
                         <p className="text-sm text-slate-600">
                             {modo === 'pdf'
