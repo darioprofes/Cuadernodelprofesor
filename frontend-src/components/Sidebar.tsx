@@ -79,8 +79,14 @@ const isActive = (item: NavItem, activeView: View): boolean => {
     return item.view === activeView;
 };
 
+// text-left es necesario a partir de aquí: el <button> del navegador
+// centra su texto por defecto, algo invisible mientras la etiqueta cabe en
+// una sola línea, pero que se nota en cuanto una etiqueta larga
+// ("Instrumentos Evaluación") salta a dos líneas dentro del ancho fijo del
+// Sidebar (w-56) -- sin esto, cada línea queda centrada en vez de alineada
+// con el icono.
 const navButtonClass = (active: boolean) =>
-    `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+    `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-left transition-colors ${
         active ? 'text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
     }`;
 
