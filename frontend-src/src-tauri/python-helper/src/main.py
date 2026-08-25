@@ -58,13 +58,26 @@ COMANDOS = {
 }
 
 
+def _escribir_json(stream, payload):
+    """Escribe JSON como bytes UTF-8 directamente al stream binario
+    (sys.stdout.buffer / sys.stderr.buffer), NUNCA por print()/sys.stdout
+    de texto: en Windows, un proceso lanzado sin consola propia (como lo
+    lanza Rust, con los tres stdio redirigidos por tubería) hace que
+    Python elija la codificación de sys.stdout por la página de códigos
+    del sistema (cp1252 en Windows en español) en vez de UTF-8 -- con
+    ensure_ascii=False, cualquier tilde/ñ en el horario (materias, aulas)
+    se escribía entonces mal codificada, y Rust (serde_json::from_slice,
+    que exige UTF-8 estricto) fallaba con "invalid unicode code point".
+    Escribir el bytes ya codificados a mano evita depender de esa
+    codificación implícita por completo.
+    """
+    stream.buffer.write(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+
+
 def main():
 
     if len(sys.argv) < 2 or sys.argv[1] not in COMANDOS:
-        print(
-            json.dumps({"error": f"Comando desconocido -- usa uno de: {', '.join(COMANDOS)}"}),
-            file=sys.stderr,
-        )
+        _escribir_json(sys.stderr, {"error": f"Comando desconocido -- usa uno de: {', '.join(COMANDOS)}"})
         sys.exit(1)
 
     comando = sys.argv[1]
@@ -72,10 +85,10 @@ def main():
     try:
         resultado = COMANDOS[comando](sys.argv[2:])
     except Exception as exc:
-        print(json.dumps({"error": str(exc)}), file=sys.stderr)
+        _escribir_json(sys.stderr, {"error": str(exc)})
         sys.exit(1)
 
-    print(json.dumps(resultado, ensure_ascii=False))
+    _escribir_json(sys.stdout, resultado)
 
 
 if __name__ == "__main__":
