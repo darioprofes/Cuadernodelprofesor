@@ -551,9 +551,9 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                         {modo === 'documento' ? (
                             <>
                                 <p className="text-sm text-slate-600">
-                                    Pega tu material de teoría o sube un .docx, .pptx o .pdf. Se generará un prompt con
-                                    el documento y el currículo real de este curso, para pegar en una IA online (Claude,
-                                    ChatGPT...).
+                                    ¡Sube o pega tus contenidos a trabajar (temario, unidad o material didáctico ya
+                                    creado). Si lo deseas, puedes incluir también la metodología y la evaluación. Se
+                                    generará un prompt optimizado junto con el currículo oficial para tu IA.
                                 </p>
                                 <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
                                     <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
