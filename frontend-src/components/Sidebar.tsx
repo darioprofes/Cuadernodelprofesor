@@ -102,7 +102,7 @@ const isActive = (item: NavItem, activeView: View): boolean => {
 // Sidebar (w-56) -- sin esto, cada línea queda centrada en vez de alineada
 // con el icono.
 const navButtonClass = (active: boolean) =>
-    `w-full flex items-center gap-2 px-2.5 py-1 rounded-lg text-sm font-medium text-left transition-colors leading-tight ${
+    `w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm font-medium text-left transition-colors leading-tight ${
         active ? 'font-semibold' : 'text-slate-600 hover:bg-slate-100'
     }`;
 
@@ -125,12 +125,12 @@ const SidebarContent: React.FC<{
         <div className="px-3 py-2 border-b border-slate-200 flex flex-col items-center gap-0 flex-shrink-0">
             <img src="/logo.png" alt="" className="w-24 h-24 flex-shrink-0 object-contain" />
             <div className="text-center -mt-1">
-                <p className="lowercase leading-none" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 700, fontSize: '26px', color: '#2f5c99' }}>faro</p>
-                <p className="lowercase leading-none mt-0.5" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 600, fontSize: '16px', color: '#5b8fd1' }}>docente</p>
+                <p className="lowercase leading-none" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 700, fontSize: '26px', color: '#00244a' }}>faro</p>
+                <p className="lowercase leading-none mt-0.5" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 600, fontSize: '16px', color: '#4b93db' }}>docente</p>
                 <p className="text-[10px] text-slate-400 leading-tight mt-1">La Marejada</p>
             </div>
         </div>
-        <nav className="flex-1 overflow-y-auto p-1.5 space-y-1">
+        <nav className="flex-1 overflow-y-auto p-2 space-y-1.5">
             {NAV_SECTIONS.map((section, i) => {
                 const items = section.items.map(item => {
                     const Icon = item.icon;
@@ -151,29 +151,29 @@ const SidebarContent: React.FC<{
                 // Sin etiqueta (Hoy/Horario/Agenda) no tiene sentido plegarla --
                 // es la primera sección, siempre visible, no un grupo temático.
                 if (!section.label) {
-                    return <div key={`sec-${i}`} className="space-y-0.5">{items}</div>;
+                    return <div key={`sec-${i}`} className="space-y-1">{items}</div>;
                 }
 
                 const color = SECTION_COLOR[section.label];
                 return (
                     <details key={section.label} open className="group">
                         <summary
-                            className="flex items-center gap-1.5 px-2.5 pt-0.5 pb-0.5 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden"
+                            className="flex items-center gap-1.5 px-2.5 pt-1.5 pb-1 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden"
                             style={{ color }}
                         >
                             <ChevronDownIcon className="w-3 h-3 flex-shrink-0 opacity-60 transition-transform group-open:rotate-0 -rotate-90" />
                             {section.label}
                             <span className="flex-1 h-px ml-1" style={{ background: `linear-gradient(to right, ${color}80, transparent)` }} />
                         </summary>
-                        <div className="space-y-0.5">{items}</div>
+                        <div className="space-y-1">{items}</div>
                     </details>
                 );
             })}
 
-            <div className="pt-1.5 border-t border-slate-200">
+            <div className="pt-2 border-t border-slate-200">
                 <button
                     onClick={onOpenFavoritos}
-                    className="w-full flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-medium text-slate-700 transition-colors"
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-medium text-slate-700 transition-colors"
                 >
                     <StarIcon className="w-4 h-4 text-amber-500 flex-shrink-0" />
                     <span className="flex-grow text-left">Favoritos</span>
