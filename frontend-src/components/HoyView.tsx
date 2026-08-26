@@ -305,7 +305,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                                         onClick={() => handleToggleTarea(t.id)}
                                         title={t.hecho ? 'Marcar como pendiente' : 'Marcar como hecha'}
                                         className={`w-4 h-4 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                            t.hecho ? '' : 'border-slate-300 hover:border-[#7aab74]'
+                                            t.hecho ? '' : 'border-slate-300 hover:border-[var(--color-green-header)]'
                                         }`}
                                         style={t.hecho ? { backgroundColor: PALETTE.green.header, borderColor: PALETTE.green.header } : undefined}
                                     >

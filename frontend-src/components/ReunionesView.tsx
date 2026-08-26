@@ -3,6 +3,7 @@ import type { Meeting } from '../types';
 import { TrashIcon, PlusIcon, UsersIcon, PencilIcon } from './Icons';
 import { toYYYYMMDD, addDays, getDayOfWeek1a7, formatFechaEs } from '../utils';
 import PageHeader from './PageHeader';
+import { PAGE_ACCENT } from '../theme/palette';
 import Modal from './Modal';
 import Input from './Input';
 import Select from './Select';
@@ -150,7 +151,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
 
     return (
         <div className="space-y-6">
-            <PageHeader title="Reuniones" subtitle="Tutorías, coordinación de tutores, departamento y familias." accent="teal" icon={<UsersIcon className="w-6 h-6" />} />
+            <PageHeader title="Reuniones" subtitle="Tutorías, coordinación de tutores, departamento y familias." accent={PAGE_ACCENT.reuniones} icon={<UsersIcon className="w-6 h-6" />} />
 
             <div className="bg-white rounded-xl shadow-sm border p-3 flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">

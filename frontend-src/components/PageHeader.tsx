@@ -1,29 +1,31 @@
 import React from 'react';
-import { PALETTE, type PaletteKey } from '../theme/palette';
 import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
 
 interface PageHeaderProps {
     title: string;
     subtitle?: string;
-    accent: PaletteKey;
+    // Color hex directo (típicamente PAGE_ACCENT.xxx de theme/palette.ts)
+    // en vez de una PaletteKey -- cada página de una misma sección del
+    // Sidebar necesita su propio tono dentro de la misma familia de color
+    // (Enseñanza=azules, Evaluación=rojos...), algo que las 5 claves fijas
+    // de PALETTE no podían expresar.
+    accent: string;
     icon?: React.ReactNode;
     actions?: React.ReactNode;
 }
 
-// Cabecera de página en el tono intenso de la paleta (fondo `header`, el
-// mismo que las cabeceras de tarjeta de Hoy) con texto en blanco: el pastel
-// (`soft`) daba poco contraste con el texto oscuro. Reutilizada en las
-// vistas que solo necesitan título + subtítulo opcional + acciones a la
-// derecha. Horario y Agenda tienen su propia barra de navegación más
+// Cabecera de página en el tono intenso de PAGE_ACCENT, con texto en
+// blanco: el pastel daba poco contraste con el texto oscuro. Reutilizada
+// en las vistas que solo necesitan título + subtítulo opcional + acciones
+// a la derecha. Horario y Agenda tienen su propia barra de navegación más
 // compleja (mes/semana, prev/next...) y retiñen directamente su contenedor
 // en vez de usar este componente.
 const PageHeader: React.FC<PageHeaderProps> = ({ title, subtitle, accent, icon, actions }) => {
-    const c = PALETTE[accent];
     return (
         <div
             className={`rounded-xl ${pageHeaderPaddingClassName} ${pageHeaderMinHeight} flex items-center justify-between flex-wrap gap-3`}
-            style={{ backgroundColor: c.header, ...headerPatternStyle }}
+            style={{ backgroundColor: accent, ...headerPatternStyle }}
         >
             <div className="flex items-center gap-3 min-w-0">
                 {icon && <span className="flex-shrink-0 text-white/90">{icon}</span>}

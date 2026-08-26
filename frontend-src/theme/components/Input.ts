@@ -8,18 +8,20 @@ import { TYPOGRAPHY } from '../typography';
 // relación con el resto de la paleta. Este es el patrón más completo que
 // ya existía en la app (usado en ~7 selects y varios inputs), tomado como
 // canónico, con el foco llevado al tono `primary` de SEMANTIC (el mismo
-// azul que ya usan Button/Badge) en vez de un azul suelto.
+// azul que ya usan Button/Badge) en vez de un azul suelto. Vía la variable
+// CSS --color-primary (ver index.css) porque una clase "arbitrary value"
+// de Tailwind no puede leer una constante de TypeScript en compilación.
 export const inputBaseClassName =
     'block w-full px-3 py-2 bg-white border rounded-lg shadow-sm text-sm placeholder-slate-400 ' +
     'focus:outline-none focus:ring-2 transition-colors ' +
     'disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed';
 
-export const inputDefaultClassName = `${inputBaseClassName} border-slate-300 focus:ring-[#2f5c99]/30 focus:border-[#2f5c99]`;
+export const inputDefaultClassName = `${inputBaseClassName} border-slate-300 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]`;
 
 export const inputErrorClassName = `${inputBaseClassName} border-red-300 focus:ring-red-500/30 focus:border-red-500`;
 
 export const inputClassName = (hasError?: boolean): string => (hasError ? inputErrorClassName : inputDefaultClassName);
 
-export const checkboxClassName = 'h-4 w-4 rounded border-slate-300 text-[#2f5c99] focus:ring-[#2f5c99]/30';
+export const checkboxClassName = 'h-4 w-4 rounded border-slate-300 text-[var(--color-primary)] focus:ring-[var(--color-primary)]/30';
 
 export const labelClassName = TYPOGRAPHY.label;

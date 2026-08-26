@@ -57,6 +57,7 @@ const AiToolsView = React.lazy(() => import('./components/AiToolsView'));
 import ClassJournal from './components/ClassJournal';
 import { Cog8ToothIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon, BeakerIcon } from './components/Icons';
 import PageHeader from './components/PageHeader';
+import { PAGE_ACCENT } from './theme/palette';
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
 import ExportModal from './components/ExportModal';
 import Modal from './components/Modal';
@@ -728,7 +729,7 @@ const App = () => {
             // igual que dentro de Ajustes.
             return (
                 <>
-                    <PageHeader title="Instrumentos de Evaluación" subtitle="Rúbricas, escalas de valoración, listas de cotejo y exámenes criteriales reutilizables en tus tareas." accent="green" icon={<BeakerIcon className="w-6 h-6" />} />
+                    <PageHeader title="Instrumentos de Evaluación" subtitle="Rúbricas, escalas de valoración, listas de cotejo y exámenes criteriales reutilizables en tus tareas." accent={PAGE_ACCENT.instrumentosEvaluacion} icon={<BeakerIcon className="w-6 h-6" />} />
                     <div className="mt-6">
                         <React.Suspense fallback={<ViewLoadingFallback />}>
                             <EvaluationToolManager
@@ -811,7 +812,7 @@ const App = () => {
             }
             return (
                 <>
-                    <PageHeader title="Materia" subtitle="Currículo y planificación didáctica de la materia seleccionada." accent="navy" icon={<BookOpenIcon className="w-6 h-6" />} />
+                    <PageHeader title="Materia" subtitle="Currículo y planificación didáctica de la materia seleccionada." accent={PAGE_ACCENT.materia} icon={<BookOpenIcon className="w-6 h-6" />} />
                     <div className="flex items-center justify-between flex-wrap gap-3 my-6">
                         <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit">
                             <button onClick={() => setActiveView('curriculum')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'curriculum' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Currículo</button>
@@ -861,7 +862,7 @@ const App = () => {
             const activeClassCompetences = effectiveCompetences.filter(sc => sc.courseId === activeClass?.courseId).sort((a, b) => compararCodigo(a.code, b.code));
             return (
                 <>
-                    <PageHeader title="Informes" subtitle="Grado de consecución de criterios, competencias y descriptores." accent="teal" icon={<ChartBarIcon className="w-6 h-6" />} />
+                    <PageHeader title="Informes" subtitle="Grado de consecución de criterios, competencias y descriptores." accent={PAGE_ACCENT.informes} icon={<ChartBarIcon className="w-6 h-6" />} />
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 my-6">
                         <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit">
                             <button onClick={() => setActiveView('criteria')} className={`px-3 py-1.5 text-sm font-semibold rounded-md ${activeView === 'criteria' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}>Inf. Criterios</button>

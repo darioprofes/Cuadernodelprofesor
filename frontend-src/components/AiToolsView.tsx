@@ -8,7 +8,7 @@ import Select from './Select';
 import Textarea from './Textarea';
 import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './Icons';
 import { useAnonimizar } from '../hooks/useAnonimizar';
-import { PALETTE } from '../theme/palette';
+import { PAGE_ACCENT } from '../theme/palette';
 
 // La respuesta de la IA online suele venir en Markdown (negrita, títulos,
 // listas, tablas si el documento original tenía alguna). El botón "Copiar"
@@ -49,7 +49,7 @@ const StepBar: React.FC<{ pasoActual: Paso }> = ({ pasoActual }) => (
                                 ? 'bg-slate-100 text-slate-500'
                                 : 'bg-slate-50 text-slate-400'
                     }`}
-                    style={paso === pasoActual ? { backgroundColor: PALETTE.sand.header } : undefined}
+                    style={paso === pasoActual ? { backgroundColor: PAGE_ACCENT.herramientasIA } : undefined}
                 >
                     <span className="w-5 h-5 rounded-full bg-white/30 flex items-center justify-center text-xs font-bold">{paso}</span>
                     {label}
@@ -277,7 +277,7 @@ const AiToolsView: React.FC<AiToolsViewProps> = ({ courses, onGenerarUnidadIA })
             <PageHeader
                 title="Herramientas IA"
                 subtitle="Anonimizador de documentos y generadores de prompts"
-                accent="sand"
+                accent={PAGE_ACCENT.herramientasIA}
                 icon={<SparklesIcon className="w-6 h-6" />}
             />
 

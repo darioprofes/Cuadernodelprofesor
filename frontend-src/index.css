@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+/* Origen real de los colores de marca: theme/palette.ts (PALETTE/SEMANTIC),
+   que casi toda la app lee en JS vía props de estilo. Estas dos variables
+   son la única excepción -- Tailwind resuelve las clases de "arbitrary
+   value" (focus:ring-[...], hover:border-[...]) en tiempo de compilación
+   sobre texto literal, así que no pueden leer una constante de TypeScript
+   directamente. Si cambia PALETTE.navy.header o PALETTE.green.header en
+   theme/palette.ts, hay que actualizar el valor aquí también -- son
+   exactamente estos dos sitios (Input.ts/Link.ts y HoyView.tsx), no una
+   lista larga de colores sueltos por la app. */
+:root {
+  --color-primary: #092152;
+  --color-green-header: #0a9335;
+}

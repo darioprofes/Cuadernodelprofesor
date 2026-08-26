@@ -31,8 +31,10 @@ export interface CalendarEvent {
 // tareas calificables y de los colores por materia de las sesiones.
 export const NOTE_COLOR = { backgroundColor: '#fef9c3', textColor: '#854d0e', borderColor: '#fde68a' };
 
-// Reuniones: mismo tono teal que su propia página (Reuniones/Informes).
-export const MEETING_COLOR = { backgroundColor: '#eaf6fa', textColor: PALETTE.teal.header, borderColor: '#bfe4ee' };
+// Reuniones: mismo tono (clave "teal", hoy magenta) que su propia página
+// (Reuniones/Informes) -- fondo/borde leídos de PALETTE en vez de fijados a
+// mano, para no desincronizarse la próxima vez que cambie la paleta.
+export const MEETING_COLOR = { backgroundColor: PALETTE.teal.soft, textColor: PALETTE.teal.header, borderColor: PALETTE.teal.base };
 export const MEETING_TIPO_LABEL: Record<Meeting['tipo'], string> = {
     tutoria: 'Tutoría',
     r_tutores: 'R. Tutores',

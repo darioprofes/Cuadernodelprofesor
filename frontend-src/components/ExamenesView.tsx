@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { ClassData, Course, View } from '../types';
 import { ClipboardDocumentCheckIcon, PlusIcon } from './Icons';
 import PageHeader from './PageHeader';
+import { PAGE_ACCENT } from '../theme/palette';
 import EmptyState from './EmptyState';
 import Input from './Input';
 import Select from './Select';
@@ -87,7 +88,7 @@ const ExamenesView: React.FC<ExamenesViewProps> = ({ classes, courses, setActive
     };
 
     const header = (
-        <PageHeader title="Tareas evaluables" subtitle="Tareas y exámenes programados en todas tus clases." accent="green" icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />} />
+        <PageHeader title="Tareas evaluables" subtitle="Tareas y exámenes programados en todas tus clases." accent={PAGE_ACCENT.tareasEvaluables} icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />} />
     );
 
     if (todasLasTareas.length === 0) {

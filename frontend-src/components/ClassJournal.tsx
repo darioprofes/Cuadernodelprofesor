@@ -8,7 +8,7 @@ import Textarea from './Textarea';
 import EmptyState from './EmptyState';
 import IconButton from './IconButton';
 import DateNavButton from './DateNavButton';
-import { PALETTE } from '../theme/palette';
+import { PAGE_ACCENT } from '../theme/palette';
 import { sessionDisplayText } from '../utils';
 import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
@@ -281,7 +281,7 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className={`rounded-xl ${pageHeaderPaddingClassName} ${pageHeaderMinHeight} flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`} style={{ backgroundColor: PALETTE.green.header, ...headerPatternStyle }}>
+      <div className={`rounded-xl ${pageHeaderPaddingClassName} ${pageHeaderMinHeight} flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`} style={{ backgroundColor: PAGE_ACCENT.diario, ...headerPatternStyle }}>
         <div className="flex items-center gap-3">
             <ClipboardDocumentIcon className="w-6 h-6 flex-shrink-0 text-white/90" />
             <div>
