@@ -7,7 +7,7 @@ import {
     StarIcon, ChevronRightIcon, ChevronDownIcon, Bars3Icon, XMarkIcon, ListBulletIcon, BeakerIcon,
 } from './Icons';
 import Logo from './Logo';
-import { PALETTE } from '../theme/palette';
+import { SEMANTIC } from '../theme/palette';
 import { openExternalLink } from '../utils';
 
 interface NavItem {
@@ -35,12 +35,12 @@ const NAV_SECTIONS: NavSection[] = [
     {
         label: 'Enseñanza',
         items: [
-            { view: 'gradebook', label: 'Cuaderno', icon: BookOpenIcon },
             // Antes solo se llegaba aquí escondido dentro de Ajustes o vía el
             // atajo de Herramientas IA -- se planifica durante todo el curso,
             // no solo al principio, así que merece acceso directo (petición
             // explícita del usuario).
             { view: 'planner', label: 'Planificación SA', icon: ListBulletIcon },
+            { view: 'gradebook', label: 'Cuaderno', icon: BookOpenIcon },
             { view: 'journal', label: 'Diario', icon: ClipboardDocumentIcon },
         ],
     },
@@ -72,6 +72,18 @@ const NAV_SECTIONS: NavSection[] = [
     }]),
 ];
 
+// Un toque de color por sección (pedido explícito del profesor, mockup con
+// captura de referencia) -- deliberadamente NO son las 5 claves de
+// PALETTE (pensadas para cabeceras/acentos de página, ya usadas con otro
+// significado en la propia app): aquí hacen falta 4 tonos bien
+// diferenciados solo para esta fila de etiqueta, así que van sueltos.
+const SECTION_COLOR: Record<string, string> = {
+    'Enseñanza': '#0d9488',
+    'Evaluación': '#e11d48',
+    'Comunicación': '#d97706',
+    'Herramientas': '#ea580c',
+};
+
 // Un mismo item del sidebar puede corresponder a varias "View" internas
 // (p.ej. "Informes" engloba criteria/competences/key-competences/descriptors,
 // que ya tienen su propia sub-tab-bar dentro de App.tsx). Se resalta activo
@@ -90,8 +102,8 @@ const isActive = (item: NavItem, activeView: View): boolean => {
 // Sidebar (w-56) -- sin esto, cada línea queda centrada en vez de alineada
 // con el icono.
 const navButtonClass = (active: boolean) =>
-    `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-left transition-colors ${
-        active ? 'text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+    `w-full flex items-center gap-2 px-2.5 py-1 rounded-lg text-sm font-medium text-left transition-colors leading-tight ${
+        active ? 'font-semibold' : 'text-slate-600 hover:bg-slate-100'
     }`;
 
 interface SidebarProps {
@@ -110,14 +122,14 @@ const SidebarContent: React.FC<{
     onOpenFavoritos: () => void;
 }> = ({ activeView, onNavigate, onOpenFavoritos }) => (
     <>
-        <div className="px-4 py-4 border-b border-slate-200 flex items-center gap-2 flex-shrink-0">
-            <img src="/logo.png" alt="" className="w-9 h-9 rounded-lg flex-shrink-0 object-cover" />
-            <div className="min-w-0">
-                <p className="font-bold text-base text-slate-800 leading-tight break-words">Cuaderno Docente</p>
+        <div className="px-3 py-2 border-b border-slate-200 flex flex-col items-center gap-0.5 flex-shrink-0">
+            <img src="/logo.png" alt="" className="w-12 h-12 flex-shrink-0 object-contain" />
+            <div className="text-center">
+                <p className="font-bold text-sm text-slate-800 leading-tight">Faro Docente</p>
                 <p className="text-xs text-slate-400 leading-tight">La Marejada</p>
             </div>
         </div>
-        <nav className="flex-1 overflow-y-auto p-2 space-y-4">
+        <nav className="flex-1 overflow-y-auto p-1.5 space-y-1">
             {NAV_SECTIONS.map((section, i) => {
                 const items = section.items.map(item => {
                     const Icon = item.icon;
@@ -127,9 +139,9 @@ const SidebarContent: React.FC<{
                             key={item.view}
                             onClick={() => onNavigate(item.view)}
                             className={navButtonClass(active)}
-                            style={active ? { backgroundColor: PALETTE.navy.header } : undefined}
+                            style={active ? { backgroundColor: SEMANTIC.primary.soft, color: SEMANTIC.primary.softText } : undefined}
                         >
-                            <Icon className="w-5 h-5 flex-shrink-0" />
+                            <Icon className="w-4 h-4 flex-shrink-0" />
                             {item.label}
                         </button>
                     );
@@ -138,32 +150,37 @@ const SidebarContent: React.FC<{
                 // Sin etiqueta (Hoy/Horario/Agenda) no tiene sentido plegarla --
                 // es la primera sección, siempre visible, no un grupo temático.
                 if (!section.label) {
-                    return <div key={`sec-${i}`} className="space-y-1">{items}</div>;
+                    return <div key={`sec-${i}`} className="space-y-0.5">{items}</div>;
                 }
 
+                const color = SECTION_COLOR[section.label];
                 return (
                     <details key={section.label} open className="group">
-                        <summary className="flex items-center gap-1 px-3 pt-2 pb-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wide cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden hover:text-slate-600">
-                            <ChevronDownIcon className="w-3 h-3 flex-shrink-0 transition-transform group-open:rotate-0 -rotate-90" />
+                        <summary
+                            className="flex items-center gap-1.5 px-2.5 pt-0.5 pb-0.5 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden"
+                            style={{ color }}
+                        >
+                            <ChevronDownIcon className="w-3 h-3 flex-shrink-0 opacity-60 transition-transform group-open:rotate-0 -rotate-90" />
                             {section.label}
+                            <span className="flex-1 h-px ml-1" style={{ background: `linear-gradient(to right, ${color}80, transparent)` }} />
                         </summary>
-                        <div className="space-y-1">{items}</div>
+                        <div className="space-y-0.5">{items}</div>
                     </details>
                 );
             })}
 
-            <div className="pt-2 border-t border-slate-200">
+            <div className="pt-1.5 border-t border-slate-200">
                 <button
                     onClick={onOpenFavoritos}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-medium text-slate-700 transition-colors"
+                    className="w-full flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-medium text-slate-700 transition-colors"
                 >
-                    <StarIcon className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                    <StarIcon className="w-4 h-4 text-amber-500 flex-shrink-0" />
                     <span className="flex-grow text-left">Favoritos</span>
                     <ChevronRightIcon className="w-4 h-4 text-slate-400" />
                 </button>
             </div>
         </nav>
-        <div className="px-4 py-3 border-t border-slate-200 flex-shrink-0 flex items-center justify-center gap-1.5">
+        <div className="px-4 py-2 border-t border-slate-200 flex-shrink-0 flex items-center justify-center gap-1.5">
             <Logo className="w-4 h-4 text-slate-400 flex-shrink-0" />
             <a
                 href="http://creativecommons.org/licenses/by-nc/4.0/"
@@ -200,7 +217,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenFavo
                     <Bars3Icon className="w-6 h-6 text-slate-700" />
                 </button>
                 <img src="/logo.png" alt="" className="w-7 h-7 rounded-lg flex-shrink-0 object-cover" />
-                <span className="font-bold text-slate-800">Cuaderno Docente</span>
+                <span className="font-bold text-slate-800">Faro Docente</span>
             </header>
 
             {mobileMenuOpen && (

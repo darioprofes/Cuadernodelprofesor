@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Cuaderno Docente",
+  "productName": "Faro Docente",
   "version": "0.1.0",
-  "identifier": "es.lamarejada.cuadernodocente",
+  "identifier": "es.lamarejada.farodocente",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:3001",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Cuaderno Docente",
+        "title": "Faro Docente",
         "width": 1280,
         "height": 800,
         "resizable": true,

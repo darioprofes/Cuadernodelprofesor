@@ -7,7 +7,7 @@ Verificado en vivo por el usuario contra su cuenta real (ver
 docs/faltas/educastur_client.py y probar_educastur.py, mismo contenido) —
 esta copia es la que corre de verdad en el backend.
 
-  - User-Agent propio (CuadernoDocente/1.0) en vez de simular un
+  - User-Agent propio (FaroDocente/1.0) en vez de simular un
     navegador: el servidor sabe en todo momento qué tipo de cliente está
     haciendo la petición — decisión explícita del usuario, fingir un
     navegador no ocultaría nada real de todas formas.
@@ -47,7 +47,7 @@ FALTAS_API_BASE = "https://www62.asturias.es/faltas-back/api/faltas-tramo"
 # puede cambiar de forma).
 FALTAS_EMPLEADO_URL = "https://www62.asturias.es/faltas-back/api/faltas/empleado"
 
-USER_AGENT = "CuadernoDocente/1.0 (+https://profe.lamarejada.es)"
+USER_AGENT = "FaroDocente/1.0 (+https://profe.lamarejada.es)"
 
 TIPOS_FALTA_VALIDOS = {"R", "J", "I"}
 TIPOS_FALTA_ACEPTADOS = TIPOS_FALTA_VALIDOS | {""}

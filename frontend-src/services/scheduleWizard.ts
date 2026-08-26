@@ -502,7 +502,7 @@ export interface PrefillCursoAcademico {
 export async function generateTemplate(prefill?: PrefillCursoAcademico, datosReales?: DatosRealesTemplate): Promise<Blob> {
     const { Workbook } = await import('exceljs');
     const wb = new Workbook();
-    wb.creator = 'Cuaderno Docente';
+    wb.creator = 'Faro Docente';
     wb.created = new Date();
 
     buildInstruccionesSheet(wb);
@@ -1206,7 +1206,7 @@ function parseAlumnadoSheet(sheet: import('exceljs').Worksheet, errores: string[
 export async function generateHorarioTemplate(): Promise<Blob> {
     const { Workbook } = await import('exceljs');
     const wb = new Workbook();
-    wb.creator = 'Cuaderno Docente';
+    wb.creator = 'Faro Docente';
     wb.created = new Date();
 
     buildConfiguracionSheet(wb);

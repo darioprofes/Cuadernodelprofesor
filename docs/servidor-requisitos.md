@@ -8,7 +8,7 @@
 
 ## 1. Servidor de producción — `192.168.10.12` (`Docker`)
 
-Ya montado y en uso. Aquí vive todo el stack de Cuaderno Docente y no se toca sin
+Ya montado y en uso. Aquí vive todo el stack de Faro Docente y no se toca sin
 motivo. Acceso: `ssh 192.168.10.12` (usuario `root`, clave `~/.ssh/id_ed25519_lamarejada`).
 
 - Docker + Docker Compose v2

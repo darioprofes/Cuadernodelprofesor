@@ -1,4 +1,4 @@
-# Profe Planner — Cuaderno Docente
+# Profe Planner — Faro Docente
 
 Aplicación web de gestión académica para profesorado: clases y alumnado,
 calificaciones por criterios LOMLOE, currículo, programación didáctica, horario,
