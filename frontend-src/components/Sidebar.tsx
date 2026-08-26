@@ -7,7 +7,7 @@ import {
     StarIcon, ChevronRightIcon, ChevronDownIcon, Bars3Icon, XMarkIcon, ListBulletIcon, BeakerIcon,
 } from './Icons';
 import Logo from './Logo';
-import { SEMANTIC } from '../theme/palette';
+import { SEMANTIC, PAGE_ACCENT } from '../theme/palette';
 import { openExternalLink } from '../utils';
 
 interface NavItem {
@@ -61,27 +61,36 @@ const NAV_SECTIONS: NavSection[] = [
             { view: 'criteria', label: 'Informes', icon: ChartBarIcon },
         ],
     },
-    // Herramientas IA depende del backend Python (services/anonimizador.py) --
-    // sin equivalente en escritorio (Tauri/Rust), mismo criterio ya aplicado a
+    // Depende del backend Python (services/anonimizador.py) -- sin
+    // equivalente en escritorio (Tauri/Rust), mismo criterio ya aplicado a
     // la importación de horario en PDF (ImportScheduleModal.tsx::PDF_IMPORT_AVAILABLE).
+    // "Anonimizador", no "Herramientas IA" genérico -- eso es lo que hay
+    // hoy de verdad; cuando se añadan más generadores (ver hoja de ruta),
+    // cada uno gana su propia entrada aquí en vez de esconderse todos
+    // detrás de un nombre paraguas.
     ...(isTauri() ? [] : [{
         label: 'Herramientas',
         items: [
-            { view: 'ai-tools' as View, label: 'Herramientas IA', icon: SparklesIcon },
+            { view: 'ai-tools' as View, label: 'Anonimizador', icon: SparklesIcon },
         ],
     }]),
 ];
 
-// Un toque de color por sección (pedido explícito del profesor, mockup con
-// captura de referencia) -- deliberadamente NO son las 5 claves de
-// PALETTE (pensadas para cabeceras/acentos de página, ya usadas con otro
-// significado en la propia app): aquí hacen falta 4 tonos bien
-// diferenciados solo para esta fila de etiqueta, así que van sueltos.
+// Solo "Herramientas" arranca plegada -- pedido explícito (de momento
+// tiene un único elemento, menos prioritaria que Enseñanza/Evaluación/
+// Comunicación para tenerla siempre a la vista).
+const COLLAPSED_BY_DEFAULT = new Set(['Herramientas']);
+
+// Un toque de color por sección -- pedido explícito: el mismo tono base
+// que ya usan las cabeceras de página de esa sección (PAGE_ACCENT), no un
+// color aparte inventado para esta etiqueta. Cuando una sección tiene más
+// de una página (cada una con su propio tono dentro de la misma familia),
+// se toma el de su primera página como representante.
 const SECTION_COLOR: Record<string, string> = {
-    'Enseñanza': '#0d9488',
-    'Evaluación': '#e11d48',
-    'Comunicación': '#d97706',
-    'Herramientas': '#ea580c',
+    'Enseñanza': PAGE_ACCENT.materia,
+    'Evaluación': PAGE_ACCENT.tareasEvaluables,
+    'Comunicación': PAGE_ACCENT.reuniones,
+    'Herramientas': PAGE_ACCENT.herramientasIA,
 };
 
 // Un mismo item del sidebar puede corresponder a varias "View" internas
@@ -156,7 +165,7 @@ const SidebarContent: React.FC<{
 
                 const color = SECTION_COLOR[section.label];
                 return (
-                    <details key={section.label} open className="group">
+                    <details key={section.label} open={!COLLAPSED_BY_DEFAULT.has(section.label)} className="group">
                         <summary
                             className="flex items-center gap-1.5 px-2.5 pt-1.5 pb-1 text-[11px] font-bold uppercase tracking-wide cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden"
                             style={{ color }}

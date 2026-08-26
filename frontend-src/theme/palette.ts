@@ -60,8 +60,9 @@ export const PAGE_ACCENT = {
     // Comunicación (amarillo)
     reuniones: '#9c7209',
     informes: '#8a6d00',
-    // Herramientas (morado)
-    herramientasIA: '#6b3fa0',
+    // Herramientas (morado 993366, el medido en Educastur -- antes tenía
+    // uno inventado, #6b3fa0, que no gustó)
+    herramientasIA: '#993366',
 } as const;
 
 // ==========================================================

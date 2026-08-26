@@ -169,6 +169,18 @@ export const BeakerIcon = ({ className = 'w-6 h-6' }: { className?: string }) =>
     </svg>
 );
 
+// Silla simple, para el botón "Plano de la clase" -- sustituye al emoji
+// 🪑 que llevaba antes: un emoji tiene su propio color fijo (marrón/madera
+// según la fuente), no hereda text-white como el resto de iconos de esa
+// cabecera, así que se veía mal sobre el color de acento de la clase.
+export const ChairIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h12a1 1 0 0 1 1 1V12H5V5.5a1 1 0 0 1 1-1Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 12h16v2.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V12Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6.5 16.5V20M17.5 16.5V20" />
+    </svg>
+);
+
 export const TableCellsIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 6.75h17.25M3.375 12h17.25m-17.25 5.25h17.25M5.25 3.75h13.5a2.25 2.25 0 0 1 2.25 2.25v13.5a2.25 2.25 0 0 1-2.25 2.25H5.25a2.25 2.25 0 0 1-2.25-2.25V6a2.25 2.25 0 0 1 2.25-2.25Zm0 0V3.75m0 0h.008v.008H5.25V3.75Zm-1.5 3.75h.008v.008H3.75V7.5Zm-1.5 3.75h.008v.008H2.25V11.25Zm-1.5 3.75h.008v.008H.75V15Zm-1.5 3.75h.008v.008H-.75V18.75Z" />

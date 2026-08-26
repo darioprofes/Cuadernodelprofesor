@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, ChairIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
 import Input from './Input';
@@ -755,7 +755,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                 className="p-1.5 rounded-md text-white/90 hover:bg-white/15 transition-all flex-shrink-0"
                 title="Plano de la clase"
             >
-                <span className="text-base leading-none">🪑</span>
+                <ChairIcon className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-1 flex-shrink-0">
                 <button

@@ -373,11 +373,6 @@ const App = () => {
     // SettingsModal.tsx (independiente de la clase activa).
     const [materiaPageCourseId, setMateriaPageCourseId] = useState<string>('');
     const [activeView, setActiveViewRaw] = useState<View>('hoy');
-    // Atajo "Generar unidad con IA" desde Herramientas IA: al venir de ahí
-    // (en vez del botón ya existente dentro de Planificación UD), se navega
-    // aquí Y se pide abrir el modal directamente, para no obligar a pulsar
-    // el botón dos veces.
-    const [autoAbrirGenerarUnidadIA, setAutoAbrirGenerarUnidadIA] = useState(false);
     // El Diario de Clase avisa aquí cuando tiene anotaciones sin guardar
     // (es fácil escribir y olvidarse de pulsar "Guardar"): mientras esté a
     // true, cualquier cambio de vista pide confirmación antes de descartarlas.
@@ -749,14 +744,7 @@ const App = () => {
         if (activeView === 'ai-tools') {
             return (
                 <React.Suspense fallback={<ViewLoadingFallback />}>
-                    <AiToolsView
-                        courses={curriculumCourses}
-                        onGenerarUnidadIA={courseId => {
-                            setMateriaPageCourseId(courseId);
-                            setActiveView('planner');
-                            setAutoAbrirGenerarUnidadIA(true);
-                        }}
-                    />
+                    <AiToolsView />
                 </React.Suspense>
             );
         }
@@ -848,8 +836,6 @@ const App = () => {
                                 courses={curriculumCourses}
                                 classes={hydratedClasses}
                                 academicConfiguration={effectiveAcademicConfiguration}
-                                autoOpenGenerarIA={autoAbrirGenerarUnidadIA}
-                                onAutoOpenGenerarIAHandled={() => setAutoAbrirGenerarUnidadIA(false)}
                             />
                         )}
                     </React.Suspense>

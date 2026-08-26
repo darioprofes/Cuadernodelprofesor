@@ -197,11 +197,6 @@ interface ProgrammingManagerProps {
     courses: Course[];
     classes: ClassData[];
     academicConfiguration: AcademicConfiguration;
-    // Atajo desde Herramientas IA (AiToolsView): App.tsx navega aquí y pide
-    // abrir GenerarSituacionAprendizajeModal directamente, sin que el profesor tenga que
-    // pulsar el botón otra vez.
-    autoOpenGenerarIA?: boolean;
-    onAutoOpenGenerarIAHandled?: () => void;
 }
 
 const toYYYYMMDD = (date: Date): string => {
@@ -218,7 +213,7 @@ const addDays = (date: Date, days: number): Date => {
 };
 
 
-const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, classes, academicConfiguration, autoOpenGenerarIA, onAutoOpenGenerarIAHandled }) => {
+const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, classes, academicConfiguration }) => {
     const selectedCourseId = courseId;
     // "create" admite un `draft` opcional -- el borrador que entrega
     // GenerarSituacionAprendizajeModal para revisar en el mismo formulario que ya usa la
@@ -229,14 +224,6 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
     // Vista de solo lectura al pinchar en una SA de la lista -- separada del
     // editor: mismo contenido pero sin campos editables ni secciones vacías.
     const [viewingUnit, setViewingUnit] = useState<ProgrammingUnit | null>(null);
-
-    React.useEffect(() => {
-        if (autoOpenGenerarIA) {
-            setShowGenerarIA(true);
-            onAutoOpenGenerarIAHandled?.();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [autoOpenGenerarIA]);
 
     const remoteUnits = useProgrammingUnits(selectedCourseId);
     const createUnitMutation = useCreateProgrammingUnit();
