@@ -122,11 +122,12 @@ const SidebarContent: React.FC<{
     onOpenFavoritos: () => void;
 }> = ({ activeView, onNavigate, onOpenFavoritos }) => (
     <>
-        <div className="px-3 py-2 border-b border-slate-200 flex flex-col items-center gap-0.5 flex-shrink-0">
-            <img src="/logo.png" alt="" className="w-12 h-12 flex-shrink-0 object-contain" />
-            <div className="text-center">
-                <p className="font-bold text-sm text-slate-800 leading-tight">Faro Docente</p>
-                <p className="text-xs text-slate-400 leading-tight">La Marejada</p>
+        <div className="px-3 py-2 border-b border-slate-200 flex flex-col items-center gap-0 flex-shrink-0">
+            <img src="/logo.png" alt="" className="w-24 h-24 flex-shrink-0 object-contain" />
+            <div className="text-center -mt-1">
+                <p className="lowercase leading-none" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 700, fontSize: '26px', color: '#2f5c99' }}>faro</p>
+                <p className="lowercase leading-none mt-0.5" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 600, fontSize: '16px', color: '#5b8fd1' }}>docente</p>
+                <p className="text-[10px] text-slate-400 leading-tight mt-1">La Marejada</p>
             </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-1.5 space-y-1">
