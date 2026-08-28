@@ -1,15 +1,14 @@
 
 
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Assignment, EvaluationCriterion, LinkedCriterion, Category, SpecificCompetence, KeyCompetence, ClassData, Course, AcademicConfiguration, EvaluationPeriod, OperationalDescriptor, ImportanciaActividad } from '../types';
+import type { Assignment, EvaluationCriterion, LinkedCriterion, Category, SpecificCompetence, KeyCompetence, ClassData, Course, AcademicConfiguration, EvaluationPeriod, ImportanciaActividad } from '../types';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import Select from './Select';
-import { checkboxClassName } from '../theme/components/Input';
 import { linkClassName } from '../theme/components/Link';
-import { TrashIcon } from './Icons';
-import { formatClassLabel, compararCodigo } from '../utils';
+import { formatClassLabel } from '../utils';
+import LinkedCriteriaSelector from './LinkedCriteriaSelector';
 
 const IMPORTANCIA_LABEL: Record<ImportanciaActividad, string> = {
     muy_baja: 'Muy baja',
@@ -106,79 +105,20 @@ const CalendarTaskModal: React.FC<CalendarTaskModalProps> = (props) => {
         return selectedClass.categories.filter(c => c.evaluationPeriodId === evaluationPeriod.id);
     }, [selectedClass, evaluationPeriod]);
 
-    const availableCriteria = useMemo<EvaluationCriterion[]>(() => {
+    // Todos los de la materia, sin excluir los ya vinculados -- a diferencia
+    // del antiguo desplegable "Añadir criterio" (que sí los excluía),
+    // LinkedCriteriaSelector necesita la lista completa para poder marcar/
+    // desmarcar con checkboxes.
+    const criteriaDelCurso = useMemo<EvaluationCriterion[]>(() => {
         if (!selectedClass) return [];
-        const linkedIds = new Set(linkedCriteria.map(lc => lc.criterionId));
-        return criteria
-            .filter(c => c.courseId === selectedClass.courseId && !linkedIds.has(c.id))
-            .sort((a, b) => compararCodigo(a.code, b.code));
-    }, [selectedClass, criteria, linkedCriteria]);
+        return criteria.filter(c => c.courseId === selectedClass.courseId);
+    }, [selectedClass, criteria]);
 
     useEffect(() => {
         if (!availableCategories.find(c => c.id === selectedCategoryId)) {
             setSelectedCategoryId('');
         }
     }, [availableCategories, selectedCategoryId]);
-
-    const descriptorMap = useMemo(() => {
-        const map = new Map<string, OperationalDescriptor>();
-        keyCompetences.forEach(kc => {
-            (kc.descriptors || []).forEach(desc => map.set(desc.id, desc));
-        });
-        return map;
-    }, [keyCompetences]);
-      
-    const criterionToCompetenceMap = useMemo(() => {
-        const map = new Map<string, SpecificCompetence>();
-        criteria.forEach(crit => {
-            const sc = specificCompetences.find(sc => sc.id === crit.competenceId);
-            if (sc) map.set(crit.id, sc);
-        });
-        return map;
-    }, [criteria, specificCompetences]);
-
-    const handleAddCriterion = (criterionId: string) => {
-        if (!criterionId) return;
-        // Todos marcados por defecto: ver AssignmentModal.tsx — la relación
-        // competencia específica → descriptores la fija el currículo
-        // oficial, no es una elección por tarea.
-        const specificComp = criterionToCompetenceMap.get(criterionId);
-        const allDescriptorIds = specificComp?.keyCompetenceDescriptorIds || [];
-        setLinkedCriteria(prev => [...prev, {
-            criterionId,
-            ratio: 1,
-            selectedDescriptorIds: allDescriptorIds,
-        }]);
-    };
-
-    const handleToggleAllDescriptors = (criterionId: string, allDescriptorIds: string[], selectAll: boolean) => {
-        setLinkedCriteria(prev => prev.map(lc =>
-            lc.criterionId === criterionId ? { ...lc, selectedDescriptorIds: selectAll ? allDescriptorIds : [] } : lc
-        ));
-    };
-      
-    const handleRemoveCriterion = (criterionId: string) => {
-        setLinkedCriteria(prev => prev.filter(lc => lc.criterionId !== criterionId));
-    };
-
-    const handleCriterionRatioChange = (criterionId: string, newRatio: number) => {
-        setLinkedCriteria(prev => prev.map(lc =>
-            lc.criterionId === criterionId ? { ...lc, ratio: newRatio >= 0 ? newRatio : 0 } : lc
-        ));
-    };
-
-    const handleDescriptorSelectionChange = (criterionId: string, descriptorId: string, isSelected: boolean) => {
-        setLinkedCriteria(prev => prev.map(lc => {
-            if (lc.criterionId === criterionId) {
-                const newSelectedIds = new Set(lc.selectedDescriptorIds);
-                if (isSelected) newSelectedIds.add(descriptorId); else newSelectedIds.delete(descriptorId);
-                return { ...lc, selectedDescriptorIds: Array.from(newSelectedIds) };
-            }
-            return lc;
-        }));
-    };
-
-    const totalRatio = linkedCriteria.reduce((sum, lc) => sum + lc.ratio, 0);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -303,68 +243,21 @@ const CalendarTaskModal: React.FC<CalendarTaskModalProps> = (props) => {
                 </div>
 
                 <div>
-                    <h4 className="text-sm font-medium text-slate-700 mb-2">Ponderación de Criterios y Descriptores</h4>
-                    {linkedCriteria.length === 0 ? (
+                    <h4 className="text-sm font-medium text-slate-700 mb-2">Criterios de Evaluación</h4>
+                    {!selectedClassId ? (
                         <p className="text-sm text-slate-400 italic text-center py-4 bg-slate-50 rounded-lg">
-                            Sin criterios vinculados. La nota de la tarea se introducirá manualmente.
+                            Elige una clase primero.
                         </p>
                     ) : (
-                        <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2">
-                            {linkedCriteria.map(lc => {
-                                const criterion = criteria.find(c => c.id === lc.criterionId);
-                                const specificComp = criterion ? criterionToCompetenceMap.get(criterion.id) : undefined;
-                                const descriptors = (specificComp?.keyCompetenceDescriptorIds || []).map(id => descriptorMap.get(id)).filter(Boolean) as OperationalDescriptor[];
-                                const percentage = totalRatio > 0 ? ((lc.ratio / totalRatio) * 100).toFixed(1) : '0.0';
-                                return (
-                                    <div key={lc.criterionId} className="p-3 border border-slate-200 rounded-lg bg-slate-50/50">
-                                        <div className="flex items-center space-x-2">
-                                            <div className="flex-grow">
-                                                <p className="font-semibold text-slate-800">{criterion?.code}: <span className="font-normal text-slate-600">{criterion?.description}</span></p>
-                                            </div>
-                                            <div className="flex items-center space-x-2">
-                                                <Input
-                                                    type="number" min="0" step="0.5" value={lc.ratio}
-                                                    onChange={e => handleCriterionRatioChange(lc.criterionId, Number(e.target.value))}
-                                                    className="w-16 text-center"
-                                                    title="Ratio de ponderación"
-                                                />
-                                                <span className="text-sm font-semibold text-slate-500 w-16 text-center">{percentage}%</span>
-                                                <button type="button" onClick={() => handleRemoveCriterion(lc.criterionId)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><TrashIcon className="w-5 h-5" /></button>
-                                            </div>
-                                        </div>
-                                        {descriptors.length > 0 && (
-                                            <div className="mt-3 pt-3 border-t border-slate-200">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <p className="text-xs font-semibold text-slate-600">Descriptores Operativos a trabajar ({specificComp?.code}):</p>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleToggleAllDescriptors(lc.criterionId, descriptors.map(d => d.id), lc.selectedDescriptorIds.length < descriptors.length)}
-                                                        className={`text-xs font-semibold ${linkClassName}`}
-                                                    >
-                                                        {lc.selectedDescriptorIds.length < descriptors.length ? 'Marcar todos' : 'Desmarcar todos'}
-                                                    </button>
-                                                </div>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
-                                                    {descriptors.map(desc => (
-                                                        <label key={desc.id} className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-md hover:bg-slate-200/50">
-                                                            <input type="checkbox" className={`mt-0.5 ${checkboxClassName}`} checked={lc.selectedDescriptorIds.includes(desc.id)} onChange={e => handleDescriptorSelectionChange(lc.criterionId, desc.id, e.target.checked)} />
-                                                            <span className="text-xs text-slate-700"><span className="font-bold">{desc.code}:</span> {desc.description}</span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
+                        <LinkedCriteriaSelector
+                            key={selectedClassId}
+                            linkedCriteria={linkedCriteria}
+                            onChange={setLinkedCriteria}
+                            criteria={criteriaDelCurso}
+                            specificCompetences={specificCompetences}
+                            keyCompetences={keyCompetences}
+                        />
                     )}
-                    <div className="mt-3">
-                        <Select onChange={e => { handleAddCriterion(e.target.value); e.target.value = ""; }} value="" className="flex-grow mt-1" disabled={!selectedClassId}>
-                            <option value="" disabled>Añadir criterio a la tarea...</option>
-                            {availableCriteria.map(c => <option key={c.id} value={c.id}>{c.code} - {c.description}</option>)}
-                        </Select>
-                    </div>
                 </div>
                 <div className="flex justify-end pt-4 space-x-2 border-t mt-6">
                     <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Assignment, EvaluationCriterion, LinkedCriterion, Category, SpecificCompetence, KeyCompetence, OperationalDescriptor, ProgrammingUnit, AcademicConfiguration, EvaluationPeriod, EvaluationTool, ImportanciaActividad } from '../types';
+import type { Assignment, EvaluationCriterion, LinkedCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationPeriod, EvaluationTool, ImportanciaActividad } from '../types';
 
 const IMPORTANCIA_LABEL: Record<ImportanciaActividad, string> = {
   muy_baja: 'Muy baja',
@@ -13,10 +13,9 @@ import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import Select from './Select';
-import Badge from './Badge';
 import { checkboxClassName } from '../theme/components/Input';
 import { linkClassName } from '../theme/components/Link';
-import { TrashIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon } from './Icons';
+import LinkedCriteriaSelector from './LinkedCriteriaSelector';
 
 interface AssignmentModalProps {
   isOpen: boolean;
@@ -51,43 +50,12 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
   const [importancia, setImportancia] = useState<ImportanciaActividad>('normal');
   const [importanciaAvanzada, setImportanciaAvanzada] = useState(false);
   const [importanciaPersonalizada, setImportanciaPersonalizada] = useState<string>('');
+  const [puntuacionMaxima, setPuntuacionMaxima] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(category.id);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
-  const [isCriteriaSelectorOpen, setIsCriteriaSelectorOpen] = useState(false);
-  const [expandedCompetences, setExpandedCompetences] = useState<Set<string>>(new Set());
   const [useGlobalToolCriteria, setUseGlobalToolCriteria] = useState(false);
-
-  const descriptorMap = useMemo(() => {
-    const map = new Map<string, OperationalDescriptor>();
-    keyCompetences.forEach(kc => {
-      (kc.descriptors || []).forEach(desc => {
-        map.set(desc.id, desc);
-      });
-    });
-    return map;
-  }, [keyCompetences]);
-  
-  const criterionToCompetenceMap = useMemo(() => {
-    const map = new Map<string, SpecificCompetence>();
-    criteria.forEach(crit => {
-      const sc = specificCompetences.find(sc => sc.id === crit.competenceId);
-      if (sc) map.set(crit.id, sc);
-    });
-    return map;
-  }, [criteria, specificCompetences]);
-
-  const criteriaByCompetence = useMemo(() => {
-    const groups = new Map<string, { competence: SpecificCompetence | null; criteria: typeof criteria }>();
-    criteria.forEach(c => {
-      const sc = criterionToCompetenceMap.get(c.id);
-      const key = sc?.id ?? '__sin_competencia__';
-      if (!groups.has(key)) groups.set(key, { competence: sc ?? null, criteria: [] });
-      groups.get(key)!.criteria.push(c);
-    });
-    return Array.from(groups.values());
-  }, [criteria, criterionToCompetenceMap]);
 
   useEffect(() => {
     setError(null);
@@ -105,17 +73,13 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
       setImportancia(assignmentToEdit.importancia || 'normal');
       setImportanciaAvanzada(assignmentToEdit.importanciaPersonalizada != null);
       setImportanciaPersonalizada(assignmentToEdit.importanciaPersonalizada != null ? String(assignmentToEdit.importanciaPersonalizada) : '');
+      setPuntuacionMaxima(assignmentToEdit.puntuacionMaxima != null ? String(assignmentToEdit.puntuacionMaxima) : '');
       const sanitizedLinkedCriteria = (assignmentToEdit.linkedCriteria || []).map(lc => ({
         ...lc,
         selectedDescriptorIds: lc.selectedDescriptorIds || [],
       }));
       setLinkedCriteria(sanitizedLinkedCriteria);
-      // Expandir automáticamente los grupos con criterios ya seleccionados
-      const selectedIds = new Set(sanitizedLinkedCriteria.map(lc => lc.criterionId));
-      setExpandedCompetences(new Set(
-        criteria.filter(c => selectedIds.has(c.id)).map(c => criterionToCompetenceMap.get(c.id)?.id ?? '__sin_competencia__')
-      ));
-      
+
       // Determine if global tool criteria mode should be active
       if (assignmentToEdit.evaluationMethod !== 'direct_grade' && sanitizedLinkedCriteria.length > 0) {
           setUseGlobalToolCriteria(true);
@@ -138,7 +102,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
       setImportancia('normal');
       setImportanciaAvanzada(false);
       setImportanciaPersonalizada('');
-      setIsCriteriaSelectorOpen(true); // Open selector by default for new assignments
+      setPuntuacionMaxima('');
       setUseGlobalToolCriteria(false);
     }
   }, [assignmentToEdit, isOpen, category]);
@@ -152,62 +116,6 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
     }
   }, [date, academicConfiguration.evaluationPeriods]);
 
-
-  const handleAddCriterion = (criterionId: string) => {
-    if (!criterionId) return;
-    // Todos marcados por defecto: la relación competencia específica →
-    // descriptores operativos la fija el currículo oficial
-    // (keyCompetenceDescriptorIds), no es una elección tarea a tarea del
-    // profesor — un criterio vinculado implica, por norma, todos sus
-    // descriptores. El botón "Desmarcar todos" de abajo sigue disponible
-    // para las (pocas) tareas que de verdad se centren solo en parte de la
-    // competencia.
-    const specificComp = criterionToCompetenceMap.get(criterionId);
-    const allDescriptorIds = specificComp?.keyCompetenceDescriptorIds || [];
-    setLinkedCriteria(prev => [...prev, {
-      criterionId,
-      ratio: 1,
-      selectedDescriptorIds: allDescriptorIds,
-    }]);
-  };
-
-  const handleToggleAllDescriptors = (criterionId: string, allDescriptorIds: string[], selectAll: boolean) => {
-    setLinkedCriteria(prev => prev.map(lc =>
-      lc.criterionId === criterionId ? { ...lc, selectedDescriptorIds: selectAll ? allDescriptorIds : [] } : lc
-    ));
-  };
-  
-  const handleRemoveCriterion = (criterionId: string) => {
-    setLinkedCriteria(prev => prev.filter(lc => lc.criterionId !== criterionId));
-  };
-
-  const handleToggleCriterion = (criterionId: string) => {
-      const isSelected = linkedCriteria.some(lc => lc.criterionId === criterionId);
-      if (isSelected) {
-          handleRemoveCriterion(criterionId);
-      } else {
-          handleAddCriterion(criterionId);
-      }
-  };
-
-  const handleCriterionRatioChange = (criterionId: string, newRatio: number) => {
-    setLinkedCriteria(prev => prev.map(lc =>
-      lc.criterionId === criterionId ? { ...lc, ratio: newRatio >= 0 ? newRatio : 0 } : lc
-    ));
-  };
-
-  const handleDescriptorSelectionChange = (criterionId: string, descriptorId: string, isSelected: boolean) => {
-    setLinkedCriteria(prev => prev.map(lc => {
-      if (lc.criterionId === criterionId) {
-        const newSelectedIds = new Set(lc.selectedDescriptorIds);
-        if (isSelected) newSelectedIds.add(descriptorId); else newSelectedIds.delete(descriptorId);
-        return { ...lc, selectedDescriptorIds: Array.from(newSelectedIds) };
-      }
-      return lc;
-    }));
-  };
-
-  const totalRatio = linkedCriteria.reduce((sum, lc) => sum + lc.ratio, 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,6 +143,8 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
         pesoEnCategoria: pesoEnCategoria.trim() ? Number(pesoEnCategoria) : undefined,
         importancia,
         importanciaPersonalizada: importanciaAvanzada && importanciaPersonalizada.trim() ? Number(importanciaPersonalizada) : undefined,
+        puntuacionMaxima: evaluationMethod === 'direct_grade' && finalLinkedCriteria.length === 0 && puntuacionMaxima.trim()
+          ? Number(puntuacionMaxima) : undefined,
       };
       setError(null);
       setGuardando(true);
@@ -381,12 +291,33 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
               id="evaluation-method" value={evaluationMethod} onChange={(e) => setEvaluationMethod(e.target.value as Assignment['evaluationMethod'])}
               className="mt-1"
             >
-              <option value="direct_grade">Nota numérica directa por criterio</option>
+              <option value="direct_grade">Nota numérica</option>
               <option value="checklist">Lista de Cotejo</option>
               <option value="rating_scale">Escala de Valoración</option>
               <option value="rubric">Rúbrica</option>
+              <option value="criterial_exam">Examen criterial</option>
             </Select>
         </div>
+
+        {evaluationMethod === 'direct_grade' && linkedCriteria.length === 0 && (
+            <div>
+                <label htmlFor="puntuacion-maxima" className="block text-sm font-medium text-slate-700">
+                    Puntuación máxima (opcional)
+                </label>
+                <div className="w-32 mt-1">
+                    <Input
+                        type="number" id="puntuacion-maxima" min="0" step="0.5"
+                        value={puntuacionMaxima} onChange={(e) => setPuntuacionMaxima(e.target.value)}
+                        placeholder="10"
+                    />
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                    Si esta tarea se puntúa sobre un valor distinto de 10 (p.ej. un examen sobre 8), indícalo aquí:
+                    al calificar podrás escribir la nota tal cual sale, y se convertirá a base 10 automáticamente
+                    para los cálculos de medias.
+                </p>
+            </div>
+        )}
 
         {/* Instrument Selection Logic */}
         {evaluationMethod !== 'direct_grade' && (
@@ -433,143 +364,15 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
         {(evaluationMethod === 'direct_grade' || useGlobalToolCriteria) && showCriteriaSection && (
         <div className="space-y-4 mt-4">
             {evaluationMethod !== 'direct_grade' && <h4 className="text-sm font-bold text-slate-700">Selección de Criterios Globales</h4>}
-            
-            {/* New Criteria Selector */}
-            <div className="border border-slate-200 rounded-lg bg-white shadow-sm overflow-hidden">
-                <button 
-                    type="button"
-                    onClick={() => setIsCriteriaSelectorOpen(!isCriteriaSelectorOpen)}
-                    className="w-full flex justify-between items-center p-3 bg-slate-50 hover:bg-slate-100 text-left text-sm font-medium text-slate-700 transition-colors"
-                >
-                    <span className="flex items-center gap-2">
-                        <PlusIcon className="w-4 h-4 text-blue-600" />
-                        Seleccionar Criterios de Evaluación
-                        <Badge variant="primary" className="ml-2">
-                            {linkedCriteria.length} seleccionados
-                        </Badge>
-                    </span>
-                    {isCriteriaSelectorOpen ? <ChevronDownIcon className="w-5 h-5 text-slate-400" /> : <ChevronRightIcon className="w-5 h-5 text-slate-400" />}
-                </button>
-                
-                {isCriteriaSelectorOpen && (
-                    <div className="border-t border-slate-200 max-h-72 overflow-y-auto bg-white">
-                        {criteria.length === 0 ? (
-                            <p className="p-3 text-sm text-slate-500 italic">No hay criterios definidos para este curso.</p>
-                        ) : (
-                            criteriaByCompetence.map(({ competence, criteria: groupCriteria }) => {
-                                const groupKey = competence?.id ?? '__sin_competencia__';
-                                const isExpanded = expandedCompetences.has(groupKey);
-                                const selectedInGroup = groupCriteria.filter(c => linkedCriteria.some(lc => lc.criterionId === c.id)).length;
-                                return (
-                                    <div key={groupKey} className="border-b border-slate-100 last:border-b-0">
-                                        <button
-                                            type="button"
-                                            onClick={() => setExpandedCompetences(prev => {
-                                                const next = new Set(prev);
-                                                next.has(groupKey) ? next.delete(groupKey) : next.add(groupKey);
-                                                return next;
-                                            })}
-                                            className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 text-left"
-                                        >
-                                            <span className="flex items-start gap-2 text-sm font-medium text-slate-700 min-w-0">
-                                                {isExpanded ? <ChevronDownIcon className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5"/> : <ChevronRightIcon className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5"/>}
-                                                <span className="font-semibold text-slate-500 whitespace-nowrap flex-shrink-0">{competence?.code ?? '—'}</span>
-                                                <span className="break-words min-w-0">{competence?.description ?? 'Sin competencia'}</span>
-                                            </span>
-                                            {selectedInGroup > 0 && (
-                                                <Badge variant="primary" className="ml-2 flex-shrink-0">{selectedInGroup}</Badge>
-                                            )}
-                                        </button>
-                                        {isExpanded && (
-                                            <div className="px-3 pb-2 space-y-1 bg-slate-50/50">
-                                                {groupCriteria.map(c => {
-                                                    const isSelected = linkedCriteria.some(lc => lc.criterionId === c.id);
-                                                    return (
-                                                        <label key={c.id} className={`flex items-start gap-3 p-2 rounded-md cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 border border-blue-100' : 'hover:bg-white border border-transparent'}`}>
-                                                            <input type="checkbox" checked={isSelected} onChange={() => handleToggleCriterion(c.id)} className={`mt-1 ${checkboxClassName}`} />
-                                                            <div className="flex-1">
-                                                                <span className="block text-sm font-semibold text-slate-800">{c.code}</span>
-                                                                <span className="block text-xs text-slate-600">{c.description}</span>
-                                                            </div>
-                                                        </label>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })
-                        )}
-                    </div>
-                )}
-            </div>
-
-           {linkedCriteria.length > 0 && (
-               <>
-                <h4 className="text-sm font-medium text-slate-700 pt-2">Configuración de Descriptores y Peso</h4>
-                <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2">
-                    {linkedCriteria.map(lc => {
-                        const criterion = criteria.find(c => c.id === lc.criterionId);
-                        const specificComp = criterion ? criterionToCompetenceMap.get(criterion.id) : undefined;
-                        const descriptors = (specificComp?.keyCompetenceDescriptorIds || []).map(id => descriptorMap.get(id)).filter(Boolean) as OperationalDescriptor[];
-                        const percentage = totalRatio > 0 ? ((lc.ratio / totalRatio) * 100).toFixed(1) : '0.0';
-
-                        return (
-                            <div key={lc.criterionId} className="p-3 border border-slate-200 rounded-lg bg-slate-50/50">
-                                <div className="flex items-center space-x-2">
-                                    <div className="flex-grow">
-                                        <p className="font-semibold text-slate-800">{criterion?.code}: <span className="font-normal text-slate-600">{criterion?.description}</span></p>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Input
-                                            type="number" min="0" step="0.5" value={lc.ratio}
-                                            onChange={(e) => handleCriterionRatioChange(lc.criterionId, Number(e.target.value))}
-                                            className="w-16 text-center"
-                                            title="Ratio de ponderación"
-                                        />
-                                        <span className="text-sm font-semibold text-slate-500 w-16 text-center">{percentage}%</span>
-                                        <button type="button" onClick={() => handleRemoveCriterion(lc.criterionId)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><TrashIcon className="w-5 h-5" /></button>
-                                    </div>
-                                </div>
-                                {descriptors.length > 0 && (
-                                    <div className="mt-3 pt-3 border-t border-slate-200">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <p className="text-xs font-semibold text-slate-600">Descriptores Operativos a trabajar ({specificComp?.code}):</p>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleToggleAllDescriptors(lc.criterionId, descriptors.map(d => d.id), lc.selectedDescriptorIds.length < descriptors.length)}
-                                                className={`text-xs font-semibold ${linkClassName}`}
-                                            >
-                                                {lc.selectedDescriptorIds.length < descriptors.length ? 'Marcar todos' : 'Desmarcar todos'}
-                                            </button>
-                                        </div>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
-                                            {descriptors.map(desc => (
-                                                <label key={desc.id} className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-md hover:bg-slate-200/50">
-                                                    <input 
-                                                        type="checkbox"
-                                                        className={`mt-0.5 ${checkboxClassName}`}
-                                                        checked={lc.selectedDescriptorIds.includes(desc.id)}
-                                                        onChange={(e) => handleDescriptorSelectionChange(lc.criterionId, desc.id, e.target.checked)}
-                                                    />
-                                                    <span className="text-xs text-slate-700"><span className="font-bold">{desc.code}:</span> {desc.description}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-               </>
-            )}
-            
-            {linkedCriteria.length === 0 && (
-              <p className="text-sm text-slate-400 italic text-center py-4 bg-slate-50 rounded-lg">
-                Sin criterios seleccionados. Abre el selector arriba para añadir criterios.
-              </p>
-            )}
+            <LinkedCriteriaSelector
+                key={assignmentToEdit?.id ?? 'new'}
+                linkedCriteria={linkedCriteria}
+                onChange={setLinkedCriteria}
+                criteria={criteria}
+                specificCompetences={specificCompetences}
+                keyCompetences={keyCompetences}
+                initialVista={(assignmentToEdit?.linkedCriteria?.length ?? 0) > 0 ? 'ponderar' : 'seleccionar'}
+            />
         </div>
         )}
 
