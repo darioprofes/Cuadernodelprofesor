@@ -7,7 +7,7 @@ import {
     StarIcon, ChevronRightIcon, ChevronDownIcon, Bars3Icon, XMarkIcon, ListBulletIcon, BeakerIcon,
 } from './Icons';
 import Logo from './Logo';
-import { SEMANTIC, PAGE_ACCENT } from '../theme/palette';
+import { PALETTE, SEMANTIC, SIDEBAR_BG } from '../theme/palette';
 import { openExternalLink } from '../utils';
 
 interface NavItem {
@@ -81,16 +81,20 @@ const NAV_SECTIONS: NavSection[] = [
 // Comunicación para tenerla siempre a la vista).
 const COLLAPSED_BY_DEFAULT = new Set(['Herramientas']);
 
-// Un toque de color por sección -- pedido explícito: el mismo tono base
-// que ya usan las cabeceras de página de esa sección (PAGE_ACCENT), no un
-// color aparte inventado para esta etiqueta. Cuando una sección tiene más
-// de una página (cada una con su propio tono dentro de la misma familia),
-// se toma el de su primera página como representante.
+// Un toque de color por sección, en la MISMA familia de tono que
+// PAGE_ACCENT usa para las cabeceras de esa sección (azul/rojo/amarillo/
+// morado) -- eso no cambia. Lo que sí cambia con el Sidebar en fondo azul
+// marino (rediseño oscuro): los tonos de PAGE_ACCENT en sí (oscurecidos a
+// propósito para leerse en blanco sobre header claro) pierden casi todo el
+// contraste aquí, así que se usa un tono más claro de la MISMA familia en
+// su lugar -- `base` de PALETTE para azul/amarillo/morado (curiosamente
+// esas 3 claves de PALETTE ya son ese color), y SEMANTIC.danger (el rojo ya
+// definido en la app) para Evaluación, que no tiene clave propia en PALETTE.
 const SECTION_COLOR: Record<string, string> = {
-    'Enseñanza': PAGE_ACCENT.materia,
-    'Evaluación': PAGE_ACCENT.tareasEvaluables,
-    'Comunicación': PAGE_ACCENT.reuniones,
-    'Herramientas': PAGE_ACCENT.herramientasIA,
+    'Enseñanza': PALETTE.blue.base,
+    'Evaluación': SEMANTIC.danger.base,
+    'Comunicación': PALETTE.sand.base,
+    'Herramientas': PALETTE.teal.base,
 };
 
 // Un mismo item del sidebar puede corresponder a varias "View" internas
@@ -111,14 +115,18 @@ const isActive = (item: NavItem, activeView: View): boolean => {
 // Sidebar (w-56) -- sin esto, cada línea queda centrada en vez de alineada
 // con el icono.
 const navButtonClass = (active: boolean) =>
-    `w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm font-medium text-left transition-colors leading-tight ${
-        active ? 'font-semibold' : 'text-slate-600 hover:bg-slate-100'
+    `w-full flex items-center gap-2.5 pl-2 pr-2.5 py-1.5 rounded-lg text-sm font-medium text-left transition-colors leading-tight border-l-[3px] ${
+        active ? 'text-white font-semibold' : 'text-white/70 border-transparent hover:bg-white/10 hover:text-white'
     }`;
 
 interface SidebarProps {
     activeView: View;
     setActiveView: (view: View) => void;
     onOpenFavoritos: () => void;
+    // Oculta la columna de escritorio (pedido explícito, "quiero poder
+    // ocultar el menú lateral y la barra superior") -- no afecta a la
+    // cabecera/panel de móvil, que ya se abre/cierra por su cuenta.
+    hidden?: boolean;
 }
 
 // Contenido compartido por la columna de escritorio y el panel deslizante de
@@ -131,16 +139,18 @@ const SidebarContent: React.FC<{
     onOpenFavoritos: () => void;
 }> = ({ activeView, onNavigate, onOpenFavoritos }) => (
     <>
-        <div className="px-3 py-2 border-b border-slate-200 flex flex-col items-center gap-0 flex-shrink-0">
-            <img src="/logo.png" alt="" className="w-24 h-24 flex-shrink-0 object-contain" />
+        <div className="px-3 py-2 border-b border-white/10 flex flex-col items-center gap-0 flex-shrink-0">
+            <img src="/logo.png" alt="" className="w-24 h-24 flex-shrink-0 object-contain drop-shadow-lg" />
             <div className="text-center -mt-1">
-                <p className="lowercase leading-none" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 700, fontSize: '26px', color: '#26292e' }}>faro</p>
-                <p className="lowercase leading-none mt-0.5" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 600, fontSize: '16px', color: '#29abe2' }}>docente</p>
-                <p className="text-[10px] text-slate-400 leading-tight mt-1">La Marejada</p>
+                <p className="lowercase leading-none" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 700, fontSize: '26px', color: '#ffffff' }}>faro</p>
+                <p className="lowercase leading-none mt-0.5" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 600, fontSize: '16px', color: PALETTE.blue.base }}>docente</p>
             </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-2 space-y-1.5">
             {NAV_SECTIONS.map((section, i) => {
+                // Hoy/Horario/Agenda no pertenecen a ninguna sección con
+                // color propio -- acento blanco, pedido explícito.
+                const color = section.label ? SECTION_COLOR[section.label] : '#ffffff';
                 const items = section.items.map(item => {
                     const Icon = item.icon;
                     const active = isActive(item, activeView);
@@ -149,7 +159,7 @@ const SidebarContent: React.FC<{
                             key={item.view}
                             onClick={() => onNavigate(item.view)}
                             className={navButtonClass(active)}
-                            style={active ? { backgroundColor: SEMANTIC.primary.soft, color: SEMANTIC.primary.softText } : undefined}
+                            style={active ? { backgroundColor: 'rgba(255,255,255,0.1)', borderLeftColor: color } : undefined}
                         >
                             <Icon className="w-4 h-4 flex-shrink-0" />
                             {item.label}
@@ -163,7 +173,6 @@ const SidebarContent: React.FC<{
                     return <div key={`sec-${i}`} className="space-y-1">{items}</div>;
                 }
 
-                const color = SECTION_COLOR[section.label];
                 return (
                     <details key={section.label} open={!COLLAPSED_BY_DEFAULT.has(section.label)} className="group">
                         <summary
@@ -179,25 +188,25 @@ const SidebarContent: React.FC<{
                 );
             })}
 
-            <div className="pt-2 border-t border-slate-200">
+            <div className="pt-2 border-t border-white/10">
                 <button
                     onClick={onOpenFavoritos}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-medium text-slate-700 transition-colors"
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-medium text-slate-200 transition-colors"
                 >
-                    <StarIcon className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                    <StarIcon className="w-4 h-4 text-amber-400 flex-shrink-0" />
                     <span className="flex-grow text-left">Favoritos</span>
-                    <ChevronRightIcon className="w-4 h-4 text-slate-400" />
+                    <ChevronRightIcon className="w-4 h-4 text-white/40" />
                 </button>
             </div>
         </nav>
-        <div className="px-4 py-2 border-t border-slate-200 flex-shrink-0 flex items-center justify-center gap-1.5">
-            <Logo className="w-4 h-4 text-slate-400 flex-shrink-0" />
+        <div className="px-4 py-2 border-t border-white/10 flex-shrink-0 flex items-center justify-center gap-1.5">
+            <Logo className="w-4 h-4 text-white/30 flex-shrink-0" />
             <a
                 href="http://creativecommons.org/licenses/by-nc/4.0/"
                 rel="license"
                 target="_blank"
                 onClick={(e) => openExternalLink(e, 'http://creativecommons.org/licenses/by-nc/4.0/')}
-                className="text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition-colors"
+                className="text-[10px] font-semibold text-white/40 hover:text-white/70 transition-colors"
             >
                 La Marejada · CC BY-NC
             </a>
@@ -205,7 +214,7 @@ const SidebarContent: React.FC<{
     </>
 );
 
-const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenFavoritos }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenFavoritos, hidden = false }) => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
     const handleNavigateDesktop = (view: View) => setActiveView(view);
@@ -217,29 +226,31 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenFavo
     return (
         <>
             {/* Escritorio: columna fija lateral */}
-            <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r border-slate-200 bg-white sticky top-0 h-screen">
-                <SidebarContent activeView={activeView} onNavigate={handleNavigateDesktop} onOpenFavoritos={onOpenFavoritos} />
-            </aside>
+            {!hidden && (
+                <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r border-white/10 sticky top-0 h-screen" style={{ backgroundColor: SIDEBAR_BG }}>
+                    <SidebarContent activeView={activeView} onNavigate={handleNavigateDesktop} onOpenFavoritos={onOpenFavoritos} />
+                </aside>
+            )}
 
             {/* Móvil: barra superior con botón de menú (demasiadas secciones para una barra inferior) */}
-            <header className="flex md:hidden items-center gap-2 px-4 py-3 border-b border-slate-200 bg-white fixed top-0 left-0 right-0 z-30">
-                <button onClick={() => setMobileMenuOpen(true)} className="p-1.5 -ml-1.5 rounded-lg hover:bg-slate-100" title="Abrir menú">
-                    <Bars3Icon className="w-6 h-6 text-slate-700" />
+            <header className="flex md:hidden items-center gap-2 px-4 py-3 border-b border-white/10 fixed top-0 left-0 right-0 z-30" style={{ backgroundColor: SIDEBAR_BG }}>
+                <button onClick={() => setMobileMenuOpen(true)} className="p-1.5 -ml-1.5 rounded-lg hover:bg-white/10" title="Abrir menú">
+                    <Bars3Icon className="w-6 h-6 text-white" />
                 </button>
                 <img src="/logo.png" alt="" className="w-7 h-7 rounded-lg flex-shrink-0 object-cover" />
-                <span className="font-bold text-slate-800">Faro Docente</span>
+                <span className="font-bold text-white">Faro Docente</span>
             </header>
 
             {mobileMenuOpen && (
                 <div className="fixed inset-0 z-50 flex md:hidden">
                     <div className="absolute inset-0 bg-black/40" onClick={() => setMobileMenuOpen(false)} />
-                    <div className="relative w-72 max-w-[85vw] h-full bg-white flex flex-col shadow-xl">
+                    <div className="relative w-72 max-w-[85vw] h-full flex flex-col shadow-xl" style={{ backgroundColor: SIDEBAR_BG }}>
                         <button
                             onClick={() => setMobileMenuOpen(false)}
-                            className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-slate-100 z-10"
+                            className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-white/10 z-10"
                             title="Cerrar menú"
                         >
-                            <XMarkIcon className="w-5 h-5 text-slate-500" />
+                            <XMarkIcon className="w-5 h-5 text-white/70" />
                         </button>
                         <SidebarContent
                             activeView={activeView}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, ViewWeekIcon, ViewDayIcon } from '../Icons';
-import { PALETTE } from '../../theme/palette';
+import { SIDEBAR_BG } from '../../theme/palette';
 import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../../theme/components/PageHeader';
 import { headerPatternStyle } from '../../theme/headerPattern';
 import DateNavButton from '../DateNavButton';
@@ -42,7 +42,7 @@ const CalendarHeader: React.FC<{
     }
 
     return (
-    <div className={`flex items-center justify-between rounded-t-xl ${pageHeaderPaddingClassName} ${pageHeaderMinHeight} flex-wrap gap-3`} style={{ backgroundColor: PALETTE.navy.header, ...headerPatternStyle }}>
+    <div className={`flex items-center justify-between rounded-t-xl ${pageHeaderPaddingClassName} ${pageHeaderMinHeight} flex-wrap gap-3`} style={{ backgroundColor: SIDEBAR_BG, ...headerPatternStyle }}>
         <div className="flex items-center gap-4 flex-wrap">
              <div className="flex items-center gap-3">
                 <CalendarDaysIcon className="w-6 h-6 flex-shrink-0 text-white/90" />

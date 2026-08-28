@@ -16,12 +16,11 @@ interface ShortcutModalProps {
 // panel); alternativa rápida a subir un icono propio.
 const BUNDLED_ICONS = [
     '/shortcut-icons/teams.svg',
-    '/shortcut-icons/onedrive-c89ba2.svg',
+    '/shortcut-icons/onedrive.svg',
     '/shortcut-icons/outlook.svg',
     '/shortcut-icons/nextcloud.svg',
-    '/shortcut-icons/notes-ad1424.svg',
-    '/shortcut-icons/noto-1f4d4.svg',
-    '/shortcut-icons/lucide-user-x-2b6eda.svg',
+    '/shortcut-icons/notas.svg',
+    '/shortcut-icons/faltas.svg',
     '/shortcut-icons/sauce.svg',
     '/shortcut-icons/educastur.svg',
     '/shortcut-icons/copilot.svg',
@@ -77,7 +76,8 @@ const ShortcutModal: React.FC<ShortcutModalProps> = ({ isOpen, onClose, onSave, 
                         onChange={setIcon}
                         options={iconOptions}
                         uploadLabel="Subir icono propio"
-                        fallbackPreview={<span className="w-6 h-6 rounded-full bg-slate-300 text-white text-xs font-bold flex items-center justify-center">{label.charAt(0).toUpperCase() || '?'}</span>}
+                        fallbackPreview={<span className="w-6 h-6 rounded-full border border-white/70 text-white text-xs font-bold flex items-center justify-center">{label.charAt(0).toUpperCase() || '?'}</span>}
+                        swatchBgClassName="bg-[#092152]"
                     />
                 </div>
                 <div className="flex justify-end pt-4 space-x-2 border-t">

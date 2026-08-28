@@ -11,11 +11,11 @@ export const ACNEAE_ORDER = { 'PAC': 1, 'PRE': 1, 'ABS': 1, 'RE ACA': 2, 'RE EC'
 // añadir/editar/borrar libremente desde aquí en adelante.
 export const INITIAL_SHORTCUTS: Shortcut[] = [
     { id: 'sc-teams', label: 'Teams', url: 'https://teams.microsoft.com', icon: '/shortcut-icons/teams.svg' },
-    { id: 'sc-onedrive', label: 'OneDrive', url: 'https://educastur-my.sharepoint.com/my', icon: '/shortcut-icons/onedrive-c89ba2.svg' },
+    { id: 'sc-onedrive', label: 'OneDrive', url: 'https://educastur-my.sharepoint.com/my', icon: '/shortcut-icons/onedrive.svg' },
     { id: 'sc-outlook', label: 'Outlook', url: 'https://outlook.office.com', icon: '/shortcut-icons/outlook.svg' },
     { id: 'sc-nube', label: 'Mi nube', url: 'https://nube.lamarejada.es/', icon: '/shortcut-icons/nextcloud.svg' },
-    { id: 'sc-notas', label: 'Notas', url: 'https://nube.lamarejada.es/apps/notes/welcome', icon: '/shortcut-icons/notes-ad1424.svg' },
-    { id: 'sc-faltas', label: 'Faltas', url: 'https://profesorado.asturias.es', icon: '/shortcut-icons/lucide-user-x-2b6eda.svg' },
+    { id: 'sc-notas', label: 'Notas', url: 'https://nube.lamarejada.es/apps/notes/welcome', icon: '/shortcut-icons/notas.svg' },
+    { id: 'sc-faltas', label: 'Faltas', url: 'https://profesorado.asturias.es', icon: '/shortcut-icons/faltas.svg' },
     { id: 'sc-sauce', label: 'SAUCE', url: 'https://sauce.asturias.es', icon: '/shortcut-icons/sauce.svg' },
     { id: 'sc-educastur', label: 'Educastur', url: 'https://www.educastur.es', icon: '/shortcut-icons/educastur.svg' },
     { id: 'sc-copilot', label: 'Copilot', url: 'https://copilot.microsoft.com/', icon: '/shortcut-icons/copilot.svg' },

@@ -173,11 +173,22 @@ export const BeakerIcon = ({ className = 'w-6 h-6' }: { className?: string }) =>
 // 🪑 que llevaba antes: un emoji tiene su propio color fijo (marrón/madera
 // según la fuente), no hereda text-white como el resto de iconos de esa
 // cabecera, así que se veía mal sobre el color de acento de la clase.
-export const ChairIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 4.5h12a1 1 0 0 1 1 1V12H5V5.5a1 1 0 0 1 1-1Z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 12h16v2.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V12Z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6.5 16.5V20M17.5 16.5V20" />
+export const MapIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z" />
+        <path d="M15 5.764v15" />
+        <path d="M9 3.236v15" />
+    </svg>
+);
+
+export const DicesIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <rect width="12" height="12" x="2" y="10" rx="2" ry="2" />
+        <path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6" />
+        <path d="M6 18h.01" />
+        <path d="M10 14h.01" />
+        <path d="M15 6h.01" />
+        <path d="M18 9h.01" />
     </svg>
 );
 

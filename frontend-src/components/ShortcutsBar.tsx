@@ -54,7 +54,7 @@ const ShortcutsBar: React.FC<ShortcutsBarProps> = ({ shortcuts, onCreate, onUpda
                             type="button"
                             onClick={() => handleOpenEdit(s)}
                             title={s.label}
-                            className="w-8 h-8 rounded-lg border border-dashed border-slate-300 flex items-center justify-center hover:bg-slate-100 overflow-hidden"
+                            className="w-8 h-8 rounded-lg border border-dashed border-white/20 flex items-center justify-center hover:bg-white/10 overflow-hidden"
                         >
                             <ShortcutIcon shortcut={s} />
                         </button>
@@ -65,7 +65,7 @@ const ShortcutsBar: React.FC<ShortcutsBarProps> = ({ shortcuts, onCreate, onUpda
                             rel="noreferrer"
                             onClick={(e) => openExternalLink(e, s.url)}
                             title={s.label}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 overflow-hidden"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/10 overflow-hidden"
                         >
                             <ShortcutIcon shortcut={s} />
                         </a>
@@ -88,7 +88,7 @@ const ShortcutsBar: React.FC<ShortcutsBarProps> = ({ shortcuts, onCreate, onUpda
                     type="button"
                     onClick={handleOpenAdd}
                     title="Añadir acceso directo"
-                    className="w-8 h-8 rounded-lg border border-dashed border-slate-300 flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-blue-600"
+                    className="w-8 h-8 rounded-lg border border-dashed border-white/20 flex items-center justify-center text-white hover:bg-white/10"
                 >
                     <PlusIcon className="w-4 h-4" />
                 </button>
@@ -98,7 +98,7 @@ const ShortcutsBar: React.FC<ShortcutsBarProps> = ({ shortcuts, onCreate, onUpda
                 type="button"
                 onClick={() => setEditMode(v => !v)}
                 title={editMode ? 'Terminar de editar' : 'Editar accesos directos'}
-                className={`w-8 h-8 rounded-lg flex items-center justify-center ${editMode ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center ${editMode ? 'bg-white/20 text-white' : 'text-white/50 hover:bg-white/10 hover:text-white'}`}
             >
                 {editMode ? <CheckCircleIcon className="w-4 h-4" /> : <PencilIcon className="w-4 h-4" />}
             </button>
@@ -118,7 +118,7 @@ const ShortcutIcon: React.FC<{ shortcut: Shortcut }> = ({ shortcut }) => {
         return <img src={shortcut.icon} alt="" className="w-5 h-5 object-contain pointer-events-none" />;
     }
     return (
-        <span className="w-5 h-5 rounded-full bg-slate-300 text-white text-[10px] font-bold flex items-center justify-center pointer-events-none">
+        <span className="w-5 h-5 rounded-full border border-white/70 text-white text-[10px] font-bold flex items-center justify-center pointer-events-none">
             {shortcut.label.charAt(0).toUpperCase()}
         </span>
     );

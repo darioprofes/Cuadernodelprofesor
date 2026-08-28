@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { ClassData, Course, AcademicConfiguration, View } from '../types';
 import { getMateria, getSiglas, addDays, getClassAccentColor, toYYYYMMDD } from '../utils';
 import { CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon } from './Icons';
-import { PALETTE } from '../theme/palette';
+import { SIDEBAR_BG } from '../theme/palette';
 import { tableBaseClassName, tableCellClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../theme/components/Table';
 import EmptyState from './EmptyState';
 import { pageHeaderMinHeight } from '../theme/components/PageHeader';
@@ -98,7 +98,7 @@ const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicCon
         <div className="space-y-4">
             <div
                 className={`rounded-xl p-4 sm:p-5 ${pageHeaderMinHeight} flex items-center justify-between flex-wrap gap-3`}
-                style={{ backgroundColor: PALETTE.blue.header, ...headerPatternStyle }}
+                style={{ backgroundColor: SIDEBAR_BG, ...headerPatternStyle }}
             >
                 <div className="flex items-center gap-3">
                     <ClockIcon className="w-6 h-6 flex-shrink-0 text-white/90" />

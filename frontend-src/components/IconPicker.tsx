@@ -18,7 +18,11 @@ const IconPicker: React.FC<{
     options: IconPickerOption[];
     fallbackPreview?: React.ReactNode;
     uploadLabel?: string;
-}> = ({ value, onChange, options, fallbackPreview, uploadLabel = 'Subir imagen propia' }) => {
+    /** Fondo de los recuadros de icono (clase Tailwind) -- por defecto
+     * blanco, pero los accesos directos (ShortcutModal) usan iconos en
+     * blanco pensados para la barra oscura, invisibles sobre blanco. */
+    swatchBgClassName?: string;
+}> = ({ value, onChange, options, fallbackPreview, uploadLabel = 'Subir imagen propia', swatchBgClassName = 'bg-white' }) => {
     const isCustomImage = value?.startsWith('data:');
     const selectedOption = !isCustomImage ? options.find(o => o.key === value) : undefined;
 
@@ -31,7 +35,7 @@ const IconPicker: React.FC<{
     return (
         <div>
             <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0 bg-white">
+                <div className={`w-10 h-10 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0 ${isCustomImage ? 'bg-white' : swatchBgClassName}`}>
                     {isCustomImage ? (
                         <img src={value} alt="" className="w-full h-full object-cover" />
                     ) : selectedOption ? (
@@ -57,7 +61,7 @@ const IconPicker: React.FC<{
                         type="button"
                         onClick={() => onChange(opt.key)}
                         title={opt.label}
-                        className={`w-9 h-9 flex-shrink-0 rounded-lg border flex items-center justify-center bg-white hover:bg-slate-50 ${value === opt.key ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200'}`}
+                        className={`w-9 h-9 flex-shrink-0 rounded-lg border flex items-center justify-center hover:opacity-75 transition-opacity ${swatchBgClassName} ${value === opt.key ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200'}`}
                     >
                         {opt.render('w-4 h-4 text-slate-600')}
                     </button>

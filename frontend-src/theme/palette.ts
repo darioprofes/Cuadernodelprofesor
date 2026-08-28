@@ -65,6 +65,14 @@ export const PAGE_ACCENT = {
     herramientasIA: '#993366',
 } as const;
 
+// Fondo del Sidebar/barra superior (rediseño oscuro, pedido explícito con
+// una captura de referencia). Mismo azul de marca que SEMANTIC.primary.base
+// -- se probó un tono más oscuro para que el libro del logo no se fundiera
+// con el fondo, pero el usuario prefería este azul y pidió corregir el
+// LOGO en su lugar (public/logo.png: el libro pasó de azul oscuro a un
+// azul más claro, ver comentario en ese commit) en vez de oscurecer aquí.
+export const SIDEBAR_BG = '#092152';
+
 // ==========================================================
 // Tokens semánticos — la otra mitad del sistema de color
 // ==========================================================
