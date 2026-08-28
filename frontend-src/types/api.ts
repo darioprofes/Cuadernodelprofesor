@@ -375,6 +375,7 @@ export interface Assignment {
     pesoEnCategoria?: number;
     importancia?: string;
     importanciaPersonalizada?: number;
+    puntuacionMaxima?: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -393,6 +394,7 @@ export interface AssignmentInput {
     pesoEnCategoria?: number;
     importancia?: string;
     importanciaPersonalizada?: number;
+    puntuacionMaxima?: number;
 }
 
 export interface AssignmentPatch extends Partial<AssignmentInput> {
@@ -403,6 +405,7 @@ export interface Grade {
     enrollmentId: string;
     assignmentId: string;
     directScore?: number;
+    directScoreRaw?: number;
     recoveryScore?: number;
     toolResults?: Record<string, unknown>;
     updatedAt: string;
@@ -410,6 +413,7 @@ export interface Grade {
 
 export interface GradeInput {
     directScore?: number;
+    directScoreRaw?: number;
     recoveryScore?: number;
     toolResults?: Record<string, unknown>;
 }

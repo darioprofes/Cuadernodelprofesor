@@ -7,11 +7,16 @@ from psycopg.types.json import Json
 from services.db import get_conn
 from services.schemas import ApiModel
 
-_COLUMNS = "enrollment_id, assignment_id, direct_score, recovery_score, tool_results, updated_at"
+_COLUMNS = "enrollment_id, assignment_id, direct_score, direct_score_raw, recovery_score, tool_results, updated_at"
 
 
 class GradeInput(ApiModel):
     direct_score: Optional[float] = None
+    # Valor tal cual lo escribió el profesor cuando la tarea tiene una
+    # puntuacion_maxima propia (ver assignments.puntuacion_maxima) --
+    # direct_score sigue siendo SIEMPRE la conversión a base 10. None si la
+    # tarea no tiene una escala propia.
+    direct_score_raw: Optional[float] = None
     recovery_score: Optional[float] = None
     tool_results: Optional[dict] = None
 
@@ -56,17 +61,18 @@ def put_grade(assignment_id: str, enrollment_id: str, data: GradeInput) -> Grade
 
             cur.execute(
                 f"""
-                INSERT INTO grades (enrollment_id, assignment_id, direct_score, recovery_score, tool_results, updated_at)
-                VALUES (%s, %s, %s, %s, %s, now())
+                INSERT INTO grades (enrollment_id, assignment_id, direct_score, direct_score_raw, recovery_score, tool_results, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, now())
                 ON CONFLICT (enrollment_id, assignment_id) DO UPDATE SET
                     direct_score = EXCLUDED.direct_score,
+                    direct_score_raw = EXCLUDED.direct_score_raw,
                     recovery_score = EXCLUDED.recovery_score,
                     tool_results = EXCLUDED.tool_results,
                     updated_at = EXCLUDED.updated_at
                 RETURNING {_COLUMNS}
                 """,
                 [
-                    enrollment_id, assignment_id, data.direct_score, data.recovery_score,
+                    enrollment_id, assignment_id, data.direct_score, data.direct_score_raw, data.recovery_score,
                     Json(data.tool_results) if data.tool_results is not None else None,
                 ]
             )

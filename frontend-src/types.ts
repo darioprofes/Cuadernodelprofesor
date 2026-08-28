@@ -223,6 +223,10 @@ export interface Assignment {
   importancia?: ImportanciaActividad;
   // Modo avanzado: sustituye al factor preestablecido de `importancia`.
   importanciaPersonalizada?: number;
+  // Escala de la nota directa (solo 'direct_grade' sin criterios vinculados,
+  // p.ej. 8 si un examen se puntúa sobre 8 en vez de sobre 10) -- ausente =
+  // base 10 de toda la vida. Ver Grade.directScoreRaw.
+  puntuacionMaxima?: number;
 }
 
 export interface Grade {
@@ -230,6 +234,10 @@ export interface Grade {
   assignmentId: string;
   criterionScores: Record<string, number | null>; // { criterionId: score }. Siempre se calcula y se guarda.
   toolResults?: Record<string, boolean | string | number>; // { itemId: checked } for checklist, { itemId: levelId } for scale/rubric, { itemId: puntosObtenidos } for examen criterial
+  // Valor tal cual se escribió cuando la tarea tiene puntuacionMaxima propia
+  // (p.ej. "7" sobre 8) -- criterionScores.direct_score sigue siendo SIEMPRE
+  // la conversión a base 10. null/ausente = sin escala propia.
+  directScoreRaw?: number | null;
 }
 
 export interface Course {

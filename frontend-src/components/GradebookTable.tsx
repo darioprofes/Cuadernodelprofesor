@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, ChairIcon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
 import Input from './Input';
@@ -566,7 +566,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     setIsGradeEntryModalOpen(true);
   };
 
-  const handleSaveGrade = async (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string | number> }, nextStudent: boolean = false) => {
+  const handleSaveGrade = async (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null>; directScoreRaw?: number | null } | { toolResults: Record<string, boolean | string | number> }, nextStudent: boolean = false) => {
     const assignment = classData.assignments.find(a => a.id === assignmentId);
     if (!assignment) return;
 
@@ -601,7 +601,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
         } else {
             const encoded = 'toolResults' in data
                 ? encodeGradeInput({ toolResults: data.toolResults, criterionScores: finalCriterionScores })
-                : encodeGradeInput({ criterionScores: finalCriterionScores });
+                : encodeGradeInput({ criterionScores: finalCriterionScores, directScoreRaw: data.directScoreRaw });
             await putGradeMutation.mutateAsync({ assignmentId, enrollmentId: student.enrollmentId, classId: classData.id, data: encoded });
         }
     }
@@ -755,7 +755,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                 className="p-1.5 rounded-md text-white/90 hover:bg-white/15 transition-all flex-shrink-0"
                 title="Plano de la clase"
             >
-                <ChairIcon className="w-4 h-4" />
+                <MapIcon className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-1 flex-shrink-0">
                 <button
@@ -764,7 +764,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                     className="p-1.5 rounded-md text-white/90 hover:bg-white/15 transition-all disabled:opacity-40"
                     title="Sortear alumn@ al azar, sin repetir hasta agotar la clase"
                 >
-                    <span className="text-base leading-none">🎲</span>
+                    <DicesIcon className="w-4 h-4" />
                 </button>
                 {lastDrawnStudent && (
                     <span className="text-xs font-semibold text-white bg-white/15 rounded-full px-2 py-1 flex items-center gap-1.5 whitespace-nowrap">
@@ -977,9 +977,14 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                         ...assignmentsForCat.map((a, idx) => {
                             const score = studentAssignmentScores.get(student.id)?.get(a.id);
                             const styleClasses = getGradeStyleClasses(score ?? null, academicConfiguration);
+                            // Con puntuación máxima propia se muestra la nota tal
+                            // cual se escribió, no su conversión a base 10 (que
+                            // sigue siendo lo que se usa para medias/colores).
+                            const rawGrade = a.puntuacionMaxima != null ? gradesMap.get(`${student.id}-${a.id}`)?.directScoreRaw : undefined;
+                            const displayValue = rawGrade != null ? String(rawGrade) : (score?.toFixed(2) ?? '-');
                             return (
                               <td key={a.id} className={`${cellPad} text-center font-bold text-base cursor-pointer hover:bg-blue-50 border-l ${idx === assignmentsForCat.length - 1 ? 'border-r' : ''} ${styleClasses}`} onClick={() => handleOpenGradeEntry(student, a)}>
-                                {score?.toFixed(2) ?? '-'}
+                                {displayValue}
                               </td>
                             )
                         }),

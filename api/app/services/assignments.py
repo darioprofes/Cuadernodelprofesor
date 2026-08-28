@@ -15,7 +15,7 @@ _COLUMNS = """
     id, class_id, category_id, evaluation_period_id, evaluation_tool_id,
     programming_unit_id, name, short_name, date, evaluation_method, linked_criteria,
     recovers_assignment_ids, peso_en_categoria, importancia,
-    importancia_personalizada, created_at, updated_at
+    importancia_personalizada, puntuacion_maxima, created_at, updated_at
 """
 
 _JSON_FIELDS = {"linked_criteria"}
@@ -45,6 +45,13 @@ class AssignmentInput(ApiModel):
     peso_en_categoria: Optional[float] = None
     importancia: Optional[str] = None
     importancia_personalizada: Optional[float] = None
+    # Escala de la nota directa, solo relevante con evaluation_method =
+    # "direct_grade" (p.ej. 8 si un examen se puntúa sobre 8 en vez de
+    # sobre 10) -- None/ausente = base 10 de toda la vida, sin conversión.
+    # El cálculo de medias SIEMPRE usa grades.direct_score en base 10, esto
+    # solo afecta a qué valor se muestra al escribir/revisar la nota (ver
+    # grades.direct_score_raw).
+    puntuacion_maxima: Optional[float] = None
 
 
 class AssignmentPatch(ApiModel):
@@ -61,6 +68,7 @@ class AssignmentPatch(ApiModel):
     peso_en_categoria: Optional[float] = None
     importancia: Optional[str] = None
     importancia_personalizada: Optional[float] = None
+    puntuacion_maxima: Optional[float] = None
     expected_updated_at: Optional[str] = None
 
 
@@ -80,6 +88,7 @@ class Assignment(ApiModel):
     peso_en_categoria: Optional[float] = None
     importancia: Optional[str] = None
     importancia_personalizada: Optional[float] = None
+    puntuacion_maxima: Optional[float] = None
     created_at: datetime
     updated_at: datetime
 

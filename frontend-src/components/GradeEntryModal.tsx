@@ -15,7 +15,7 @@ interface GradeEntryModalProps {
   assignment: Assignment;
   grade: Grade | null;
   criteriaList: EvaluationCriterion[];
-  onSave: (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string | number> }, nextStudent?: boolean) => void;
+  onSave: (studentId: string, assignmentId: string, data: { criterionScores: Record<string, number | null>; directScoreRaw?: number | null } | { toolResults: Record<string, boolean | string | number> }, nextStudent?: boolean) => void;
   evaluationTools: EvaluationTool[];
   allAssignments: Assignment[];
   students: Student[]; // Added to know the list for navigation
@@ -27,6 +27,11 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
   const [scores, setScores] = useState<Record<string, number | null>>({});
   const [toolResults, setToolResults] = useState<Record<string, boolean | string | number>>({});
   const [singleGrade, setSingleGrade] = useState<string>('');
+  // Nota tal cual se escribe cuando la tarea tiene su propia puntuación
+  // máxima (ver Assignment.puntuacionMaxima) -- solo se usa en el caso
+  // hasNoCriteria; singleGrade sigue siendo la conversión a base 10.
+  const [rawGrade, setRawGrade] = useState<string>('');
+  const hasScale = assignment.evaluationMethod === 'direct_grade' && assignment.puntuacionMaxima != null;
   
   const currentStudentIndex = useMemo(() => students.findIndex(s => s.id === student.id), [students, student.id]);
   const hasNextStudent = currentStudentIndex < students.length - 1;
@@ -59,6 +64,20 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
             } else if (hasNoCriteria) {
                 const directVal = grade?.criterionScores?.['direct_score'];
                 setSingleGrade(directVal != null ? String(directVal) : '');
+                if (hasScale) {
+                    if (grade?.directScoreRaw != null) {
+                        setRawGrade(String(grade.directScoreRaw));
+                    } else if (directVal != null) {
+                        // Nota antigua guardada antes de tener escala propia (o
+                        // sin raw guardado todavía): se reconstruye la escala a
+                        // partir del valor base 10 para no mostrar el campo vacío.
+                        setRawGrade(String(Math.round((directVal / 10) * assignment.puntuacionMaxima! * 100) / 100));
+                    } else {
+                        setRawGrade('');
+                    }
+                } else {
+                    setRawGrade('');
+                }
                 setScores({});
             } else {
                 const initialScores: Record<string, number | null> = {};
@@ -73,7 +92,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
             setSingleGrade('');
         }
     }
-  }, [isOpen, grade, assignment, isRecoveryTaskWithAssignments, hasNoCriteria, student.id]); // Added student.id dependency to reset when switching students
+  }, [isOpen, grade, assignment, isRecoveryTaskWithAssignments, hasNoCriteria, hasScale, student.id]); // Added student.id dependency to reset when switching students
 
   const handleScoreChange = (criterionId: string, value: string) => {
     setSingleGrade('');
@@ -114,6 +133,10 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
     }
   };
 
+  const handleRawGradeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRawGrade(e.target.value);
+  };
+
   const handleToolResultChange = (itemId: string, value: boolean | string | number) => {
       setToolResults(prev => ({ ...prev, [itemId]: value }));
   };
@@ -129,12 +152,21 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
             }
             onSave(student.id, assignment.id, { criterionScores: newScores }, next);
         } else if (hasNoCriteria) {
-            const gradeValue = singleGrade !== '' ? parseFloat(singleGrade.replace(',', '.')) : null;
             const newScores: Record<string, number | null> = {};
-            if (gradeValue !== null && !isNaN(gradeValue)) {
-                newScores['direct_score'] = Math.max(0, Math.min(10, gradeValue));
+            let rawValue: number | null = null;
+            if (hasScale) {
+                const parsedRaw = rawGrade !== '' ? parseFloat(rawGrade.replace(',', '.')) : null;
+                if (parsedRaw !== null && !isNaN(parsedRaw)) {
+                    rawValue = Math.max(0, Math.min(assignment.puntuacionMaxima!, parsedRaw));
+                    newScores['direct_score'] = (rawValue / assignment.puntuacionMaxima!) * 10;
+                }
+            } else {
+                const gradeValue = singleGrade !== '' ? parseFloat(singleGrade.replace(',', '.')) : null;
+                if (gradeValue !== null && !isNaN(gradeValue)) {
+                    newScores['direct_score'] = Math.max(0, Math.min(10, gradeValue));
+                }
             }
-            onSave(student.id, assignment.id, { criterionScores: newScores }, next);
+            onSave(student.id, assignment.id, { criterionScores: newScores, directScoreRaw: rawValue }, next);
         } else {
             onSave(student.id, assignment.id, { criterionScores: scores }, next);
         }
@@ -171,10 +203,20 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
         return (
             <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <label className="block text-sm font-medium text-slate-700">Calificación</label>
-                <p className="text-xs text-slate-500 mb-2">Esta tarea no tiene ningún criterio de evaluación vinculado: se califica con una nota única.</p>
-                <Input
-                    type="number" step="0.01" min="0" max="10" value={singleGrade} onChange={handleSingleGradeChange} autoFocus
-                    className="w-full text-lg text-center font-semibold" placeholder="-"/>
+                <p className="text-xs text-slate-500 mb-2">
+                    Esta tarea no tiene ningún criterio de evaluación vinculado: se califica con una nota única.
+                    {hasScale && ` Puntuada sobre ${assignment.puntuacionMaxima}; se convertirá a base 10 para los cálculos.`}
+                </p>
+                {hasScale ? (
+                    <Input
+                        type="number" step="0.01" min="0" max={assignment.puntuacionMaxima}
+                        value={rawGrade} onChange={handleRawGradeChange} autoFocus
+                        className="w-full text-lg text-center font-semibold" placeholder="-"/>
+                ) : (
+                    <Input
+                        type="number" step="0.01" min="0" max="10" value={singleGrade} onChange={handleSingleGradeChange} autoFocus
+                        className="w-full text-lg text-center font-semibold" placeholder="-"/>
+                )}
             </div>
         )
     }
@@ -205,7 +247,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
                             <Input
                                 type="number" step="0.01" min="0" max="10" value={scores[criterion.id] ?? ''}
                                 onChange={(e) => handleScoreChange(criterion.id, e.target.value)}
-                                className="w-24 text-center" placeholder="-"/>
+                                className="!w-24 text-center" placeholder="-"/>
                         </div>
                     );
                 })}

@@ -6,7 +6,7 @@
 // reales (qué campo pertenece a STUDENT vs a ENROLLMENT, ver el ERD del
 // plan) que no queremos duplicar ni desincronizar.
 
-import type { ClassData, Student, Category, Assignment, Grade, EvaluationTool, ImportanciaActividad } from '../types';
+import type { ClassData, Student, Category, Assignment, Grade, EvaluationTool, ImportanciaActividad, ProgrammingUnit, SessionDetail, FinalProduct, FinalExam } from '../types';
 import type {
     ClassData as ApiClassData,
     Student as ApiStudent,
@@ -17,6 +17,7 @@ import type {
     Assignment as ApiAssignment,
     Grade as ApiGrade,
     GradeInput as ApiGradeInput,
+    ProgrammingUnit as ApiProgrammingUnit,
 } from '../types/api';
 import { calculateToolGlobalScore, calculateCriterionScoresFromTool } from './gradeCalculations';
 import { isTauri, invoke } from '@tauri-apps/api/core';
@@ -200,6 +201,7 @@ export const apiAssignmentToLocal = (a: ApiAssignment): Assignment => ({
     pesoEnCategoria: a.pesoEnCategoria,
     importancia: a.importancia as ImportanciaActividad | undefined,
     importanciaPersonalizada: a.importanciaPersonalizada,
+    puntuacionMaxima: a.puntuacionMaxima,
 });
 
 // ============================================================
@@ -232,7 +234,7 @@ export const apiAssignmentToLocal = (a: ApiAssignment): Assignment => ({
 // ============================================================
 
 export const encodeGradeInput = (
-    data: { criterionScores: Record<string, number | null> } | { toolResults: Record<string, boolean | string | number>; criterionScores?: Record<string, number | null> },
+    data: { criterionScores: Record<string, number | null>; directScoreRaw?: number | null } | { toolResults: Record<string, boolean | string | number>; criterionScores?: Record<string, number | null> },
 ): ApiGradeInput => {
     if ('toolResults' in data) {
         // Instrumento: el crudo es lo único que hace falta guardar,
@@ -250,7 +252,12 @@ export const encodeGradeInput = (
     }
     if (keys.length === 1 && keys[0] === 'direct_score') {
         const value = criterionScores['direct_score'];
-        return value != null ? { directScore: value } : {};
+        if (value == null) return {};
+        // directScoreRaw solo tiene sentido si la tarea tiene su propia
+        // puntuacionMaxima (ver Assignment.puntuacionMaxima) -- si no viene,
+        // se omite la clave y el backend lo deja en null, limpiando un
+        // valor previo si lo hubo (p.ej. se quitó la escala propia).
+        return { directScore: value, directScoreRaw: data.directScoreRaw ?? undefined };
     }
     // Mapa multi-criterio (o el 'manual_grade' de BulkGradeImportModal para
     // tareas sin criterios — sentinela que calculateSingleAssignmentScore no
@@ -260,7 +267,7 @@ export const encodeGradeInput = (
 };
 
 export const decodeGrade = (
-    apiGrade: Pick<ApiGrade, 'directScore' | 'recoveryScore' | 'toolResults'>,
+    apiGrade: Pick<ApiGrade, 'directScore' | 'directScoreRaw' | 'recoveryScore' | 'toolResults'>,
     studentId: string,
     assignment: Pick<Assignment, 'id' | 'evaluationMethod' | 'evaluationToolId' | 'linkedCriteria'>,
     evaluationTools: EvaluationTool[],
@@ -286,7 +293,7 @@ export const decodeGrade = (
         return { studentId, assignmentId: assignment.id, criterionScores: { recovery_grade: apiGrade.recoveryScore } };
     }
     if (apiGrade.directScore != null) {
-        return { studentId, assignmentId: assignment.id, criterionScores: { direct_score: apiGrade.directScore } };
+        return { studentId, assignmentId: assignment.id, criterionScores: { direct_score: apiGrade.directScore }, directScoreRaw: apiGrade.directScoreRaw ?? null };
     }
     if (apiGrade.toolResults) {
         return { studentId, assignmentId: assignment.id, criterionScores: apiGrade.toolResults as Record<string, number | null> };
@@ -299,7 +306,7 @@ export const decodeGrade = (
 // no por persona) y las assignments YA en forma local (para conocer
 // evaluationMethod/linkedCriteria/evaluationToolId de cada una).
 export const hydrateGrades = (
-    apiGrades: Pick<ApiGrade, 'enrollmentId' | 'assignmentId' | 'directScore' | 'recoveryScore' | 'toolResults'>[],
+    apiGrades: Pick<ApiGrade, 'enrollmentId' | 'assignmentId' | 'directScore' | 'directScoreRaw' | 'recoveryScore' | 'toolResults'>[],
     enrollments: Pick<ApiEnrollment, 'id' | 'studentId'>[],
     assignments: Assignment[],
     evaluationTools: EvaluationTool[],
@@ -340,7 +347,7 @@ export const hydrateClassData = (
     globalStudents: ApiStudent[],
     apiCategories: ApiCategory[],
     apiAssignments: ApiAssignment[],
-    apiGrades: Pick<ApiGrade, 'enrollmentId' | 'assignmentId' | 'directScore' | 'recoveryScore' | 'toolResults'>[],
+    apiGrades: Pick<ApiGrade, 'enrollmentId' | 'assignmentId' | 'directScore' | 'directScoreRaw' | 'recoveryScore' | 'toolResults'>[],
     evaluationTools: EvaluationTool[],
 ): ClassData => {
     const assignments = apiAssignments.map(apiAssignmentToLocal);
@@ -395,3 +402,28 @@ export async function diffAndSyncList<T extends { id: string }>(
         }
     }
 }
+
+// programming_units.session_details/final_product/final_exam son columnas
+// JSONB -- el tipo de red los deja como `unknown` a propósito (ver
+// types/api.ts), pero ProgrammingManager.tsx los forzaba con
+// `as unknown as ProgrammingUnit[]` sin comprobar nada. Si el backend
+// devolviera algún día una fila con una forma inesperada (una migración a
+// medias, un registro tocado a mano), no fallaría aquí de forma predecible
+// -- fallaría más tarde, a mitad de un render o una exportación. No es una
+// validación profunda campo a campo (igual que el resto de adaptadores de
+// este fichero, que tampoco la hacen) -- solo defiende contra la forma
+// general estando rota del todo, con un valor por defecto seguro.
+export const programmingUnitFromApi = (unit: ApiProgrammingUnit): ProgrammingUnit => ({
+    id: unit.id,
+    courseId: unit.courseId,
+    name: unit.name,
+    sessions: unit.sessions,
+    startDate: unit.startDate,
+    context: unit.context,
+    sessionDetails: Array.isArray(unit.sessionDetails) ? (unit.sessionDetails as SessionDetail[]) : [],
+    linkedCriteriaIds: unit.linkedCriteriaIds,
+    linkedBasicKnowledgeIds: unit.linkedBasicKnowledgeIds,
+    linkedSpecificCompetenceIds: unit.linkedSpecificCompetenceIds,
+    finalProduct: unit.finalProduct && typeof unit.finalProduct === 'object' ? unit.finalProduct as FinalProduct : { incluido: false },
+    finalExam: unit.finalExam && typeof unit.finalExam === 'object' ? unit.finalExam as FinalExam : { incluido: false },
+});
