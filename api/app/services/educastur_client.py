@@ -21,7 +21,6 @@ client_id que usa su propia web, reutilizado desde fuera. Puede romperse
 sin aviso si cambian el flujo de login.
 """
 
-import json
 import re
 from urllib.parse import urlparse, parse_qs
 

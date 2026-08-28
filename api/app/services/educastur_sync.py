@@ -350,7 +350,7 @@ def sincronizar(data: SincronizarInput) -> SyncResult:
                             to_refresh.append((row, alumno))
                         sincronizadas += 1
                     except requests.RequestException as e:
-                        motivo = "Error al enviar la falta a Educastur."
+                        motivo = f"Error al enviar la falta a Educastur: {e}"
                         _mark_error(str(row["id"]), motivo)
                         errores.append(SyncErrorRow(absence_id=str(row["id"]), alumno=_nombre(row), motivo=motivo))
 
