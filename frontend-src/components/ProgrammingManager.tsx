@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { ProgrammingUnit, Course, SessionDetail, SessionActivity, FinalProduct, FinalExam, EvaluationCriterion, BasicKnowledge, SpecificCompetence, EvaluationTool, ClassData, AcademicConfiguration } from '../types';
-import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon, SparklesIcon, ChevronDownIcon, ChevronRightIcon } from './Icons';
+import { PencilIcon, TrashIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, SparklesIcon, ChevronDownIcon, ChevronRightIcon } from './Icons';
 import Modal from './Modal';
 import Input from './Input';
 import GenerarSituacionAprendizajeModal from './GenerarSituacionAprendizajeModal';
@@ -15,6 +15,9 @@ import { useSpecificCompetences } from '../hooks/useSpecificCompetences';
 import { useEvaluationTools, useCreateEvaluationTool, useUpdateEvaluationTool } from '../hooks/useEvaluationTools';
 import { EvaluationToolEditorModal } from './EvaluationToolManager';
 import GenerarInstrumentoIAModal from './GenerarInstrumentoIAModal';
+import { buildExportPayload, exportFilename, parseImportPayload, buildUnitInput, resolverInstrumento } from '../services/programmingUnitShare';
+import { programmingUnitFromApi } from '../services/apiAdapters';
+import type { ResultadoTrabajoSA } from '../hooks/useTrabajosIA';
 
 const EVALUATION_TOOL_TYPE_LABEL: Record<EvaluationTool['type'], string> = {
     checklist: 'Lista de cotejo',
@@ -197,6 +200,13 @@ interface ProgrammingManagerProps {
     courses: Course[];
     classes: ClassData[];
     academicConfiguration: AcademicConfiguration;
+    // Resultado de un trabajo de IA en segundo plano (ver TrabajosIAPanel.tsx
+    // en HoyView) que el usuario ha pedido abrir para revisar -- App.tsx ya
+    // ha navegado hasta este curso antes de que llegue. Se entrega tal cual
+    // a GenerarSituacionAprendizajeModal, que lo procesa exactamente igual
+    // que si la generación hubiera terminado con el modal todavía abierto.
+    pendingSAResultado?: ResultadoTrabajoSA | null;
+    onPendingSAResultadoConsumido?: () => void;
 }
 
 const toYYYYMMDD = (date: Date): string => {
@@ -213,14 +223,21 @@ const addDays = (date: Date, days: number): Date => {
 };
 
 
-const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, classes, academicConfiguration }) => {
+const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, courses, classes, academicConfiguration, pendingSAResultado, onPendingSAResultadoConsumido }) => {
     const selectedCourseId = courseId;
     // "create" admite un `draft` opcional -- el borrador que entrega
     // GenerarSituacionAprendizajeModal para revisar en el mismo formulario que ya usa la
     // creación manual, en vez de tener un formulario de revisión aparte.
     const [unitEditorState, setUnitEditorState] = useState<{ mode: 'create', draft?: ProgrammingUnit } | { mode: 'edit', unit: ProgrammingUnit } | null>(null);
-    const [showImportHelp, setShowImportHelp] = useState(false);
     const [showGenerarIA, setShowGenerarIA] = useState(false);
+
+    // Abre el modal (en modo "resumir", ver más abajo) en cuanto llega un
+    // resultado pendiente de la cola de trabajos -- el propio modal se
+    // encarga de entregarlo/revisarlo con entregarUnidadGenerada, aquí solo
+    // hace falta que esté visible para que eso se vea en pantalla.
+    useEffect(() => {
+        if (pendingSAResultado) setShowGenerarIA(true);
+    }, [pendingSAResultado]);
     // Vista de solo lectura al pinchar en una SA de la lista -- separada del
     // editor: mismo contenido pero sin campos editables ni secciones vacías.
     const [viewingUnit, setViewingUnit] = useState<ProgrammingUnit | null>(null);
@@ -233,11 +250,12 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
     const remoteBasicKnowledge = useBasicKnowledge(selectedCourseId);
     const remoteSpecificCompetences = useSpecificCompetences(selectedCourseId);
     const remoteEvaluationTools = useEvaluationTools();
+    const createToolMutation = useCreateEvaluationTool();
 
     const selectedCourse = useMemo(() => courses.find(c => c.id === selectedCourseId), [courses, selectedCourseId]);
 
     const filteredUnits = useMemo(() => (
-        (remoteUnits.data ?? []) as unknown as ProgrammingUnit[]
+        (remoteUnits.data ?? []).map(programmingUnitFromApi)
     ), [remoteUnits.data]);
     const filteredCriteria = useMemo(() => (
         (remoteCriteria.data ?? []) as unknown as EvaluationCriterion[]
@@ -375,137 +393,96 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
         deleteUnitMutation.mutate({ id: unitId, courseId: selectedCourseId });
     };
 
-    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = () => {
-            const text = reader.result;
-            if (typeof text === 'string') {
-                parseAndImportCSV(text);
-            }
-        };
-        reader.readAsText(file);
-        if (event.target) event.target.value = '';
+    // Exportar/importar una SA completa como JSON -- lógica pura en
+    // services/programmingUnitShare.ts, aquí solo se orquesta con las
+    // mutaciones reales. Ver ese archivo para el porqué del orden
+    // unidad-primero-instrumento-después (evita dejar un instrumento
+    // huérfano si la creación de la unidad fallara).
+    const handleExportarSA = (unit: ProgrammingUnit) => {
+        const exportObj = buildExportPayload(unit, filteredCriteria, filteredBasicKnowledge, filteredSpecificCompetences, filteredEvaluationTools);
+        const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = exportFilename(unit.name);
+        a.click();
+        URL.revokeObjectURL(url);
     };
 
-    const parseAndImportCSV = async (csvText: string) => {
-        try {
-            const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
-            if (lines.length < 2) {
-                alert("El archivo CSV parece estar vacío o no tiene datos válidos.");
+    const handleImportarSAFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (event.target) event.target.value = '';
+        if (!file) return;
+        if (!selectedCourseId) {
+            alert('Selecciona un curso para el que importar la situación de aprendizaje.');
+            return;
+        }
+        const courseId = selectedCourseId;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            let data;
+            try {
+                data = parseImportPayload(JSON.parse(e.target?.result as string));
+            } catch (error) {
+                alert(error instanceof Error ? error.message : 'Error al procesar el archivo JSON.');
                 return;
             }
 
-            // Helpers to resolve codes to IDs
-            const criteriaMap = new Map<string, string>(filteredCriteria.map(c => [c.code.trim(), c.id] as [string, string]));
-            const knowledgeMap = new Map<string, string>(filteredBasicKnowledge.map(k => [k.code.trim(), k.id] as [string, string]));
+            try {
+                const creada = await createUnitMutation.mutateAsync({
+                    courseId,
+                    data: buildUnitInput(data, courseId, filteredCriteria, filteredBasicKnowledge, filteredSpecificCompetences),
+                });
 
-            const newUnits: ProgrammingUnit[] = [];
+                const fallosInstrumento: string[] = [];
 
-            // Skip header (index 0)
-            for (let i = 1; i < lines.length; i++) {
-                const line = lines[i];
-                // Basic CSV parsing handling quotes
-                const parts: string[] = [];
-                let currentVal = '';
-                let insideQuotes = false;
-                for (const char of line) {
-                    if (char === '"' && insideQuotes) insideQuotes = false;
-                    else if (char === '"' && !insideQuotes) insideQuotes = true;
-                    else if (char === ',' && !insideQuotes) {
-                        parts.push(currentVal.trim());
-                        currentVal = '';
-                    } else {
-                        currentVal += char;
+                const resueltoProducto = resolverInstrumento(data.finalProduct?.instrumento, courseId, filteredCriteria);
+                if (resueltoProducto) {
+                    try {
+                        const tool = await createToolMutation.mutateAsync(resueltoProducto.data);
+                        await updateUnitMutation.mutateAsync({
+                            id: creada.id,
+                            courseId,
+                            data: { finalProduct: { ...(creada.finalProduct ?? { incluido: true }), evaluationToolId: tool.id } },
+                        });
+                    } catch (err) {
+                        console.error('Error creando el instrumento del producto final:', err);
+                        fallosInstrumento.push('producto final');
                     }
                 }
-                parts.push(currentVal.trim());
 
-                // Expected Format: Name, Sessions, StartDate, Criteria, Knowledge, SessionDetails
-                const [name, sessionsStr, startDate, criteriaCodes, knowledgeCodes, sessionDetailsStr] = parts;
-
-                if (!name) continue;
-
-                const sessions = parseInt(sessionsStr, 10) || 1;
-                
-                // Resolve Links
-                const linkedCriteriaIds: string[] = [];
-                if (criteriaCodes) {
-                    criteriaCodes.replace(/^"|"$/g, '').split(',').forEach(code => {
-                        const id = criteriaMap.get(code.trim());
-                        if (id) linkedCriteriaIds.push(id);
-                    });
+                const resueltoExamen = resolverInstrumento(data.finalExam?.instrumento, courseId, filteredCriteria);
+                if (resueltoExamen) {
+                    try {
+                        const tool = await createToolMutation.mutateAsync(resueltoExamen.data);
+                        await updateUnitMutation.mutateAsync({
+                            id: creada.id,
+                            courseId,
+                            data: { finalExam: { ...(creada.finalExam ?? { incluido: true }), evaluationToolId: tool.id } },
+                        });
+                    } catch (err) {
+                        console.error('Error creando el instrumento del examen final:', err);
+                        fallosInstrumento.push('examen final');
+                    }
                 }
 
-                const linkedBasicKnowledgeIds: string[] = [];
-                if (knowledgeCodes) {
-                    knowledgeCodes.replace(/^"|"$/g, '').split(',').forEach(code => {
-                        const id = knowledgeMap.get(code.trim());
-                        if (id) linkedBasicKnowledgeIds.push(id);
-                    });
-                }
-
-                // Parse Session Details (split by pipe '|') -- el CSV solo trae
-                // una descripción por sesión, se envuelve como una única
-                // actividad genérica (mismo criterio que wrapDescriptionAsActivity).
-                let sessionDetails: SessionDetail[] = [];
-                if (sessionDetailsStr) {
-                    const descriptions = sessionDetailsStr.replace(/^"|"$/g, '').split('|').map(d => d.trim());
-                    sessionDetails = descriptions.map(desc => wrapDescriptionAsActivity(desc));
-                }
-
-                // Adjust sessions count if details provided are more
-                const finalSessions = Math.max(sessions, sessionDetails.length);
-
-                // Pad session details if less than sessions count
-                while (sessionDetails.length < finalSessions) {
-                    sessionDetails.push(wrapDescriptionAsActivity(''));
-                }
-
-                const newUnit: ProgrammingUnit = {
-                    id: `pu-imp-${Date.now()}-${i}`,
-                    courseId: selectedCourseId,
-                    name: name.replace(/^"|"$/g, ''),
-                    sessions: finalSessions,
-                    startDate: startDate && startDate.match(/^\d{4}-\d{2}-\d{2}$/) ? startDate : undefined,
-                    linkedCriteriaIds,
-                    linkedBasicKnowledgeIds,
-                    linkedSpecificCompetenceIds: [],
-                    sessionDetails
-                };
-
-                newUnits.push(newUnit);
+                alert(
+                    `"${data.name}" importada correctamente en este curso. Revísala antes de darla por buena -- los `
+                    + 'códigos que no coincidan con el currículo de este curso se habrán quedado sin vincular.'
+                    + (fallosInstrumento.length > 0
+                        ? `\n\nAviso: no se pudo crear el instrumento de ${fallosInstrumento.join(' ni de ')} -- añádelo a mano si lo necesitas.`
+                        : '')
+                );
+            } catch (error) {
+                console.error('Error importing SA JSON:', error);
+                alert('Error al crear la situación de aprendizaje en este curso.');
             }
-
-            if (newUnits.length > 0) {
-                for (const u of newUnits) {
-                    await createUnitMutation.mutateAsync({
-                        courseId: selectedCourseId,
-                        data: {
-                            name: u.name,
-                            sessions: u.sessions,
-                            startDate: u.startDate,
-                            sessionDetails: u.sessionDetails,
-                            linkedCriteriaIds: u.linkedCriteriaIds,
-                            linkedBasicKnowledgeIds: u.linkedBasicKnowledgeIds,
-                            linkedSpecificCompetenceIds: u.linkedSpecificCompetenceIds,
-                        },
-                    });
-                }
-                alert(`Se han importado ${newUnits.length} Situaciones de Aprendizaje correctamente al curso seleccionado.`);
-                setShowImportHelp(false);
-            } else {
-                alert("No se pudieron extraer Situaciones de Aprendizaje del archivo. Verifica el formato.");
-            }
-
-        } catch (error) {
-            console.error("Error parsing CSV:", error);
-            alert("Error al procesar el archivo CSV.");
-        }
+        };
+        reader.onerror = () => alert('Error al leer el archivo.');
+        reader.readAsText(file, 'utf-8');
     };
-    
+
     return (
         <>
             <div className="space-y-6">
@@ -521,13 +498,15 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                         <div className="p-4 border-b flex justify-between items-center bg-slate-50/50 rounded-t-xl flex-wrap gap-2">
                             <h2 className={TYPOGRAPHY.sectionTitle}>Situaciones de Aprendizaje para {selectedCourse.level} - {selectedCourse.subject}</h2>
                             <div className="flex gap-2">
-                                <button
-                                    onClick={() => setShowImportHelp(!showImportHelp)}
-                                    className="inline-flex items-center justify-center py-2 px-3 border border-slate-300 shadow-sm text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50"
+                                <input type="file" accept=".json" id="sa-json-importer" className="hidden" onChange={handleImportarSAFile} />
+                                <label
+                                    htmlFor="sa-json-importer"
+                                    className="cursor-pointer inline-flex items-center justify-center py-2 px-3 border border-slate-300 shadow-sm text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50"
+                                    title="Importa una SA completa (situación de partida, producto final, examen) exportada como JSON desde esta misma app -- para compartir con un compañero con el mismo currículo"
                                 >
                                     <ArrowUpTrayIcon className="w-4 h-4 mr-1"/>
-                                    Importar CSV
-                                </button>
+                                    Importar JSON
+                                </label>
                                 <button onClick={() => setUnitEditorState({ mode: 'create'})} disabled={!!unitEditorState} className="inline-flex items-center justify-center py-2 px-3 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed">
                                     <PlusIcon className="w-4 h-4 mr-1"/>
                                     Nueva SA
@@ -538,27 +517,6 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                                 </button>
                             </div>
                         </div>
-
-                        {showImportHelp && (
-                            <div className="p-4 bg-blue-50 border-b border-blue-100">
-                                <h4 className="font-bold text-sm text-blue-800 mb-2">Instrucciones para Importar Situaciones de Aprendizaje</h4>
-                                <p className="text-xs text-blue-700 mb-2">
-                                    Sube un archivo CSV con las siguientes columnas (respeta el orden). Los Criterios y Saberes se vincularán automáticamente si coinciden con los códigos del curso (ej. "1.1", "A.1").
-                                </p>
-                                <div className="bg-white p-2 rounded border border-blue-200 overflow-x-auto font-mono text-xs mb-3 text-slate-600">
-                                    Nombre,Sesiones,FechaInicio,Criterios,Saberes,DetalleSesiones<br/>
-                                    "SA 1: La Célula",6,2024-09-15,"1.1, 1.2","A.1, A.2","Introducción|Teoría Celular|Microscopio|Práctica|Repaso|Examen"<br/>
-                                    "SA 2: Nutrición",8,,"2.1, 2.3","B.1","Intro Nutrición|Dieta equilibrada|..."
-                                </div>
-                                <div className="mt-3">
-                                    <label className="cursor-pointer inline-flex items-center justify-center py-2 px-4 border border-blue-300 shadow-sm text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50">
-                                        <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
-                                        Seleccionar Archivo CSV
-                                        <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
-                                    </label>
-                                </div>
-                            </div>
-                        )}
 
                         <div className="p-4 space-y-3">
                             {filteredUnits.length === 0 ? (
@@ -584,6 +542,7 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                                                 linkedBasicKnowledge={linkedBasicKnowledgeData}
                                                 onEdit={() => setUnitEditorState({ mode: 'edit', unit })}
                                                 onDelete={() => handleDelete(unit.id)}
+                                                onExport={() => handleExportarSA(unit)}
                                             />
                                         </div>
                                     );
@@ -637,9 +596,10 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
             <GenerarSituacionAprendizajeModal
                 isOpen={showGenerarIA}
                 courseId={selectedCourseId}
-                courses={courses}
                 onClose={() => setShowGenerarIA(false)}
                 onDraftReady={draft => setUnitEditorState({ mode: 'create', draft })}
+                resumeResultado={pendingSAResultado}
+                onResumeResultadoConsumido={onPendingSAResultadoConsumido}
             />
         </>
     );
@@ -652,9 +612,10 @@ interface UnitViewerProps {
     linkedBasicKnowledge: BasicKnowledge[];
     onEdit: () => void;
     onDelete: () => void;
+    onExport: () => void;
 }
 
-const UnitViewer: React.FC<UnitViewerProps> = ({ unit, dateRange, linkedCriteria, linkedBasicKnowledge, onEdit, onDelete }) => {
+const UnitViewer: React.FC<UnitViewerProps> = ({ unit, dateRange, linkedCriteria, linkedBasicKnowledge, onEdit, onDelete, onExport }) => {
     const formatDateRange = () => {
         if (!dateRange || !dateRange.start || !dateRange.end) return "Fechas no calculadas";
         const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
@@ -703,6 +664,7 @@ const UnitViewer: React.FC<UnitViewerProps> = ({ unit, dateRange, linkedCriteria
                 )}
             </div>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={e => { e.stopPropagation(); onExport(); }} title="Exportar JSON (para compartir con otro profesor)" className="p-2 hover:bg-slate-200 rounded-full"><ArrowDownTrayIcon className="w-4 h-4 text-slate-600" /></button>
                 <button onClick={e => { e.stopPropagation(); onEdit(); }} className="p-2 hover:bg-slate-200 rounded-full"><PencilIcon className="w-4 h-4 text-slate-600" /></button>
                 <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-2 hover:bg-red-100 rounded-full"><TrashIcon className="w-4 h-4 text-red-500" /></button>
             </div>

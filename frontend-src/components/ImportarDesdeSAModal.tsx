@@ -6,6 +6,7 @@ import Button from './Button';
 import Select from './Select';
 import Input from './Input';
 import { useCreateAssignment } from '../hooks/useAssignments';
+import { listarItemsImportablesSA } from '../services/programmingUnitShare';
 
 interface ImportarDesdeSAModalProps {
     isOpen: boolean;
@@ -19,60 +20,6 @@ interface ImportarDesdeSAModalProps {
     specificCompetences: SpecificCompetence[];
     evaluationTools: EvaluationTool[];
 }
-
-// Un ítem importable = una actividad de sesión, el producto final, o el
-// examen final (como una única columna -- ver más abajo). Fase 7 del plan
-// de la SA: reutiliza assignments.programmingUnitId (ya existente en el
-// esquema) y hereda linkedCriteria de la SA en vez de tener que volverlos
-// a elegir a mano por cada columna.
-interface ItemImportable {
-    key: string;
-    nombrePorDefecto: string;
-    linkedCriteriaIds: string[];
-    evaluationToolId?: string;
-}
-
-const construirItems = (unit: ProgrammingUnit): ItemImportable[] => {
-    const items: ItemImportable[] = [];
-
-    (unit.sessionDetails || []).forEach((sesion, sIndex) => {
-        (sesion.actividades || []).forEach((act, aIndex) => {
-            items.push({
-                key: `s${sIndex}-a${aIndex}`,
-                nombrePorDefecto: `${sesion.titulo || `Sesión ${sIndex + 1}`} · ${act.titulo || 'Actividad'}`,
-                linkedCriteriaIds: act.linkedCriteriaIds || [],
-                evaluationToolId: act.evaluationToolId,
-            });
-        });
-    });
-
-    if (unit.finalProduct?.incluido) {
-        items.push({
-            key: 'producto',
-            nombrePorDefecto: `Producto final${unit.finalProduct.tipo ? `: ${unit.finalProduct.tipo}` : ''}`,
-            linkedCriteriaIds: unit.finalProduct.linkedCriteriaIds || [],
-            evaluationToolId: unit.finalProduct.evaluationToolId,
-        });
-    }
-
-    // El examen entero es UNA columna, no una por bloque -- los criterios de
-    // todos sus bloques se combinan en linkedCriteria (ratio 1 cada uno). No
-    // se pierde el desglose por criterio: una tarea de calificación directa
-    // con más de un criterio vinculado ya pide una nota POR criterio en
-    // GradeEntryModal, no una nota única -- eso es justo lo que hace falta
-    // aquí, sin inventar un mecanismo nuevo.
-    if (unit.finalExam?.incluido) {
-        const criteriosExamen = Array.from(new Set((unit.finalExam.bloques || []).flatMap(b => b.linkedCriteriaIds || [])));
-        items.push({
-            key: 'examen',
-            nombrePorDefecto: `Examen final${unit.finalExam.formato ? `: ${unit.finalExam.formato}` : ''}`,
-            linkedCriteriaIds: criteriosExamen,
-            evaluationToolId: unit.finalExam.evaluationToolId,
-        });
-    }
-
-    return items;
-};
 
 const ImportarDesdeSAModal: React.FC<ImportarDesdeSAModalProps> = ({
     isOpen, onClose, classId, courseId, evaluationPeriodId, programmingUnits, categories, criteria, specificCompetences, evaluationTools,
@@ -88,7 +35,7 @@ const ImportarDesdeSAModal: React.FC<ImportarDesdeSAModalProps> = ({
 
     const unidadesDelCurso = programmingUnits.filter(u => u.courseId === courseId);
     const unit = unidadesDelCurso.find(u => u.id === unitId);
-    const items = useMemo(() => (unit ? construirItems(unit) : []), [unit]);
+    const items = useMemo(() => (unit ? listarItemsImportablesSA(unit) : []), [unit]);
 
     useEffect(() => {
         // Al cambiar de SA, arranca de cero -- selección/nombres/categorías
@@ -97,7 +44,7 @@ const ImportarDesdeSAModal: React.FC<ImportarDesdeSAModalProps> = ({
         const nombresIniciales: Record<string, string> = {};
         const categoriasIniciales: Record<string, string> = {};
         items.forEach(item => {
-            nombresIniciales[item.key] = item.nombrePorDefecto;
+            nombresIniciales[item.key] = item.label;
             categoriasIniciales[item.key] = categories[0]?.id || '';
         });
         setNombres(nombresIniciales);
@@ -158,7 +105,7 @@ const ImportarDesdeSAModal: React.FC<ImportarDesdeSAModalProps> = ({
                         evaluationPeriodId,
                         evaluationToolId: tool?.id,
                         programmingUnitId: unit.id,
-                        name: nombres[key] || item.nombrePorDefecto,
+                        name: nombres[key] || item.label,
                         evaluationMethod,
                         linkedCriteria,
                         pesoEnCategoria: pesoPorItem[key]?.trim() ? Number(pesoPorItem[key]) : undefined,
@@ -209,7 +156,7 @@ const ImportarDesdeSAModal: React.FC<ImportarDesdeSAModalProps> = ({
                                 <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 items-center">
                                     <Input
                                         type="text"
-                                        value={nombres[item.key] ?? item.nombrePorDefecto}
+                                        value={nombres[item.key] ?? item.label}
                                         onChange={e => setNombres(prev => ({ ...prev, [item.key]: e.target.value }))}
                                         disabled={!seleccionados.has(item.key)}
                                     />
@@ -217,7 +164,7 @@ const ImportarDesdeSAModal: React.FC<ImportarDesdeSAModalProps> = ({
                                         value={categoriaPorItem[item.key] || ''}
                                         onChange={e => setCategoriaPorItem(prev => ({ ...prev, [item.key]: e.target.value }))}
                                         disabled={!seleccionados.has(item.key)}
-                                        className="w-40"
+                                        className="!w-40"
                                     >
                                         {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                     </Select>

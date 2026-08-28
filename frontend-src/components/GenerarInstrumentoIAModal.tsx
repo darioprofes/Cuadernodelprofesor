@@ -67,6 +67,11 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
     const [via, setVia] = useState<Via>('groq');
     const [tipo, setTipo] = useState<ToolType>('rubric');
     const [numNiveles, setNumNiveles] = useState(4);
+    // Editable, no solo un valor de solo lectura -- cuando no hay criterios
+    // preelegidos (linkedCriteriaIds vacío) este texto es lo ÚNICO de lo que
+    // parte la IA para proponerlos ella misma de todo el curso, así que
+    // tiene que poder escribirse aquí mismo, no solo heredarse.
+    const [contextoEditable, setContextoEditable] = useState(contexto || '');
     const [documentoClase, setDocumentoClase] = useState(documentoClaseInicial || '');
     const [subiendoDocumento, setSubiendoDocumento] = useState(false);
     const [avisoExtraccion, setAvisoExtraccion] = useState<string | null>(null);
@@ -80,12 +85,16 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const tipoInfo = TIPOS.find(t => t.value === tipo)!;
-    const sinCriterios = linkedCriteriaIds.length === 0;
+    // Sin criterios preelegidos, la IA los propone ella misma de todo el
+    // curso -- pero necesita AL MENOS una descripción de qué evaluar (o el
+    // contenido de clase) para partir de algo, ver instrumento_evaluacion.py.
+    const sinInsumos = linkedCriteriaIds.length === 0 && !contextoEditable.trim() && !documentoClase.trim();
 
     const reset = () => {
         setVia('groq');
         setTipo('rubric');
         setNumNiveles(4);
+        setContextoEditable(contexto || '');
         setDocumentoClase(documentoClaseInicial || '');
         setAvisoExtraccion(null);
         setError(null);
@@ -141,7 +150,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                 courseId,
                 criterionIds: linkedCriteriaIds,
                 toolType: tipo,
-                contexto,
+                contexto: contextoEditable.trim() || undefined,
                 numNiveles: tipoInfo.necesitaNiveles ? numNiveles : undefined,
                 documento: documentoClase.trim() || undefined,
             });
@@ -161,7 +170,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                 courseId,
                 criterionIds: linkedCriteriaIds,
                 toolType: tipo,
-                contexto,
+                contexto: contextoEditable.trim() || undefined,
                 numNiveles: tipoInfo.necesitaNiveles ? numNiveles : undefined,
                 documento: documentoClase.trim() || undefined,
             });
@@ -181,7 +190,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                 courseId,
                 criterionIds: linkedCriteriaIds,
                 toolType: tipo,
-                contexto,
+                contexto: contextoEditable.trim() || undefined,
                 numNiveles: tipoInfo.necesitaNiveles ? numNiveles : undefined,
                 documento: documentoClase.trim() || undefined,
             });
@@ -206,18 +215,18 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
         }
     };
 
-    const bloqueado = sinCriterios || (via === 'local' && !iaLocalDisponible) || (via === 'groq' && !groqDisponible);
+    const bloqueado = sinInsumos || (via === 'local' && !iaLocalDisponible) || (via === 'groq' && !groqDisponible);
 
     return (
         <Modal isOpen={isOpen} onClose={handleClose} title="Generar instrumento con IA" size="lg">
             <div className="flex flex-col gap-4">
-                {sinCriterios ? (
+                {sinInsumos && (
                     <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                        Este elemento todavía no tiene criterios de evaluación vinculados -- vincula al menos uno
-                        antes de generar el instrumento.
+                        Este elemento todavía no tiene criterios de evaluación vinculados -- vincula al menos uno,
+                        o describe abajo qué quieres evaluar para que la IA los proponga ella misma.
                     </p>
-                ) : (
-                    <>
+                )}
+                <>
                         <div className="flex gap-1.5">
                             <button
                                 type="button"
@@ -257,6 +266,21 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
 
                         {promptGenerado === null && (
                             <>
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-700 mb-1.5">
+                                        ¿Qué quieres evaluar?
+                                        {linkedCriteriaIds.length === 0 && <span className="text-amber-600"> (obligatorio -- sin criterios vinculados, la IA los propone a partir de esto)</span>}
+                                        {linkedCriteriaIds.length > 0 && <span className="text-slate-400 font-normal"> (opcional)</span>}
+                                    </p>
+                                    <Textarea
+                                        value={contextoEditable}
+                                        onChange={e => setContextoEditable(e.target.value)}
+                                        rows={3}
+                                        placeholder="P.ej. un examen con las siguientes preguntas: ..."
+                                        className="text-sm"
+                                    />
+                                </div>
+
                                 <div>
                                     <p className="text-sm font-semibold text-slate-700 mb-1.5">Tipo de instrumento</p>
                                     <div className="flex gap-1.5 flex-wrap">
@@ -322,8 +346,10 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                                 </div>
 
                                 <p className="text-xs text-slate-500">
-                                    Se generará a partir de {linkedCriteriaIds.length} criterio(s) de evaluación vinculado(s)
-                                    a este elemento. El resultado se abre para revisar y editar antes de guardar.
+                                    {linkedCriteriaIds.length > 0
+                                        ? `Se generará a partir de ${linkedCriteriaIds.length} criterio(s) de evaluación vinculado(s) a este elemento.`
+                                        : 'La IA elegirá los criterios de evaluación de todo el curso que encajen con lo descrito arriba.'}
+                                    {' '}El resultado se abre para revisar y editar antes de guardar.
                                     {via === 'local' && ' Puede tardar cerca de un minuto.'}
                                     {via === 'groq' && ' Suele tardar solo unos segundos.'}
                                 </p>
@@ -352,7 +378,6 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                             </>
                         )}
                     </>
-                )}
 
                 {error && (
                     <p className="text-sm text-red-600">{error}</p>
@@ -371,7 +396,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                         </Button>
                     )}
                     {via === 'online' && promptGenerado === null && (
-                        <Button type="button" onClick={handleGenerarPromptOnline} disabled={sinCriterios || generando}>
+                        <Button type="button" onClick={handleGenerarPromptOnline} disabled={sinInsumos || generando}>
                             {generando ? 'Generando prompt...' : 'Generar prompt'}
                         </Button>
                     )}

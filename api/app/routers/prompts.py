@@ -17,13 +17,21 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from services.auth import require_auth
+from services.courses import get_course
 from services.extraccion_docx import extraer_markdown_docx
 from services.extraccion_pdf import extraer_texto_pdf
 from services.extraccion_pptx import extraer_texto_pptx
 from services.llm_client import esta_disponible as ia_local_esta_disponible
 from services.llm_client import groq_disponible
 from services.prompts import instrumento_evaluacion as prompt_instrumento
-from services.prompts.situacion_aprendizaje import construir_prompt, generar_situacion_aprendizaje_groq, procesar_respuesta
+from services.prompts.situacion_aprendizaje import (
+    SADemasiadoGrandeError,
+    TrabajoCanceladoError,
+    construir_prompt,
+    generar_situacion_aprendizaje_groq,
+    generar_situacion_aprendizaje_por_partes_groq,
+    procesar_respuesta,
+)
 
 router = APIRouter(prefix="/prompts", tags=["Generadores de prompts"], dependencies=[Depends(require_auth)])
 
@@ -199,7 +207,7 @@ async def generar_prompt_unidad(datos: GenerarUnidadRequest):
 async def generar_unidad_groq(datos: GenerarUnidadRequest):
 
     try:
-        unidad, codigos_descartados, instrumento_examen, documento_resumido = generar_situacion_aprendizaje_groq(
+        unidad, codigos_descartados, documento_resumido = generar_situacion_aprendizaje_groq(
             datos.course_id, datos.documento, datos.modo,
             datos.sesiones_modo, datos.sesiones_fijo, datos.sesiones_min, datos.sesiones_max,
             datos.caracteristicas_grupo,
@@ -214,15 +222,137 @@ async def generar_unidad_groq(datos: GenerarUnidadRequest):
             datos.duracion_sesion_min,
             datos.diagnostico_incluido, datos.diagnostico_minutos,
         )
+    except SADemasiadoGrandeError as exc:
+        # "code" aparte del mensaje -- para que el frontend pueda ofrecer
+        # el generador por partes como alternativa sin tener que reconocer
+        # el texto en español del error.
+        raise HTTPException(status_code=400, detail={"code": "demasiado_grande", "message": str(exc), "estimado": exc.estimado})
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
     return {
         "unidad": unidad,
         "codigosDescartados": codigos_descartados,
-        "instrumentoExamen": instrumento_examen,
         "documentoResumido": documento_resumido,
     }
+
+
+# Generación por partes (boceto + una llamada por sesión + producto +
+# examen) -- fallback para cuando /generar-groq avisa de que la SA no cabe
+# en el presupuesto de la capa gratuita de Groq. A diferencia de esa vía
+# (rápida, síncrona), esta encadena varias llamadas y puede esperar varios
+# segundos (a veces minutos u horas, si el cupo diario de Groq está
+# agotado -- ver TrabajoCanceladoError/_ESPERA_MAXIMA_ACUMULADA_SEGUNDOS en
+# situacion_aprendizaje.py) entre alguna de ellas si topa con el límite de
+# tasa -- mismo patrón job+polling que instrumento-evaluacion/generar (ver
+# esa nota más abajo): el POST devuelve al instante, el frontend sondea el
+# progreso.
+_trabajos_sa: dict[str, dict] = {}
+
+# Un threading.Event por trabajo en curso, para poder cancelarlo desde
+# fuera del hilo que lo ejecuta (ver POST /trabajos/{job_id}/cancelar). Se
+# guarda aparte de _trabajos_sa/_trabajos_instrumento (y no dentro de esos
+# dicts) porque un Event no es serializable a JSON y esos dicts sí se
+# devuelven tal cual como respuesta HTTP.
+_eventos_cancelacion: dict[str, threading.Event] = {}
+
+
+def _titulo_curso(course_id: str) -> str:
+    try:
+        curso = get_course(course_id)
+    except Exception:
+        curso = None
+    return f"{curso.level} · {curso.subject}" if curso else "Curso no encontrado"
+
+
+def _ejecutar_generacion_sa_por_partes(job_id: str, datos: GenerarUnidadRequest, evento: threading.Event):
+
+    def on_progreso(mensaje, espera_hasta=None):
+        with _trabajos_lock:
+            if job_id in _trabajos_sa:
+                _trabajos_sa[job_id]["mensaje"] = mensaje
+                # None en cualquier aviso que no sea una espera real -- borra
+                # la cuenta atrás de un paso anterior en vez de dejarla
+                # colgada mostrando un tiempo que ya no significa nada.
+                _trabajos_sa[job_id]["esperaHasta"] = espera_hasta
+
+    try:
+        unidad, codigos_descartados = generar_situacion_aprendizaje_por_partes_groq(
+            datos.course_id, datos.documento, datos.modo,
+            datos.sesiones_modo, datos.sesiones_fijo, datos.sesiones_min, datos.sesiones_max,
+            datos.caracteristicas_grupo,
+            datos.tipos_actividad, datos.estructuras_cooperativas,
+            [a.model_dump() for a in datos.actividades_obligatorias],
+            datos.estructura_sesion, datos.estructura_sesion_detalle,
+            datos.progresion_autonomia,
+            datos.atencion_diversidad, datos.atencion_diversidad_detalle,
+            datos.class_id,
+            datos.producto_incluido, datos.producto_tipo,
+            datos.examen_incluido, datos.examen_formato,
+            datos.duracion_sesion_min,
+            datos.diagnostico_incluido, datos.diagnostico_minutos,
+            on_progreso=on_progreso,
+            debe_cancelar=evento.is_set,
+        )
+        resultado = {
+            "estado": "listo",
+            "unidad": unidad,
+            "codigosDescartados": codigos_descartados,
+        }
+    except TrabajoCanceladoError:
+        resultado = {"estado": "cancelado", "detail": "Cancelado por el usuario."}
+    except ValueError as exc:
+        resultado = {"estado": "error", "detail": str(exc)}
+    except Exception as exc:
+        resultado = {"estado": "error", "detail": f"Error inesperado generando la situación de aprendizaje: {exc}"}
+
+    with _trabajos_lock:
+        if job_id in _trabajos_sa:
+            _trabajos_sa[job_id].update(resultado)
+        _eventos_cancelacion.pop(job_id, None)
+
+
+@router.post("/unidad-programacion/generar-groq-por-partes", status_code=202)
+async def generar_unidad_groq_por_partes(datos: GenerarUnidadRequest):
+    job_id = str(uuid.uuid4())
+    evento = threading.Event()
+    with _trabajos_lock:
+        _limpiar_trabajos_viejos(_trabajos_sa)
+        _trabajos_sa[job_id] = {
+            "estado": "en_progreso",
+            "mensaje": "Empezando...",
+            "creado": time.monotonic(),
+            "tipo": "sa",
+            "titulo": f"Situación de aprendizaje · {_titulo_curso(datos.course_id)}",
+            "iniciado": time.time(),
+            # Para poder guardar el resultado como unidad de programación
+            # directamente desde la cola de trabajos (ver TrabajosIAPanel.tsx
+            # en el frontend) sin tener que navegar antes a ese curso.
+            "courseId": datos.course_id,
+        }
+        _eventos_cancelacion[job_id] = evento
+
+    threading.Thread(target=_ejecutar_generacion_sa_por_partes, args=(job_id, datos, evento), daemon=True).start()
+    return {"jobId": job_id}
+
+
+@router.get("/unidad-programacion/generar-groq-por-partes/{job_id}")
+async def estado_unidad_groq_por_partes(job_id: str):
+    with _trabajos_lock:
+        trabajo = _trabajos_sa.get(job_id)
+    if trabajo is None:
+        # Los trabajos viven solo en memoria (ver _trabajos_sa más arriba) --
+        # un reinicio del contenedor a mitad de una generación los borra sin
+        # dejar rastro (nos pasó de verdad una vez). No hay forma de
+        # distinguir con certeza "expiró por TTL" de "se perdió en un
+        # reinicio" sin persistirlo en base de datos, así que el mensaje
+        # cubre ambos en vez de sugerir solo el caso menos probable.
+        raise HTTPException(
+            status_code=404,
+            detail="No se encuentra este trabajo -- puede que haya expirado (más de una hora) o que el "
+            "servidor se haya reiniciado a mitad de la generación. Inténtalo de nuevo.",
+        )
+    return trabajo
 
 
 class ValidarUnidadRequest(BaseModel):
@@ -235,11 +365,11 @@ class ValidarUnidadRequest(BaseModel):
 async def validar_respuesta_unidad(datos: ValidarUnidadRequest):
 
     try:
-        unidad, codigos_descartados, instrumento_examen = procesar_respuesta(datos.course_id, datos.respuesta, datos.mapa)
+        unidad, codigos_descartados = procesar_respuesta(datos.course_id, datos.respuesta, datos.mapa)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    return {"unidad": unidad, "codigosDescartados": codigos_descartados, "instrumentoExamen": instrumento_examen}
+    return {"unidad": unidad, "codigosDescartados": codigos_descartados}
 
 
 class GenerarInstrumentoRequest(BaseModel):
@@ -252,6 +382,27 @@ class GenerarInstrumentoRequest(BaseModel):
     # ha visto de verdad en clase -- opcional, ver nota en
     # instrumento_evaluacion.py::construir_prompt.
     documento: Optional[str] = None
+
+
+class SugerirCriteriosRequest(BaseModel):
+    course_id: str
+    descripcion: str
+    documento: Optional[str] = None
+
+
+# Paso previo opcional a /instrumento-evaluacion/generar-groq -- ver la nota
+# de cabecera de sugerir_criterios_groq() en instrumento_evaluacion.py. Solo
+# por Groq (rápido, sin patrón job+polling) -- no se ofrece IA local/online
+# para este paso.
+@router.post("/instrumento-evaluacion/sugerir-criterios-groq")
+async def sugerir_criterios_instrumento_groq(datos: SugerirCriteriosRequest):
+    try:
+        criterion_ids, codigos_descartados = prompt_instrumento.sugerir_criterios_groq(
+            datos.course_id, datos.descripcion, datos.documento,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"criterionIds": criterion_ids, "codigosDescartados": codigos_descartados}
 
 
 # La generación real puede tardar cerca de un minuto (llamada al ia-server).
@@ -271,10 +422,15 @@ _trabajos_lock = threading.Lock()
 _TTL_TRABAJO_SEGUNDOS = 3600
 
 
-def _limpiar_trabajos_viejos():
+def _limpiar_trabajos_viejos(trabajos: dict):
+    # Recibe el diccionario a limpiar en vez de tener _trabajos_instrumento
+    # escrito a fuego -- se llama tanto para ese diccionario como para
+    # _trabajos_sa (generación de SA por partes), y antes de parametrizarlo
+    # _trabajos_sa nunca se purgaba: cada generación por partes dejaba un
+    # trabajo colgado en memoria para siempre.
     limite = time.monotonic() - _TTL_TRABAJO_SEGUNDOS
-    for job_id in [jid for jid, t in _trabajos_instrumento.items() if t["creado"] < limite]:
-        del _trabajos_instrumento[job_id]
+    for job_id in [jid for jid, t in trabajos.items() if t["creado"] < limite]:
+        del trabajos[job_id]
 
 
 def _ejecutar_generacion_instrumento(job_id: str, datos: GenerarInstrumentoRequest):
@@ -290,16 +446,32 @@ def _ejecutar_generacion_instrumento(job_id: str, datos: GenerarInstrumentoReque
         resultado = {"estado": "error", "detail": f"Error inesperado generando el instrumento: {exc}"}
 
     with _trabajos_lock:
-        if job_id in _trabajos_instrumento:
-            _trabajos_instrumento[job_id].update(resultado)
+        actual = _trabajos_instrumento.get(job_id)
+        # Esta generación es UNA sola llamada bloqueante al ia-server, sin
+        # ningún punto intermedio donde comprobar cancelación (a diferencia
+        # de la SA por partes, encadenada en pasos) -- si el usuario ya
+        # canceló mientras tanto (ver POST .../cancelar, que marca
+        # "cancelado" al momento), no pisar ese estado con el resultado
+        # tardío de una llamada que ya no le importa a nadie.
+        if actual is not None and actual.get("estado") != "cancelado":
+            actual.update(resultado)
+        _eventos_cancelacion.pop(job_id, None)
 
 
 @router.post("/instrumento-evaluacion/generar", status_code=202)
 async def generar_prompt_instrumento(datos: GenerarInstrumentoRequest):
     job_id = str(uuid.uuid4())
     with _trabajos_lock:
-        _limpiar_trabajos_viejos()
-        _trabajos_instrumento[job_id] = {"estado": "en_progreso", "creado": time.monotonic()}
+        _limpiar_trabajos_viejos(_trabajos_instrumento)
+        _trabajos_instrumento[job_id] = {
+            "estado": "en_progreso",
+            "creado": time.monotonic(),
+            "tipo": "instrumento",
+            "titulo": f"Instrumento de evaluación ({datos.tool_type}) · {_titulo_curso(datos.course_id)}",
+            "iniciado": time.time(),
+            "courseId": datos.course_id,
+        }
+        _eventos_cancelacion[job_id] = threading.Event()
 
     threading.Thread(target=_ejecutar_generacion_instrumento, args=(job_id, datos), daemon=True).start()
     return {"jobId": job_id}
@@ -310,7 +482,11 @@ async def estado_prompt_instrumento(job_id: str):
     with _trabajos_lock:
         trabajo = _trabajos_instrumento.get(job_id)
     if trabajo is None:
-        raise HTTPException(status_code=404, detail="Trabajo no encontrado (o ya expiró).")
+        raise HTTPException(
+            status_code=404,
+            detail="No se encuentra este trabajo -- puede que haya expirado (más de una hora) o que el "
+            "servidor se haya reiniciado a mitad de la generación. Inténtalo de nuevo.",
+        )
     return trabajo
 
 
@@ -361,3 +537,52 @@ async def validar_respuesta_instrumento(datos: ValidarInstrumentoRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"instrumento": instrumento, "codigosDescartados": codigos_descartados}
+
+
+# ==========================================================
+# Cola de trabajos en segundo plano (SA por partes + instrumento por IA
+# local) -- vista unificada para el chip de avisos del frontend. Solo
+# expone los campos ligeros (nunca "unidad"/"instrumento", el contenido
+# generado completo) -- para ver o guardar el resultado de un trabajo
+# "listo" ya están los endpoints .../generar-groq-por-partes/{job_id} y
+# .../instrumento-evaluacion/generar/{job_id} de arriba.
+# ==========================================================
+_CAMPOS_LISTADO_TRABAJO = ("estado", "titulo", "tipo", "iniciado", "mensaje", "detail", "courseId", "esperaHasta")
+
+
+@router.get("/trabajos")
+async def listar_trabajos():
+    with _trabajos_lock:
+        todos = list(_trabajos_sa.items()) + list(_trabajos_instrumento.items())
+        trabajos = [
+            {"jobId": job_id, **{campo: t[campo] for campo in _CAMPOS_LISTADO_TRABAJO if campo in t}}
+            for job_id, t in todos
+        ]
+    trabajos.sort(key=lambda t: t.get("iniciado", 0), reverse=True)
+    return {"trabajos": trabajos}
+
+
+@router.post("/trabajos/{job_id}/cancelar")
+async def cancelar_trabajo(job_id: str):
+    with _trabajos_lock:
+        trabajo = _trabajos_sa.get(job_id) or _trabajos_instrumento.get(job_id)
+        if trabajo is None:
+            raise HTTPException(status_code=404, detail="No se encuentra este trabajo.")
+        if trabajo["estado"] != "en_progreso":
+            return {"estado": trabajo["estado"]}
+
+        evento = _eventos_cancelacion.get(job_id)
+        if evento is not None:
+            evento.set()
+
+        if trabajo.get("tipo") == "instrumento":
+            # La generación con IA local es una única llamada bloqueante,
+            # sin ningún paso intermedio donde comprobar el Event -- se
+            # marca cancelado ya mismo en vez de esperar a que el ia-server
+            # responda por su cuenta (puede tardar cerca de un minuto). El
+            # hilo de fondo, al terminar, ve el estado ya en "cancelado" y
+            # no lo pisa (ver _ejecutar_generacion_instrumento).
+            trabajo["estado"] = "cancelado"
+            trabajo["detail"] = "Cancelado por el usuario."
+
+    return {"estado": "cancelado"}

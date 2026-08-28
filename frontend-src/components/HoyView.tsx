@@ -6,10 +6,38 @@ import ClassLabel from './ClassLabel';
 import BannerCostero from './BannerCostero';
 import Input from './Input';
 import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange, formatFechaEs } from '../utils';
-import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon, ArrowUpTrayIcon, ExclamationTriangleIcon } from './Icons';
+import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon, ArrowUpTrayIcon, ExclamationTriangleIcon, SparklesIcon } from './Icons';
 import { PALETTE } from '../theme/palette';
 import DateNavButton from './DateNavButton';
 import { computeDashboardNotices, type DashboardNoticeKind } from '../services/dashboardNotices';
+import { useTrabajosIA, type ResultadoTrabajoSA, type ResultadoTrabajoInstrumento } from '../hooks/useTrabajosIA';
+import TrabajosIAPanel from './TrabajosIAPanel';
+
+// Trabajos de IA descartados por el usuario (ver TrabajosIAPanel) -- solo
+// del lado del cliente, no hay endpoint de borrado en el backend (los
+// trabajos ya expiran solos a la hora, ver _TTL_TRABAJO_SEGUNDOS). Se
+// guardan en localStorage para que "descartar" sobreviva a recargar la
+// página, no solo a cerrar el panel.
+const DESCARTADOS_KEY = 'trabajosIADescartados';
+
+const leerDescartados = (): Set<string> => {
+    try {
+        const raw = localStorage.getItem(DESCARTADOS_KEY);
+        return new Set(raw ? JSON.parse(raw) : []);
+    } catch {
+        return new Set();
+    }
+};
+
+const guardarDescartados = (ids: Set<string>) => {
+    try {
+        localStorage.setItem(DESCARTADOS_KEY, JSON.stringify([...ids]));
+    } catch {
+        // localStorage puede fallar (privado, cuota llena) -- sin
+        // consecuencia real, en el peor caso vuelven a verse trabajos ya
+        // descartados tras recargar.
+    }
+};
 
 const NOTICE_ICON: Record<DashboardNoticeKind, React.FC<{ className?: string }>> = {
     ungraded: ClipboardDocumentCheckIcon,
@@ -39,6 +67,8 @@ interface HoyViewProps {
     absencesByClassId: Record<string, Absence[]>;
     setActiveView: (view: View) => void;
     setActiveClassId: (id: string) => void;
+    onAbrirBorradorSA: (courseId: string, resultado: ResultadoTrabajoSA) => void;
+    onAbrirBorradorInstrumento: (courseId: string, resultado: ResultadoTrabajoInstrumento) => void;
 }
 
 const saludo = (hora: number): string => {
@@ -54,7 +84,7 @@ interface SlotHoy {
     aula?: string;
 }
 
-const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfiguration, tasks, setTasks, meetings, absencesByClassId, setActiveView, setActiveClassId }) => {
+const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfiguration, tasks, setTasks, meetings, absencesByClassId, setActiveView, setActiveClassId, onAbrirBorradorSA, onAbrirBorradorInstrumento }) => {
     // `new Date()` solo se recalcularía en cada render: sin este tick, si no
     // hay ninguna otra interacción la vista se queda con la hora congelada
     // en el momento en que se montó (p.ej. tras cambiar la hora del sistema
@@ -202,6 +232,43 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
         [classes, courses, academicConfiguration.evaluationPeriods, absencesByClassId, now]
     );
 
+    // Cola de trabajos de IA en segundo plano (SA por partes, instrumentos)
+    // -- mismo sitio que el resto de avisos accionables, ver nota de cabecera.
+    const trabajosIAQuery = useTrabajosIA();
+    const [descartados, setDescartados] = useState<Set<string>>(leerDescartados);
+    const [panelTrabajosAbierto, setPanelTrabajosAbierto] = useState(false);
+    const trabajosVisibles = (trabajosIAQuery.data ?? []).filter(t => !descartados.has(t.jobId));
+    const trabajosEnCurso = trabajosVisibles.filter(t => t.estado === 'en_progreso').length;
+    const trabajosConProblema = trabajosVisibles.filter(t => t.estado === 'error' || t.estado === 'cancelado').length;
+    // "listo" no es un estado final de verdad: la SA o el instrumento
+    // generado todavía no existe como tal en la aplicación hasta que se
+    // guarda desde el panel (ver TrabajosIAPanel.tsx) -- si el chip solo
+    // contase "en curso"/"con error", un trabajo terminado con el modal ya
+    // cerrado se quedaría invisible para siempre y nunca se llegaría a
+    // guardar.
+    const trabajosListosSinGuardar = trabajosVisibles.filter(t => t.estado === 'listo').length;
+
+    const descartarTrabajo = (jobId: string) => {
+        setDescartados(prev => {
+            const next = new Set(prev).add(jobId);
+            guardarDescartados(next);
+            return next;
+        });
+    };
+    const descartarTrabajosTerminados = () => {
+        setDescartados(prev => {
+            const next = new Set(prev);
+            // Los "listo" quedan fuera a propósito -- son SA/instrumentos
+            // generados que TODAVÍA no se han guardado en ningún sitio
+            // (ver TrabajosIAPanel.tsx). Un botón de "vaciar todo" no debe
+            // poder tirar contenido generado sin guardar sin que el
+            // profesor lo decida uno a uno.
+            trabajosVisibles.forEach(t => { if (t.estado === 'error' || t.estado === 'cancelado') next.add(t.jobId); });
+            guardarDescartados(next);
+            return next;
+        });
+    };
+
     return (
         <div className="space-y-6">
             <div className="relative overflow-hidden rounded-xl p-6 flex items-center justify-between flex-wrap gap-3 min-h-[9rem]" style={{ background: 'linear-gradient(135deg, #eef2ff 0%, #e0f2fe 100%)' }}>
@@ -248,6 +315,21 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                         </button>
                     );
                 })}
+                {(trabajosEnCurso > 0 || trabajosConProblema > 0 || trabajosListosSinGuardar > 0) && (
+                    <button
+                        type="button"
+                        onClick={() => setPanelTrabajosAbierto(true)}
+                        className={`flex items-center gap-1.5 bg-white shadow-sm rounded-full pl-3 pr-4 py-1.5 text-sm font-semibold transition-opacity hover:opacity-70 ${trabajosConProblema > 0 ? 'text-red-700' : (trabajosListosSinGuardar > 0 ? 'text-emerald-700' : '')}`}
+                        style={trabajosConProblema > 0 || trabajosListosSinGuardar > 0 ? undefined : { color: PALETTE.sand.header }}
+                    >
+                        <SparklesIcon className="w-4 h-4 flex-shrink-0" />
+                        {[
+                            trabajosEnCurso > 0 && `${trabajosEnCurso} en curso`,
+                            trabajosListosSinGuardar > 0 && `${trabajosListosSinGuardar} lista${trabajosListosSinGuardar === 1 ? '' : 's'} para guardar`,
+                            trabajosConProblema > 0 && `${trabajosConProblema} con error`,
+                        ].filter(Boolean).join(' · ')}
+                    </button>
+                )}
                 {ventanasEventos.map(tile => {
                         const conteo = contarEventosEnVentana(tile.desdeExclusive, tile.hasta);
                         if (conteo.tareasEvaluables === 0 && conteo.reuniones === 0) return null;
@@ -401,6 +483,15 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                     </div>
                 </div>
             </div>
+            <TrabajosIAPanel
+                isOpen={panelTrabajosAbierto}
+                onClose={() => setPanelTrabajosAbierto(false)}
+                trabajos={trabajosVisibles}
+                onDescartar={descartarTrabajo}
+                onDescartarTerminados={descartarTrabajosTerminados}
+                onAbrirBorradorSA={onAbrirBorradorSA}
+                onAbrirBorradorInstrumento={onAbrirBorradorInstrumento}
+            />
         </div>
     );
 };

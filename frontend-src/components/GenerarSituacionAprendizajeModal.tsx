@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { Course, EvaluationTool, ProgrammingUnit, SessionDetail, FinalProduct, FinalExam } from '../types';
+import type { ProgrammingUnit, SessionDetail, FinalProduct, FinalExam } from '../types';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -8,16 +8,13 @@ import Textarea from './Textarea';
 import { ArrowUpTrayIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, SparklesIcon } from './Icons';
 import { CARACTERISTICAS_HABITUALES } from './ClassModal';
 import { RASGOS_DOCENTE_HABITUALES } from './settings/AcademicConfigManager';
-import { EvaluationToolEditorModal } from './EvaluationToolManager';
 import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
 import { usePreferences, useUpdatePreferences } from '../hooks/usePreferences';
-import { useEvaluationCriteria } from '../hooks/useEvaluationCriteria';
-import { useCreateEvaluationTool } from '../hooks/useEvaluationTools';
 import { apiClassToLocal } from '../services/apiAdapters';
-import GenerarInstrumentoIAModal from './GenerarInstrumentoIAModal';
+import type { ResultadoTrabajoSA } from '../hooks/useTrabajosIA';
 
-type Paso = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type Paso = 1 | 2 | 3 | 4 | 5 | 6;
 
 // Categorías del documento de diseño original -- selección múltiple + Otro.
 const TIPOS_ACTIVIDAD_DISPONIBLES = [
@@ -114,13 +111,20 @@ const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
 interface GenerarSituacionAprendizajeModalProps {
     isOpen: boolean;
     courseId: string;
-    courses: Course[];
     onClose: () => void;
     // Al terminar, este modal se cierra y entrega el borrador para que el
     // llamador lo abra en el propio UnitEditor de ProgrammingManager.tsx --
     // no hay formulario de revisión propio aquí, se reutiliza el que ya
     // existe para crear/editar unidades a mano.
     onDraftReady: (draft: ProgrammingUnit) => void;
+    // Resultado de un trabajo de la cola (ver TrabajosIAPanel.tsx) que
+    // llega "ya generado" -- se procesa con entregarUnidadGenerada exactamente
+    // igual que si esta misma generación hubiera terminado con el modal
+    // todavía abierto (mismo aviso de códigos descartados). `courseId` ya
+    // viene fijado por el llamador (ProgrammingManager, tras navegar al
+    // curso correcto) antes de que este prop se rellene.
+    resumeResultado?: ResultadoTrabajoSA | null;
+    onResumeResultadoConsumido?: () => void;
 }
 
 // Genera el prompt (documento de teoría + currículo real del curso) para
@@ -133,7 +137,7 @@ interface GenerarSituacionAprendizajeModalProps {
 type Modo = 'documento' | 'descripcion';
 type SesionesModo = 'fijo' | 'rango';
 
-const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModalProps> = ({ isOpen, courseId, courses, onClose, onDraftReady }) => {
+const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModalProps> = ({ isOpen, courseId, onClose, onDraftReady, resumeResultado, onResumeResultadoConsumido }) => {
     const [paso, setPaso] = useState<Paso>(1);
     const [modo, setModo] = useState<Modo>('documento');
     const [documento, setDocumento] = useState('');
@@ -231,46 +235,6 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
     const [examenFormato, setExamenFormato] = useState<string>(FORMATOS_EXAMEN_DISPONIBLES[0]);
     const [examenFormatoDetalle, setExamenFormatoDetalle] = useState('');
 
-    // Paso 7 (tras procesar la respuesta): el propio prompt de la SA ya pide
-    // el desglose de preguntas/puntos del examen como un elemento más de esa
-    // misma respuesta (ver instrumentoExamen en situacion_aprendizaje.py), así
-    // que lo normal es llegar aquí con el instrumento ya armado, listo para
-    // revisar. Si la respuesta no lo trajo (formatos antiguos, o la IA no lo
-    // dio), se ofrece generarlo aparte -- con el mismo modal de siempre
-    // (IA local o, si va lenta, IA online). Opcional siempre (se puede
-    // saltar), y revisable antes de guardar como el resto de instrumentos
-    // generados con IA.
-    const remoteCriteria = useEvaluationCriteria(courseId);
-    const criteria = remoteCriteria.data ?? [];
-    const createToolMutation = useCreateEvaluationTool();
-    const [draftPendiente, setDraftPendiente] = useState<ProgrammingUnit | null>(null);
-    const [instrumentoDraft, setInstrumentoDraft] = useState<EvaluationTool | null>(null);
-    const [showGenerarInstrumentoExamen, setShowGenerarInstrumentoExamen] = useState(false);
-
-    const criteriosDelExamen = (unidad: { finalExam?: FinalExam }) =>
-        Array.from(new Set((unidad.finalExam?.bloques || []).flatMap(b => b.linkedCriteriaIds || [])));
-
-    const handleGuardarInstrumentoExamen = async (tool: EvaluationTool) => {
-        const { id: _unused, ...data } = tool;
-        const creado = await createToolMutation.mutateAsync(data);
-        if (draftPendiente) {
-            const draftFinal: ProgrammingUnit = {
-                ...draftPendiente,
-                finalExam: { ...(draftPendiente.finalExam as FinalExam), evaluationToolId: creado.id },
-            };
-            setInstrumentoDraft(null);
-            handleClose();
-            onDraftReady(draftFinal);
-        }
-    };
-
-    const handleSaltarInstrumentoExamen = () => {
-        if (draftPendiente) {
-            handleClose();
-            onDraftReady(draftPendiente);
-        }
-    };
-
     const anadirActividadObligatoria = () => {
         const texto = nuevaObligatoriaTexto.trim();
         if (!texto) return;
@@ -318,9 +282,8 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
         setExamenIncluido(false);
         setExamenFormato(FORMATOS_EXAMEN_DISPONIBLES[0]);
         setExamenFormatoDetalle('');
-        setDraftPendiente(null);
-        setInstrumentoDraft(null);
-        setShowGenerarInstrumentoExamen(false);
+        setErrorGroq(null);
+        setGroqAgotado(false);
     };
 
     const handleClose = () => {
@@ -375,8 +338,11 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
 
     // Compartido por la vía de copiar/pegar (handleProcesarRespuesta) y por
     // Groq (handleGenerarConGroq) -- ambas acaban con la misma forma de
-    // respuesta ({unidad, codigosDescartados, instrumentoExamen}), solo
-    // cambia cómo se consigue.
+    // respuesta ({unidad, codigosDescartados}), solo cambia cómo se
+    // consigue. El instrumento del examen final (si lo hay) ya no se genera
+    // aquí -- se hace aparte, a demanda, desde Instrumentos de Evaluación
+    // (ver "Generar desde una SA" en EvaluationToolManager.tsx), igual que
+    // el resto de instrumentos de la SA.
     const entregarUnidadGenerada = (data: {
         unidad: {
             name: string;
@@ -390,7 +356,6 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
             linkedSpecificCompetenceIds: string[];
         };
         codigosDescartados: string[];
-        instrumentoExamen: Omit<EvaluationTool, 'id'> | null;
     }) => {
         if (data.codigosDescartados.length > 0) {
             // El profesor revisa el borrador de todas formas en el
@@ -418,21 +383,42 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
             startDate: '',
         };
 
-        // Si el examen final tiene criterios, se pasa por el Paso 7 --
-        // normalmente ya con el instrumento listo para revisar (ver
-        // arriba), o si no, con la opción de generarlo aparte. Si no hay
-        // examen con criterios, se entrega directo como hasta ahora.
-        if (draft.finalExam?.incluido && criteriosDelExamen(draft).length > 0) {
-            setDraftPendiente(draft);
-            if (data.instrumentoExamen) {
-                setInstrumentoDraft({ ...data.instrumentoExamen, id: 'draft' } as EvaluationTool);
-            }
-            setPaso(7);
-        } else {
-            handleClose();
-            onDraftReady(draft);
-        }
+        handleClose();
+        onDraftReady(draft);
     };
+
+    // "Resumir" un trabajo de la cola (ver TrabajosIAPanel.tsx): en cuanto
+    // llega un resultado CON EL MODAL YA ABIERTO, se procesa exactamente
+    // como si esta generación hubiera terminado ahora mismo -- reutiliza
+    // entregarUnidadGenerada tal cual, sin duplicar su lógica (aviso de
+    // códigos descartados).
+    //
+    // El `isOpen &&` de la condición es imprescindible, no cosmético: este
+    // componente está SIEMPRE montado (ver comentario en el render de
+    // ProgrammingManager.tsx), así que en cuanto `resumeResultado` cambia
+    // -- ANTES de que ProgrammingManager haya tenido ocasión de poner
+    // `isOpen` a true -- este efecto ya se dispara. Sin la guarda,
+    // entregarUnidadGenerada() cerraba el modal justo antes de que el
+    // efecto de ProgrammingManager lo volviera a abrir, dejando el
+    // asistente "Generar con IA" reabierto (vacío, en el paso 1) por
+    // encima del editor ya abierto con el borrador -- confirmado en real,
+    // los dos modales quedaban visibles a la vez. Con la guarda, este
+    // efecto no hace nada hasta el render en el que `isOpen` ya es true.
+    //
+    // `ultimoResumidoRef` evita procesarlo dos veces: React StrictMode
+    // (desarrollo) invoca cada efecto dos veces a propósito para detectar
+    // justo este tipo de efecto no idempotente. No se incluye
+    // entregarUnidadGenerada en las dependencias -- se redefine en cada
+    // render, y solo debe dispararse cuando cambia el resultado o `isOpen`.
+    const ultimoResumidoRef = useRef<ResultadoTrabajoSA | null>(null);
+    useEffect(() => {
+        if (isOpen && resumeResultado && resumeResultado !== ultimoResumidoRef.current) {
+            ultimoResumidoRef.current = resumeResultado;
+            entregarUnidadGenerada(resumeResultado);
+            onResumeResultadoConsumido?.();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [resumeResultado, isOpen]);
 
     const handleProcesarRespuesta = async () => {
         if (!resultado) return;
@@ -484,16 +470,59 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
         diagnostico_minutos: diagnosticoIncluido ? diagnosticoMinutos : undefined,
     });
 
-    // Vía rápida con Groq -- solo funciona para SA pequeñas (el currículo
-    // completo del curso ya ocupa buena parte del presupuesto gratuito de
-    // Groq, antes incluso de contar sesiones/producto/examen -- ver nota en
-    // situacion_aprendizaje.py). Si no cabe, el backend lo dice con
-    // claridad y aquí se deja tal cual como error -- copiar/pegar sigue
-    // siendo la vía por defecto (botón principal) precisamente por esto.
+    // Vía con Groq -- UN solo botón que decide por sí mismo: intenta primero
+    // la llamada rápida (de una sola vez); si el backend estima que no cabe
+    // en el presupuesto gratuito (code "demasiado_grande", ver
+    // SADemasiadoGrandeError), encadena automáticamente el generador por
+    // partes (boceto + una llamada por sesión + producto + examen) sin que
+    // el profesor tenga que pulsar nada más -- antes se mostraban ambas
+    // vías a la vez como botones sueltos y era confuso. Si Groq falla del
+    // todo (por cualquiera de las dos vías), se oculta este botón y solo
+    // queda "Generar prompt" (copiar/pegar) -- no tiene sentido seguir
+    // ofreciendo reintentar algo que ya se ha comprobado que no funciona.
     const [probandoGroq, setProbandoGroq] = useState(false);
+    const [generandoPorPartes, setGenerandoPorPartes] = useState(false);
     const [errorGroq, setErrorGroq] = useState<string | null>(null);
+    const [groqAgotado, setGroqAgotado] = useState(false);
 
-    const handleGenerarConGroq = async () => {
+    // Encadenado desde handleGenerarConIA cuando la vía rápida no cabe.
+    // Puede esperar horas si topa con el cupo agotado de Groq (ver
+    // situacion_aprendizaje.py), así que el backend usa el mismo patrón
+    // job+polling que Instrumentos con IA local -- pero a diferencia de
+    // antes, aquí NO se sondea desde el propio modal: en cuanto el trabajo
+    // queda lanzado (202 + jobId) el modal se cierra solo, con un aviso de
+    // que sigue en segundo plano. El sondeo real y la entrega del
+    // resultado (con su mismo paso de revisión) los hace el chip de
+    // "Avisos" de Hoy -- ver TrabajosIAPanel.tsx / hooks/useTrabajosIA.ts --
+    // que sobrevive a que este modal se cierre o incluso a recargar la
+    // página, algo que el sondeo en línea de antes no podía ofrecer.
+    const handleGenerarPorPartes = async () => {
+        setGenerandoPorPartes(true);
+        try {
+            const inicio = await fetch('/api/prompts/unidad-programacion/generar-groq-por-partes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payloadGeneracion()),
+            });
+            if (!inicio.ok) {
+                const body = await inicio.json().catch(() => ({}));
+                throw new Error((typeof body.detail === 'string' && body.detail) || `Error HTTP ${inicio.status}`);
+            }
+            handleClose();
+            window.alert(
+                'La generación sigue en segundo plano -- puede tardar bastante si el cupo gratuito de Groq está ' +
+                'agotado ahora mismo. Revisa su progreso, cancélala si hace falta, o ábrela para revisarla y ' +
+                'guardarla en cuanto esté lista desde el chip "Avisos" de Hoy.'
+            );
+        } catch (err) {
+            setErrorGroq(err instanceof Error ? err.message : String(err));
+            setGroqAgotado(true);
+        } finally {
+            setGenerandoPorPartes(false);
+        }
+    };
+
+    const handleGenerarConIA = async () => {
         setProbandoGroq(true);
         setErrorGroq(null);
         try {
@@ -504,7 +533,12 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
             });
             if (!response.ok) {
                 const body = await response.json().catch(() => ({}));
-                throw new Error(body.detail || `Error HTTP ${response.status}`);
+                if (body.detail && typeof body.detail === 'object' && body.detail.code === 'demasiado_grande') {
+                    setProbandoGroq(false);
+                    await handleGenerarPorPartes();
+                    return;
+                }
+                throw new Error((typeof body.detail === 'string' && body.detail) || `Error HTTP ${response.status}`);
             }
             const data = await response.json();
             if (data.documentoResumido) {
@@ -516,6 +550,7 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
             entregarUnidadGenerada(data);
         } catch (err) {
             setErrorGroq(err instanceof Error ? err.message : String(err));
+            setGroqAgotado(true);
         } finally {
             setProbandoGroq(false);
         }
@@ -526,7 +561,7 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
             <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                     <SparklesIcon className="w-4 h-4" />
-                    {paso <= 6 ? `Paso ${paso} de 6` : 'Instrumento del examen'}
+                    Paso {paso} de 6
                 </div>
 
                 {paso === 1 && (
@@ -920,6 +955,10 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                                             <Input type="text" value={examenFormatoDetalle} onChange={e => setExamenFormatoDetalle(e.target.value)} placeholder="Describe el formato del examen..." />
                                         </div>
                                     )}
+                                    <p className="text-xs text-slate-500 mt-2">
+                                        La IA diseña los bloques del examen (qué evalúa cada uno y qué criterios activa).
+                                        Las preguntas concretas se generan después, desde Instrumentos de Evaluación.
+                                    </p>
                                 </>
                             )}
                         </div>
@@ -1026,19 +1065,27 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                                 {errorPaso1}
                             </p>
                         )}
+                        {generandoPorPartes && (
+                            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-center gap-1.5">
+                                <SparklesIcon className="w-4 h-4 flex-shrink-0" />
+                                Lanzando la generación en segundo plano...
+                            </p>
+                        )}
                         {errorGroq && (
                             <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-start gap-1.5">
                                 <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                                {errorGroq} Sigue con "Generar prompt" para copiar/pegar en su lugar.
+                                {errorGroq} Usa "Generar prompt" para copiar/pegar en su lugar.
                             </p>
                         )}
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
                             <div className="flex gap-2">
-                                <Button type="button" variant="secondary" onClick={handleGenerarConGroq} disabled={probandoGroq || generando}>
-                                    {probandoGroq ? 'Probando con Groq...' : 'Probar con Groq (rápido, solo SA pequeñas)'}
-                                </Button>
-                                <Button type="button" onClick={handleGenerarPrompt} disabled={generando || probandoGroq}>
+                                {!groqAgotado && (
+                                    <Button type="button" variant="secondary" onClick={handleGenerarConIA} disabled={probandoGroq || generando || generandoPorPartes}>
+                                        {probandoGroq ? 'Probando con Groq...' : generandoPorPartes ? 'Generando por partes...' : 'Generar con IA (Groq)'}
+                                    </Button>
+                                )}
+                                <Button type="button" onClick={handleGenerarPrompt} disabled={generando || probandoGroq || generandoPorPartes}>
                                     {generando ? 'Generando...' : 'Generar prompt'}
                                 </Button>
                             </div>
@@ -1086,46 +1133,6 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                                 {procesando ? 'Procesando...' : 'Continuar a revisión'}
                             </Button>
                         </div>
-                    </div>
-                )}
-
-                {paso === 7 && draftPendiente && (
-                    <div className="flex flex-col gap-3">
-                        {!instrumentoDraft ? (
-                            <>
-                                <p className="text-sm text-slate-600">
-                                    El examen final tiene {criteriosDelExamen(draftPendiente).length} criterio(s) de
-                                    evaluación vinculado(s), pero la respuesta no incluyó el desglose de preguntas con
-                                    puntos. ¿Generar su instrumento (Examen criterial) antes de guardar la SA?
-                                </p>
-                                <div className="flex justify-between">
-                                    <Button type="button" variant="secondary" onClick={handleSaltarInstrumentoExamen}>
-                                        Continuar sin generarlo
-                                    </Button>
-                                    <Button type="button" onClick={() => setShowGenerarInstrumentoExamen(true)}>
-                                        Generar examen criterial
-                                    </Button>
-                                </div>
-                                <GenerarInstrumentoIAModal
-                                    isOpen={showGenerarInstrumentoExamen}
-                                    onClose={() => setShowGenerarInstrumentoExamen(false)}
-                                    courseId={courseId}
-                                    linkedCriteriaIds={criteriosDelExamen(draftPendiente)}
-                                    contexto={`Examen final${draftPendiente.finalExam?.formato ? `: ${draftPendiente.finalExam.formato}` : ''} de la SA "${draftPendiente.name}"`}
-                                    documentoClaseInicial={textoEntrada}
-                                    onDraftReady={setInstrumentoDraft}
-                                />
-                            </>
-                        ) : (
-                            <EvaluationToolEditorModal
-                                isOpen={true}
-                                onClose={handleSaltarInstrumentoExamen}
-                                onSave={handleGuardarInstrumentoExamen}
-                                toolToEdit={instrumentoDraft}
-                                criteria={criteria}
-                                courses={courses.filter(c => c.id === courseId)}
-                            />
-                        )}
                     </div>
                 )}
             </div>

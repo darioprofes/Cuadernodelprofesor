@@ -18,6 +18,8 @@
 import json
 import re
 
+import json_repair
+
 from services.courses import get_course
 from services.criteria import list_criteria
 from services.llm_client import generar_texto, generar_texto_groq
@@ -70,7 +72,16 @@ def construir_prompt(course_id, criterion_ids, tool_type, contexto=None, num_niv
     particular, eso podía dar preguntas correctas en la forma pero ajenas
     a lo que realmente se trabajó en el aula. Si se da, el instrumento
     tiene que basarse en ese contenido concreto, no solo en la
-    descripción del criterio."""
+    descripción del criterio.
+
+    `criterion_ids` -- opcional. Si se da, la IA tiene que cubrir SOLO esos
+    criterios (comportamiento de siempre). Si se deja vacío, la IA elige
+    ella misma qué criterios de TODO el curso encajan con `contexto`/
+    `documento_clase` -- pensado para cuando el profesor describe lo que
+    quiere evaluar (p.ej. pega ya las preguntas de un examen) en vez de
+    elegir los criterios a mano de antemano. En ese caso hace falta
+    `contexto` o `documento_clase`: sin ninguno de los dos la IA no tiene
+    de qué partir."""
 
     if tool_type not in _ETIQUETAS_TIPO:
         raise ValueError(f"Tipo de instrumento desconocido: {tool_type}")
@@ -81,13 +92,38 @@ def construir_prompt(course_id, criterion_ids, tool_type, contexto=None, num_niv
         raise ValueError("Curso no encontrado.")
 
     todos_los_criterios = list_criteria(course_id)
-    ids_pedidos = set(criterion_ids or [])
-    criterios = [c for c in todos_los_criterios if str(c.id) in ids_pedidos]
 
-    if not criterios:
-        raise ValueError(
-            "Ninguno de los criterios indicados existe en este curso -- vincula al menos un "
-            "criterio antes de generar el instrumento."
+    if criterion_ids:
+        ids_pedidos = set(criterion_ids)
+        criterios = [c for c in todos_los_criterios if str(c.id) in ids_pedidos]
+        if not criterios:
+            raise ValueError(
+                "Ninguno de los criterios indicados existe en este curso -- vincula al menos un "
+                "criterio antes de generar el instrumento."
+            )
+        instruccion_criterios = "Debe cubrir estos criterios de evaluación (usa SOLO estos códigos, ninguno más):"
+        instruccion_cobertura = (
+            f'Reparte los criterios dados entre {"las preguntas" if tool_type == "criterial_exam" else "los ítems"} de '
+            f'forma equilibrada -- que cada criterio quede cubierto por al menos uno, sin forzar '
+            f'{"preguntas" if tool_type == "criterial_exam" else "ítems"} que no aporten nada real.'
+        )
+    else:
+        if not todos_los_criterios:
+            raise ValueError(
+                "Este curso no tiene criterios de evaluación cargados todavía -- añádelos en Ajustes "
+                "antes de generar un instrumento."
+            )
+        if not contexto and not documento_clase:
+            raise ValueError(
+                "Sin criterios elegidos a mano, hace falta describir qué quieres evaluar (o pegar el "
+                "contenido visto en clase) para que la IA sepa de dónde partir."
+            )
+        criterios = todos_los_criterios
+        instruccion_criterios = "Elige de esta lista SOLO los criterios que de verdad encajan con lo que se describe arriba (usa SOLO estos códigos, ninguno más):"
+        instruccion_cobertura = (
+            f'Vincula cada {"pregunta" if tool_type == "criterial_exam" else "ítem"} SOLO a los criterios que '
+            f'de verdad evidencia -- no hace falta cubrir todos los de la lista, elige los que encajen con lo '
+            f'descrito arriba, no fuerces relaciones que no existan.'
         )
 
     lista_criterios = "\n".join(f"- {c.code}: {c.description}" for c in criterios)
@@ -142,16 +178,14 @@ def construir_prompt(course_id, criterion_ids, tool_type, contexto=None, num_niv
 evaluación de tipo {_ETIQUETAS_TIPO[tool_type]}.
 {seccion_contexto}{seccion_documento}
 <criterios_de_evaluacion>
-Debe cubrir estos criterios de evaluación (usa SOLO estos códigos, ninguno más):
+{instruccion_criterios}
 {lista_criterios}
 </criterios_de_evaluacion>
 
 <tarea>
 {instruccion_tipo}
 
-Reparte los criterios dados entre {"las preguntas" if tool_type == "criterial_exam" else "los ítems"} de \
-forma equilibrada -- que cada criterio quede cubierto por al menos uno, sin forzar {"preguntas" if tool_type == "criterial_exam" else "ítems"} \
-que no aporten nada real. No inventes criterios fuera de la lista dada -- si lo haces, esos \
+{instruccion_cobertura} No inventes criterios fuera de la lista dada -- si lo haces, esos \
 códigos se descartarán al procesar la respuesta.{instruccion_documento}
 </tarea>
 
@@ -176,6 +210,111 @@ def _extraer_json(texto):
         return coincidencia.group(1)
 
     return texto.strip()
+
+
+def _parsear_json(texto):
+    """json.loads normal, y si falla, json_repair como red de seguridad --
+    ver el mismo helper y su motivo en situacion_aprendizaje.py (comillas
+    sin escapar dentro de una cadena larga, que json.loads(strict=False) no
+    cubre)."""
+
+    try:
+        return json.loads(texto, strict=False)
+    except json.JSONDecodeError:
+        return json_repair.loads(texto)
+
+
+# ==========================================================
+# Sugerir criterios a partir de una descripción
+# ==========================================================
+#
+# Paso previo y opcional a generar_instrumento*(): el profesor describe qué
+# quiere evaluar (p.ej. pega ya las preguntas de un examen) SIN elegir
+# criterios de antemano, y esto le propone cuáles de TODO el curso encajan
+# -- para que los revise/ajuste en el mismo selector de criterios de
+# siempre (CriteriaSelectorModal.tsx) antes de generar el instrumento
+# propiamente dicho, que sigue funcionando exactamente igual que con
+# criterios elegidos a mano. Solo por Groq (rápido) -- a diferencia de la
+# generación del instrumento, aquí no hace falta ofrecer IA local/online
+# para un paso tan ligero.
+
+def construir_prompt_sugerir_criterios(course_id, descripcion, documento_clase=None):
+
+    curso = get_course(course_id)
+    if curso is None:
+        raise ValueError("Curso no encontrado.")
+
+    todos_los_criterios = list_criteria(course_id)
+    if not todos_los_criterios:
+        raise ValueError(
+            "Este curso no tiene criterios de evaluación cargados todavía -- añádelos en Ajustes "
+            "antes de generar un instrumento."
+        )
+
+    lista_criterios = "\n".join(f"- {c.code}: {c.description}" for c in todos_los_criterios)
+
+    seccion_documento = (
+        f"\n<contenido_visto_en_clase>\n{documento_clase}\n</contenido_visto_en_clase>\n"
+        if documento_clase else ""
+    )
+
+    return f"""Eres un profesor de {curso.subject} de {curso.level}. Quieres evaluar lo siguiente:
+
+<lo_que_quiero_evaluar>
+{descripcion}
+</lo_que_quiero_evaluar>
+{seccion_documento}
+<criterios_de_evaluacion>
+{lista_criterios}
+</criterios_de_evaluacion>
+
+<tarea>
+Elige de la lista de arriba SOLO los códigos de criterios de evaluación que de verdad evidencia lo \
+descrito -- no fuerces relaciones que no existan, no hace falta cubrir todos los criterios del curso, \
+y no inventes códigos fuera de la lista dada.
+</tarea>
+
+Devuelve ÚNICAMENTE este JSON, sin texto antes ni después: {{"criterionCodes": ["códigos elegidos"]}}"""
+
+
+def _procesar_sugerencia_criterios(course_id, respuesta_texto):
+    """Devuelve (criterion_ids, codigos_descartados) -- mismo criterio de
+    descartar silenciosamente cualquier código que la IA proponga y no
+    exista de verdad en el curso que el resto de generadores."""
+
+    try:
+        datos = _parsear_json(_extraer_json(respuesta_texto))
+    except Exception as exc:
+        raise ValueError(f"La IA no devolvió un JSON válido: {exc}")
+
+    criterios_por_codigo = {c.code: c for c in list_criteria(course_id)}
+    criterion_ids = []
+    codigos_descartados = []
+    for codigo in (datos.get("criterionCodes") or []):
+        criterio = criterios_por_codigo.get(codigo)
+        if criterio:
+            criterion_ids.append(str(criterio.id))
+        else:
+            codigos_descartados.append(codigo)
+
+    return criterion_ids, codigos_descartados
+
+
+def sugerir_criterios_groq(course_id, descripcion, documento_clase=None):
+    """Llama a Groq y devuelve (criterion_ids, codigos_descartados). Lanza
+    ValueError si Groq no responde o no hay clave configurada."""
+
+    prompt = construir_prompt_sugerir_criterios(course_id, descripcion, documento_clase)
+
+    respuesta_texto = generar_texto_groq(prompt)
+
+    if respuesta_texto is None:
+        raise ValueError(
+            "Groq no está disponible ahora mismo (o falta configurar la clave). Inténtalo de nuevo, "
+            "o elige los criterios a mano."
+        )
+
+    return _procesar_sugerencia_criterios(course_id, respuesta_texto)
 
 
 def generar_instrumento(course_id, criterion_ids, tool_type, contexto=None, num_niveles=None, documento_clase=None):
@@ -226,8 +365,8 @@ def procesar_respuesta(course_id, tool_type, respuesta_texto):
     devuelve nada a medio procesar."""
 
     try:
-        datos = json.loads(_extraer_json(respuesta_texto))
-    except json.JSONDecodeError as exc:
+        datos = _parsear_json(_extraer_json(respuesta_texto))
+    except Exception as exc:
         raise ValueError(f"La IA no devolvió un JSON válido: {exc}")
 
     criterios_por_codigo = {c.code: c for c in list_criteria(course_id)}

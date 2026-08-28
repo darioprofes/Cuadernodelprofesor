@@ -22,6 +22,7 @@ import { useEvaluationCriteria, useEvaluationCriteriaForCourses } from './hooks/
 import { useSpecificCompetences, useSpecificCompetencesForCourses } from './hooks/useSpecificCompetences';
 import { useBasicKnowledgeForCourses } from './hooks/useBasicKnowledge';
 import { useProgrammingUnitsForCourses } from './hooks/useProgrammingUnits';
+import type { ResultadoTrabajoSA, ResultadoTrabajoInstrumento } from './hooks/useTrabajosIA';
 import { useTasks, useCreateTask, useUpdateTask, useDeleteTask } from './hooks/useTasks';
 import { useMeetings, useCreateMeeting, useUpdateMeeting, useDeleteMeeting } from './hooks/useMeetings';
 import { useJournalEntries, useSaveJournalEntry } from './hooks/useJournalEntries';
@@ -55,9 +56,9 @@ const EvaluationToolManager = React.lazy(() => import('./components/EvaluationTo
 // el resto de vistas poco visitadas.
 const AiToolsView = React.lazy(() => import('./components/AiToolsView'));
 import ClassJournal from './components/ClassJournal';
-import { Cog8ToothIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon, BeakerIcon } from './components/Icons';
+import { Cog8ToothIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon, BeakerIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from './components/Icons';
 import PageHeader from './components/PageHeader';
-import { PAGE_ACCENT } from './theme/palette';
+import { PAGE_ACCENT, SIDEBAR_BG } from './theme/palette';
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
 import ExportModal from './components/ExportModal';
 import Modal from './components/Modal';
@@ -372,6 +373,13 @@ const App = () => {
     // otras vistas por detrás. Mismo patrón que "materiaSelector" en
     // SettingsModal.tsx (independiente de la clase activa).
     const [materiaPageCourseId, setMateriaPageCourseId] = useState<string>('');
+    // Resultado de un trabajo de IA en segundo plano (ver TrabajosIAPanel.tsx
+    // en HoyView) pendiente de abrirse en su editor de revisión -- vive aquí
+    // (no en HoyView ni en ProgrammingManager/EvaluationToolManager) porque
+    // abrirlo implica navegar a otra vista, algo que solo App.tsx controla.
+    // Se consume (vuelve a null) en cuanto el editor de destino lo recoge.
+    const [pendingSAResultado, setPendingSAResultado] = useState<{ courseId: string; resultado: ResultadoTrabajoSA } | null>(null);
+    const [pendingInstrumentoResultado, setPendingInstrumentoResultado] = useState<{ courseId: string; resultado: ResultadoTrabajoInstrumento } | null>(null);
     const [activeView, setActiveViewRaw] = useState<View>('hoy');
     // El Diario de Clase avisa aquí cuando tiene anotaciones sin guardar
     // (es fácil escribir y olvidarse de pulsar "Guardar"): mientras esté a
@@ -393,6 +401,19 @@ const App = () => {
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isFavoritosOpen, setIsFavoritosOpen] = useState(false);
+    // Ocultar menú lateral / barra superior, cada uno por separado (pedido
+    // explícito) para aprovechar toda la pantalla: preferencia puramente
+    // visual, igual que la densidad del Cuaderno -- vive en localStorage.
+    // Solo aplica en escritorio (md:) -- en móvil el Sidebar ya es un panel
+    // deslizante aparte que no ocupa espacio fijo.
+    const [sidebarHidden, setSidebarHidden] = useState(() => localStorage.getItem('sidebarHidden') === 'true');
+    useEffect(() => {
+        localStorage.setItem('sidebarHidden', String(sidebarHidden));
+    }, [sidebarHidden]);
+    const [topBarHidden, setTopBarHidden] = useState(() => localStorage.getItem('topBarHidden') === 'true');
+    useEffect(() => {
+        localStorage.setItem('topBarHidden', String(topBarHidden));
+    }, [topBarHidden]);
     // Favoritos: accesos directos a FUNCIONES (crear algo sin navegar), no a
     // páginas — cada uno reutiliza el mismo popup que ya existe en su
     // pantalla original (Agenda/Diario), abierto aquí para HOY.
@@ -685,6 +706,15 @@ const App = () => {
                 absencesByClassId={absencesByClassId}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
+                onAbrirBorradorSA={(courseId, resultado) => {
+                    setPendingSAResultado({ courseId, resultado });
+                    setMateriaPageCourseId(courseId);
+                    setActiveView('planner');
+                }}
+                onAbrirBorradorInstrumento={(courseId, resultado) => {
+                    setPendingInstrumentoResultado({ courseId, resultado });
+                    setActiveView('evaluation-tools');
+                }}
             />;
         }
 
@@ -734,6 +764,8 @@ const App = () => {
                                 onDelete={handleDeleteEvaluationTool}
                                 criteria={allCriteria}
                                 courses={curriculumCourses}
+                                pendingResultado={pendingInstrumentoResultado}
+                                onPendingResultadoConsumido={() => setPendingInstrumentoResultado(null)}
                             />
                         </React.Suspense>
                     </div>
@@ -836,6 +868,8 @@ const App = () => {
                                 courses={curriculumCourses}
                                 classes={hydratedClasses}
                                 academicConfiguration={effectiveAcademicConfiguration}
+                                pendingSAResultado={pendingSAResultado?.courseId === effectiveMateriaCourseId ? pendingSAResultado.resultado : null}
+                                onPendingSAResultadoConsumido={() => setPendingSAResultado(null)}
                             />
                         )}
                     </React.Suspense>
@@ -919,10 +953,34 @@ const App = () => {
 
     return (
         <div className="app-container font-sans text-slate-800 bg-slate-100 min-h-screen flex">
-            <Sidebar activeView={activeView} setActiveView={setActiveView} onOpenFavoritos={() => setIsFavoritosOpen(true)} />
+            <Sidebar activeView={activeView} setActiveView={setActiveView} onOpenFavoritos={() => setIsFavoritosOpen(true)} hidden={sidebarHidden} />
+
+            {/* Un único control tipo "colapsar ribbon" por zona, con flecha
+                que cambia de sentido según el estado -- en vez de un botón
+                para ocultar y otro distinto en otro sitio para volver a
+                mostrar (pedido explícito, "más tipo el ribbon de Word").
+                Posición fija: no dependen de que el Sidebar/la cabecera
+                estén montados, así siempre están donde se espera. Solo
+                escritorio -- en móvil el Sidebar ya es un panel aparte. */}
+            <button
+                onClick={() => setSidebarHidden(v => !v)}
+                title={sidebarHidden ? 'Mostrar menú lateral' : 'Ocultar menú lateral'}
+                className="hidden md:flex fixed top-1/2 -translate-y-1/2 z-40 w-5 h-10 items-center justify-center rounded-r-md bg-white shadow-md border border-l-0 border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-[left]"
+                style={{ left: sidebarHidden ? 0 : 224 }}
+            >
+                {sidebarHidden ? <ChevronRightIcon className="w-4 h-4" /> : <ChevronLeftIcon className="w-4 h-4" />}
+            </button>
+            <button
+                onClick={() => setTopBarHidden(v => !v)}
+                title={topBarHidden ? 'Mostrar barra superior' : 'Ocultar barra superior'}
+                className="hidden md:flex fixed -translate-x-1/2 z-40 w-10 h-5 items-center justify-center rounded-b-md bg-white shadow-md border border-t-0 border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-[top,left]"
+                style={{ top: topBarHidden ? 0 : 57, left: sidebarHidden ? '50%' : 'calc(50% + 112px)' }}
+            >
+                {topBarHidden ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4 rotate-180" />}
+            </button>
 
             <div className="flex-1 flex flex-col min-w-0 pt-14 md:pt-0">
-                <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200 px-4 py-2 flex items-center justify-between sticky top-0 z-30">
+                <header className={`${topBarHidden ? 'flex md:hidden' : 'flex'} border-b border-white/10 px-4 py-2 items-center justify-between sticky top-0 z-30`} style={{ backgroundColor: SIDEBAR_BG }}>
                     <ShortcutsBar shortcuts={shortcuts} onCreate={handleCreateShortcut} onUpdate={handleUpdateShortcut} onDelete={handleDeleteShortcut} />
                     <div className="flex items-center gap-2">
                         {/* Informes, Cuaderno y la vista de Materia usan el contexto
@@ -967,8 +1025,8 @@ const App = () => {
                                 )}
                             </>
                         )}
-                        <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-slate-100">
-                            <Cog8ToothIcon className="w-6 h-6 text-slate-600" />
+                        <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-white/10">
+                            <Cog8ToothIcon className="w-6 h-6 text-white/80" />
                         </button>
                     </div>
                 </header>

@@ -107,6 +107,26 @@ export async function generarPromptInstrumento(params: GenerarInstrumentoParams)
     return data.prompt;
 }
 
+export interface SugerenciaCriterios {
+    criterionIds: string[];
+    codigosDescartados: string[];
+}
+
+// Paso previo opcional a generar el instrumento: el profesor describe qué
+// quiere evaluar (sin elegir criterios de antemano) y esto propone cuáles
+// del curso encajan, para revisarlos/ajustarlos en el selector de criterios
+// de siempre antes de generar. Solo por Groq (rápido) -- ver la nota en
+// instrumento_evaluacion.py::sugerir_criterios_groq.
+export async function sugerirCriteriosConGroq(courseId: string, descripcion: string, documento?: string): Promise<SugerenciaCriterios> {
+    const response = await fetch('/api/prompts/instrumento-evaluacion/sugerir-criterios-groq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ course_id: courseId, descripcion, documento }),
+    });
+    if (!response.ok) throw new Error(await extraerDetalle(response));
+    return await response.json();
+}
+
 export async function validarRespuestaInstrumento(courseId: string, toolType: string, respuesta: string): Promise<GenerarInstrumentoResultado> {
     const response = await fetch('/api/prompts/instrumento-evaluacion/validar', {
         method: 'POST',

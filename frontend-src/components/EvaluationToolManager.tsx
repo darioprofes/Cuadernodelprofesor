@@ -1,7 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
-import type { EvaluationTool, Checklist, RatingScale, Rubric, EvaluationLevel, BaseEvaluationItem, EvaluationCriterion, Course } from '../types';
-import { PencilIcon, TrashIcon, PlusIcon, LinkIcon, ArrowUpTrayIcon } from './Icons';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import type { EvaluationTool, EvaluationLevel, BaseEvaluationItem, EvaluationCriterion, Course, ProgrammingUnit } from '../types';
+import { PencilIcon, TrashIcon, PlusIcon, LinkIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, ChevronDownIcon, ClipboardDocumentCheckIcon, ChartBarIcon, TableCellsIcon, AcademicCapIcon } from './Icons';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -11,6 +11,17 @@ import { checkboxClassName } from '../theme/components/Input';
 import { linkClassName } from '../theme/components/Link';
 import { SparklesIcon } from './Icons';
 import GenerarInstrumentoIAModal from './GenerarInstrumentoIAModal';
+import SeleccionarActividadSAModal from './SeleccionarActividadSAModal';
+import { PALETTE, type AccentColor } from '../theme/palette';
+import type { ResultadoTrabajoInstrumento } from '../hooks/useTrabajosIA';
+import { useCreateEvaluationTool } from '../hooks/useEvaluationTools';
+import { useProgrammingUnitsForCourses, useUpdateProgrammingUnit } from '../hooks/useProgrammingUnits';
+import { programmingUnitFromApi } from '../services/apiAdapters';
+import {
+    buildInstrumentoExportPayload, instrumentoExportFilename, parseInstrumentoImportPayload, resolverInstrumento,
+    type ItemSA, type UbicacionItemSA,
+} from '../services/programmingUnitShare';
+import { sugerirCriteriosConGroq } from '../services/generarInstrumentoIA';
 
 // Forma "de borrador" usada mientras se edita un instrumento: unifica
 // BaseEvaluationItem y RubricItem en un único tipo con `levelDescriptions`
@@ -37,12 +48,17 @@ interface EvaluationToolManagerProps {
     onDelete: (id: string) => void;
     criteria: EvaluationCriterion[];
     courses: Course[];
+    // Resultado de un trabajo de IA en segundo plano (ver TrabajosIAPanel.tsx
+    // en HoyView) pendiente de revisar -- se precarga igual que un
+    // instrumento recién generado con el flujo normal (handleInstrumentoGenerado).
+    pendingResultado?: { courseId: string; resultado: ResultadoTrabajoInstrumento } | null;
+    onPendingResultadoConsumido?: () => void;
 }
 
-const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluationTools, onCreate, onUpdate, onDelete, criteria, courses }) => {
+const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluationTools, onCreate, onUpdate, onDelete, criteria, courses, pendingResultado, onPendingResultadoConsumido }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [toolToEdit, setToolToEdit] = useState<EvaluationTool | null>(null);
-    const [showImportHelp, setShowImportHelp] = useState(false);
+    const fileImportRef = useRef<HTMLInputElement>(null);
     // Instrumento recién generado con IA (fuera del contexto de una SA, ver
     // más abajo) pendiente de revisar en el mismo formulario de edición de
     // siempre -- se precarga como toolToEdit para reutilizar el formulario
@@ -50,9 +66,42 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     // actualización de un instrumento real (onUpdate), así que necesita
     // distinguirse aparte.
     const [instrumentoGeneradoPendiente, setInstrumentoGeneradoPendiente] = useState(false);
+    // Origen del instrumento a generar: criterios elegidos a mano (de
+    // siempre), o una actividad/producto/examen concreto de una SA (nuevo --
+    // hereda criterios y contexto, y al guardar enlaza el instrumento de
+    // vuelta a ese elemento, ver handleSave). El botón "Generar con IA"
+    // pregunta primero cuál de los dos antes de abrir nada.
+    const [showOrigenGenerarIA, setShowOrigenGenerarIA] = useState(false);
     const [showCriteriaPickerParaIA, setShowCriteriaPickerParaIA] = useState(false);
+    const [showSeleccionarActividadSA, setShowSeleccionarActividadSA] = useState(false);
     const [criteriosParaIA, setCriteriosParaIA] = useState<{ courseId: string; ids: string[] } | null>(null);
+    const [contextoParaIA, setContextoParaIA] = useState<string | undefined>(undefined);
+    const [origenSA, setOrigenSA] = useState<{ unit: ProgrammingUnit; item: ItemSA } | null>(null);
     const [showGenerarIA, setShowGenerarIA] = useState(false);
+    // Paso "describir y que la IA proponga criterios": primero se pide la
+    // descripción (este modal), luego se llama a sugerirCriteriosConGroq y
+    // el resultado se revisa/ajusta en el MISMO CriteriaSelectorModal de
+    // elegir a mano (selectedIds precargado con la sugerencia) -- nunca se
+    // salta directo a generar el instrumento sin que el profesor vea y
+    // pueda tocar qué criterios se usaron.
+    const [showDescribir, setShowDescribir] = useState(false);
+    const [descripcionParaSugerir, setDescripcionParaSugerir] = useState('');
+    const [sugiriendoCriterios, setSugiriendoCriterios] = useState(false);
+    const [errorSugerencia, setErrorSugerencia] = useState<string | null>(null);
+    // Recuerda la descripción y la materia mientras se revisan los criterios
+    // sugeridos en CriteriaSelectorModal, para poder pasarla como contexto
+    // al generar el instrumento una vez confirmados.
+    const [sugerenciaPendiente, setSugerenciaPendiente] = useState<{ courseId: string; descripcion: string } | null>(null);
+    const createToolMutation = useCreateEvaluationTool();
+    const updateUnitMutation = useUpdateProgrammingUnit();
+    // Todas las SA de todas las materias -- Instrumentos de Evaluación no
+    // tiene una materia activa (a diferencia de ProgrammingManager.tsx),
+    // así que hace falta cargarlas todas para poder elegir cualquiera aquí.
+    const programmingUnitsQueries = useProgrammingUnitsForCourses(courses.map(c => c.id));
+    const programmingUnits = useMemo(
+        () => programmingUnitsQueries.flatMap(q => (q.data ?? []).map(programmingUnitFromApi)),
+        [programmingUnitsQueries]
+    );
     // Buscador + filtro por materia: con muchos instrumentos, una lista
     // plana por tipo se vuelve difícil de recorrer (petición explícita del
     // usuario). '' = todas las materias, 'sin-materia' = solo los que no
@@ -62,7 +111,33 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     const [filtroMateriaId, setFiltroMateriaId] = useState('');
     const materiasDisponibles = courses.filter(c => c.type !== 'other');
 
-    const handleSave = (tool: EvaluationTool) => {
+    // Reescribe evaluationToolId en el elemento de la SA del que salió este
+    // instrumento (actividad/producto/examen) -- mismo patrón que
+    // handleImportarSAFile en ProgrammingManager.tsx: PATCH parcial con solo
+    // el campo tocado para producto/examen; para una actividad hace falta
+    // mandar sessionDetails completo (no hay una columna aparte por
+    // actividad), con solo esa actividad modificada, copia inmutable.
+    const enlazarInstrumentoConOrigen = async (unit: ProgrammingUnit, ubicacion: UbicacionItemSA, toolId: string) => {
+        if (ubicacion.tipo === 'producto') {
+            await updateUnitMutation.mutateAsync({
+                id: unit.id, courseId: unit.courseId,
+                data: { finalProduct: { ...(unit.finalProduct ?? { incluido: true }), evaluationToolId: toolId } },
+            });
+        } else if (ubicacion.tipo === 'examen') {
+            await updateUnitMutation.mutateAsync({
+                id: unit.id, courseId: unit.courseId,
+                data: { finalExam: { ...(unit.finalExam ?? { incluido: true }), evaluationToolId: toolId } },
+            });
+        } else {
+            const sessionDetails = unit.sessionDetails.map((sd, si) => si !== ubicacion.sessionIndex ? sd : {
+                ...sd,
+                actividades: sd.actividades.map((act, ai) => ai !== ubicacion.activityIndex ? act : { ...act, evaluationToolId: toolId }),
+            });
+            await updateUnitMutation.mutateAsync({ id: unit.id, courseId: unit.courseId, data: { sessionDetails } });
+        }
+    };
+
+    const handleSave = async (tool: EvaluationTool) => {
         if (toolToEdit && !instrumentoGeneradoPendiente) {
             // criterionScores de una nota basada en instrumento se deriva
             // siempre en caliente a partir de toolResults + la definición
@@ -72,12 +147,22 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
             // la definición nueva.
             const { id, ...data } = tool;
             onUpdate(id, data);
+        } else if (origenSA) {
+            // Generado a partir de un elemento de una SA: se crea aparte
+            // (no con el onCreate genérico) para tener el id real y poder
+            // enlazarlo de vuelta a ese elemento -- mismo cierre del
+            // círculo que si se hubiera generado desde dentro del editor de
+            // la SA (InstrumentoSelectConIA en ProgrammingManager.tsx).
+            const { id: _unused, ...data } = tool;
+            const creado = await createToolMutation.mutateAsync(data);
+            await enlazarInstrumentoConOrigen(origenSA.unit, origenSA.item.ubicacion, creado.id);
         } else {
             const { id: _unused, ...data } = tool;
             onCreate(data);
         }
         setIsModalOpen(false);
         setInstrumentoGeneradoPendiente(false);
+        setOrigenSA(null);
     };
 
     const handleEditExisting = (tool: EvaluationTool) => {
@@ -85,18 +170,76 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
         setToolToEdit(tool);
     };
 
-    // Fuera de una SA no hay un "elemento concreto" del que heredar
-    // criterios (a diferencia de InstrumentoSelectConIA en
-    // ProgrammingManager.tsx) -- el profesor los elige a mano aquí,
-    // reutilizando el mismo selector de criterios que ya existe
-    // (CriteriaSelectorModal, más abajo). El curso del instrumento se
-    // deduce del primer criterio elegido.
+    // Paso 1 de "describir lo que se quiere evaluar": pide la descripción.
+    // Como aquí no hay ningún criterio ya elegido del que deducir la
+    // materia, se usa el filtro de materia de la lista (mismo criterio que
+    // la importación JSON, más abajo) -- sin uno real elegido no hay curso
+    // al que preguntar por sus criterios.
+    const handleDescribirParaIA = () => {
+        setShowOrigenGenerarIA(false);
+        if (!filtroMateriaId || filtroMateriaId === 'sin-materia') {
+            alert('Elige primero una materia en el filtro de arriba ("Todas las materias") -- ahí es donde la IA buscará los criterios.');
+            return;
+        }
+        setDescripcionParaSugerir('');
+        setErrorSugerencia(null);
+        setShowDescribir(true);
+    };
+
+    // Paso 2: llama a la IA para que proponga criterios a partir de la
+    // descripción, y abre el MISMO selector de criterios de elegir a mano
+    // (más abajo) con esa sugerencia ya marcada -- el profesor la revisa y
+    // ajusta ahí, nunca se genera el instrumento a partir de una selección
+    // que no ha visto.
+    const handleSugerirCriterios = async () => {
+        if (!descripcionParaSugerir.trim() || filtroMateriaId === '' || filtroMateriaId === 'sin-materia') return;
+        setSugiriendoCriterios(true);
+        setErrorSugerencia(null);
+        try {
+            const { criterionIds, codigosDescartados } = await sugerirCriteriosConGroq(filtroMateriaId, descripcionParaSugerir.trim());
+            if (codigosDescartados.length > 0) {
+                console.warn('Códigos de criterio descartados en la sugerencia:', codigosDescartados);
+            }
+            setSugerenciaPendiente({ courseId: filtroMateriaId, descripcion: descripcionParaSugerir.trim() });
+            setShowDescribir(false);
+            setShowCriteriaPickerParaIA(true);
+            // criteriosParaIA aquí solo sirve para precargar el selector con
+            // la sugerencia (selectedIds) -- handleCriteriosElegidosParaIA
+            // decide el destino real al confirmar, usando sugerenciaPendiente.
+            setCriteriosParaIA({ courseId: filtroMateriaId, ids: criterionIds });
+        } catch (err) {
+            setErrorSugerencia(err instanceof Error ? err.message : String(err));
+        } finally {
+            setSugiriendoCriterios(false);
+        }
+    };
+
+    // Confirmación de criterios (elegidos a mano desde cero, O revisados
+    // tras una sugerencia de la IA -- sugerenciaPendiente distingue cuál de
+    // los dos es). El curso se deduce del primer criterio elegido, salvo
+    // que venga de una sugerencia (ahí ya se sabe, y hace falta de todas
+    // formas para poder confirmar con cero criterios marcados).
     const handleCriteriosElegidosParaIA = (ids: string[]) => {
         setShowCriteriaPickerParaIA(false);
-        if (ids.length === 0) return;
-        const courseId = criteria.find(c => ids.includes(c.id))?.courseId;
+        const sugerencia = sugerenciaPendiente;
+        setSugerenciaPendiente(null);
+        const courseId = sugerencia?.courseId ?? criteria.find(c => ids.includes(c.id))?.courseId;
         if (!courseId) return;
+        if (ids.length === 0 && !sugerencia) return;
+        setOrigenSA(null);
+        setContextoParaIA(sugerencia?.descripcion);
         setCriteriosParaIA({ courseId, ids });
+        setShowGenerarIA(true);
+    };
+
+    // Elegir una actividad/producto/examen de una SA: hereda sus criterios
+    // Y su descripción como contexto para la IA (a diferencia de la
+    // elección manual de arriba, que no tiene contexto que ofrecer).
+    const handleActividadSASeleccionada = ({ unit, item }: { unit: ProgrammingUnit; item: ItemSA }) => {
+        setShowSeleccionarActividadSA(false);
+        setOrigenSA({ unit, item });
+        setContextoParaIA(item.contexto || undefined);
+        setCriteriosParaIA({ courseId: unit.courseId, ids: item.linkedCriteriaIds });
         setShowGenerarIA(true);
     };
 
@@ -110,169 +253,88 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
         setIsModalOpen(true);
     };
 
+    // "Resumir" un trabajo de la cola (ver TrabajosIAPanel.tsx): mismo
+    // destino que handleInstrumentoGenerado (precargar el formulario de
+    // edición para crear como nuevo), pero el courseId viene ya resuelto
+    // del propio trabajo en vez de deducirse de criteriosParaIA (aquí no
+    // hubo selector de criterios de por medio). `ultimoResumidoRef` evita
+    // procesarlo dos veces bajo React StrictMode -- ver la misma guarda en
+    // GenerarSituacionAprendizajeModal.tsx para el porqué.
+    const ultimoResumidoRef = useRef<typeof pendingResultado>(null);
+    useEffect(() => {
+        if (pendingResultado && pendingResultado !== ultimoResumidoRef.current) {
+            ultimoResumidoRef.current = pendingResultado;
+            setInstrumentoGeneradoPendiente(true);
+            setToolToEdit({ ...pendingResultado.resultado.instrumento, id: 'draft', courseId: pendingResultado.courseId } as EvaluationTool);
+            setIsModalOpen(true);
+            onPendingResultadoConsumido?.();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingResultado]);
+
     const handleDelete = (toolId: string) => {
         if (window.confirm("¿Seguro que quieres eliminar este instrumento? Esta acción no se puede deshacer.")) {
             onDelete(toolId);
         }
     };
 
-    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // Exportar/importar un instrumento suelto como JSON -- mismo formato y
+    // criterio (por códigos de criterio, no ids) que el export/import de una
+    // SA completa en ProgrammingManager.tsx, ver services/programmingUnitShare.ts.
+    // Sustituye a la antigua importación CSV: no tenía exportación, no
+    // soportaba examen criterial, y era un formato aparte del que usa el
+    // resto de la app para instrumentos con esta forma anidada.
+    const handleExportarInstrumento = (tool: EvaluationTool) => {
+        const exportObj = buildInstrumentoExportPayload(tool, criteria);
+        const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = instrumentoExportFilename(tool.name);
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    // A diferencia de una SA (que se importa siempre dentro de un curso ya
+    // elegido), aquí no hay una materia activa -- se usa el filtro "materia"
+    // de la lista como destino; sin uno real elegido no hay dónde resolver
+    // los códigos de criterio a ids.
+    const handleImportarInstrumentoClick = () => {
+        if (!filtroMateriaId || filtroMateriaId === 'sin-materia') {
+            alert('Elige primero una materia en el filtro de arriba ("Todas las materias") -- ahí es donde se importará el instrumento.');
+            return;
+        }
+        fileImportRef.current?.click();
+    };
+
+    const handleImportarInstrumentoJSON = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-        if (!file) return;
+        if (event.target) event.target.value = '';
+        if (!file || !filtroMateriaId || filtroMateriaId === 'sin-materia') return;
+        const courseId = filtroMateriaId;
 
         const reader = new FileReader();
         reader.onload = (e) => {
-            const text = e.target?.result as string;
-            if (text) {
-                parseAndImportCSV(text);
-            }
-        };
-        reader.readAsText(file);
-        if (event.target) event.target.value = '';
-    };
-
-    const parseAndImportCSV = (csvText: string) => {
-        try {
-            const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
-            if (lines.length < 2) {
-                alert("El archivo CSV parece estar vacío o no tiene datos válidos.");
+            let data;
+            try {
+                data = parseInstrumentoImportPayload(JSON.parse(e.target?.result as string));
+            } catch (error) {
+                alert(error instanceof Error ? error.message : 'Error al procesar el archivo JSON.');
                 return;
             }
-
-            // Parse headers to identify levels
-            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-            // Standard columns: type, name, description, weight
-            // Level columns start at index 4
-            
-            const levelConfigs: { name: string; points: number; colIndex: number }[] = [];
-            for (let i = 4; i < headers.length; i++) {
-                const header = headers[i];
-                // Attempt to parse "Name (Points)" e.g., "Excellent (4)"
-                const match = header.match(/^(.*)\s*\((\d+(?:\.\d+)?)\)$/);
-                if (match) {
-                    levelConfigs.push({
-                        name: match[1].trim(),
-                        points: parseFloat(match[2]),
-                        colIndex: i
-                    });
-                } else if (header) {
-                    // Fallback if no points specified, assume index + 1
-                    levelConfigs.push({
-                        name: header,
-                        points: i - 3, 
-                        colIndex: i
-                    });
-                }
-            }
-
-            const toolsMap = new Map<string, EvaluationTool>();
-
-            // Parse data lines
-            for (let i = 1; i < lines.length; i++) {
-                // Handle commas inside quotes
-                const row: string[] = [];
-                let currentVal = '';
-                let insideQuotes = false;
-                for (const char of lines[i]) {
-                    if (char === '"' && insideQuotes) insideQuotes = false;
-                    else if (char === '"' && !insideQuotes) insideQuotes = true;
-                    else if (char === ',' && !insideQuotes) {
-                        row.push(currentVal.trim());
-                        currentVal = '';
-                    } else {
-                        currentVal += char;
-                    }
-                }
-                row.push(currentVal.trim());
-
-                const [typeRaw, nameRaw, descRaw, weightRaw] = row;
-                if (!typeRaw || !nameRaw) continue;
-
-                const type = typeRaw.toLowerCase().replace(/_/g, '') as string;
-                const name = nameRaw.replace(/^"|"$/g, '');
-                const description = (descRaw || '').replace(/^"|"$/g, '');
-                const weight = weightRaw ? parseFloat(weightRaw) : 1;
-
-                // Determine tool type
-                let toolType: 'checklist' | 'rating_scale' | 'rubric' = 'checklist';
-                if (type.includes('rubri') || type.includes('rúbri')) toolType = 'rubric';
-                else if (type.includes('scal') || type.includes('escala')) toolType = 'rating_scale';
-                else toolType = 'checklist';
-
-                // Initialize tool if not exists
-                if (!toolsMap.has(name)) {
-                    const toolId = `tool-imp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-                    const baseTool: EvaluationTool = toolType === 'checklist'
-                        ? { id: toolId, name, type: 'checklist', items: [] }
-                        : {
-                            id: toolId,
-                            name,
-                            type: toolType,
-                            items: [],
-                            levels: levelConfigs.length > 0
-                                ? levelConfigs.map((lc, idx) => ({
-                                    id: `lvl-${Date.now()}-${idx}-${Math.floor(Math.random()*1000)}`,
-                                    name: lc.name,
-                                    points: lc.points
-                                  }))
-                                : [{ id: `lvl-def-1`, name: 'Sí', points: 1 }, { id: `lvl-def-0`, name: 'No', points: 0 }], // Fallback
-                        };
-                    toolsMap.set(name, baseTool);
-                }
-
-                const tool = toolsMap.get(name)!;
-
-                // Add Item
-                if (toolType === 'checklist') {
-                    (tool as Checklist).items.push({
-                        id: `item-${Date.now()}-${i}`,
-                        description,
-                        weight: isNaN(weight) ? 1 : weight,
-                        linkedCriteriaIds: []
-                    });
-                } else if (toolType === 'rating_scale') {
-                    (tool as RatingScale).items.push({
-                         id: `item-${Date.now()}-${i}`,
-                        description,
-                        weight: isNaN(weight) ? 1 : weight,
-                        linkedCriteriaIds: []
-                    });
-                } else if (toolType === 'rubric') {
-                    const rubric = tool as Rubric;
-                    const levelDescriptions: Record<string, string> = {};
-                    
-                    // Map CSV columns to the tool's level IDs
-                    levelConfigs.forEach((lc, idx) => {
-                        if (rubric.levels[idx]) {
-                            const colValue = row[lc.colIndex];
-                            levelDescriptions[rubric.levels[idx].id] = colValue ? colValue.replace(/^"|"$/g, '') : '';
-                        }
-                    });
-
-                    rubric.items.push({
-                        id: `item-${Date.now()}-${i}`,
-                        description,
-                        weight: isNaN(weight) ? 1 : weight,
-                        linkedCriteriaIds: [],
-                        levelDescriptions
-                    });
-                }
-            }
-
-            if (toolsMap.size > 0) {
-                toolsMap.forEach(tool => {
-                    const { id: _unused, ...data } = tool;
-                    onCreate(data);
-                });
-                alert(`Se han importado ${toolsMap.size} instrumentos correctamente.`);
-            } else {
-                alert("No se encontraron instrumentos válidos en el archivo.");
-            }
-
-        } catch (error) {
-            console.error("CSV Import Error:", error);
-            alert("Error al procesar el archivo CSV. Revisa el formato.");
-        }
+            const resuelto = resolverInstrumento(data, courseId, criteria);
+            if (!resuelto) return;
+            // Se abre en el mismo formulario de revisión que un instrumento
+            // generado con IA -- nunca se guarda a ciegas, y los códigos que
+            // no coincidan con el currículo de esta materia se habrán
+            // quedado sin vincular (revisable ahí mismo).
+            setInstrumentoGeneradoPendiente(true);
+            setOrigenSA(null);
+            setToolToEdit({ ...resuelto.data, id: 'draft' } as EvaluationTool);
+            setIsModalOpen(true);
+        };
+        reader.onerror = () => alert('Error al leer el archivo.');
+        reader.readAsText(file, 'utf-8');
     };
 
     const toolsFiltrados = evaluationTools.filter(t => {
@@ -292,12 +354,14 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                 <h3 className="text-xl font-bold text-slate-800">Instrumentos de Evaluación</h3>
                 <div className="flex gap-2">
                      <button
-                        onClick={() => setShowImportHelp(!showImportHelp)}
+                        onClick={handleImportarInstrumentoClick}
+                        title="Importar un instrumento exportado en JSON desde Faro Docente"
                         className="inline-flex items-center justify-center py-2 px-3 border border-slate-300 shadow-sm text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50"
                     >
                         <ArrowUpTrayIcon className="w-4 h-4 mr-1" />
-                        Importar CSV
+                        Importar JSON
                     </button>
+                    <input ref={fileImportRef} type="file" accept=".json" className="hidden" onChange={handleImportarInstrumentoJSON} />
                     <button
                         onClick={() => { setInstrumentoGeneradoPendiente(false); setToolToEdit(null); setIsModalOpen(true); }}
                         className="inline-flex items-center justify-center py-2 px-3 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700"
@@ -311,8 +375,8 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                         entre los dos generadores con IA que van en la
                         cabecera de una lista, pedida explícitamente. */}
                     <button
-                        onClick={() => setShowCriteriaPickerParaIA(true)}
-                        title="Elegir criterios y generar un instrumento con IA"
+                        onClick={() => setShowOrigenGenerarIA(true)}
+                        title="Generar un instrumento con IA"
                         className="inline-flex items-center justify-center py-2 px-3 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-amber-600 hover:bg-amber-700"
                     >
                         <SparklesIcon className="w-4 h-4 mr-1" />
@@ -321,33 +385,6 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                 </div>
             </div>
 
-            {showImportHelp && (
-                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 animate-fade-in-down">
-                    <h4 className="font-bold mb-2">Instrucciones para Importar Instrumentos</h4>
-                    <p className="mb-2">Puedes importar múltiples instrumentos (Rúbricas, Escalas, Listas) en un solo archivo CSV. El formato debe ser:</p>
-                    <div className="bg-white p-2 rounded border border-blue-100 overflow-x-auto font-mono text-xs mb-3">
-                        type,name,description,weight,Nivel 1 (1),Nivel 2 (2),Nivel 3 (3),Nivel 4 (4)<br/>
-                        rubric,"Mi Rúbrica","Ortografía",1,"Muchos errores","Algunos errores","Pocos errores","Sin errores"<br/>
-                        rating_scale,"Mi Escala","Presentación",1,,,,<br/>
-                        checklist,"Mi Lista","Entregado a tiempo",1,,,,
-                    </div>
-                    <ul className="list-disc list-inside space-y-1 text-xs">
-                        <li><strong>type:</strong> <code>rubric</code>, <code>rating_scale</code> o <code>checklist</code>.</li>
-                        <li><strong>name:</strong> El nombre agrupa las filas en un mismo instrumento.</li>
-                        <li><strong>description:</strong> El ítem a evaluar.</li>
-                        <li><strong>weight:</strong> Peso del ítem (opcional, por defecto 1).</li>
-                        <li><strong>Columnas de Nivel (5 en adelante):</strong> El encabezado define el nombre y los puntos entre paréntesis ej: <code>Logrado (10)</code>.</li>
-                        <li>Para <strong>Rúbricas</strong>, el contenido de la celda es la descripción del nivel. Para <strong>Escalas</strong>, el contenido se ignora (se usan solo los encabezados).</li>
-                    </ul>
-                    <div className="mt-3">
-                         <label className="cursor-pointer inline-flex items-center justify-center py-2 px-4 border border-blue-300 shadow-sm text-sm font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50">
-                            <ArrowUpTrayIcon className="w-4 h-4 mr-2" />
-                            Seleccionar Archivo CSV
-                            <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
-                        </label>
-                    </div>
-                </div>
-            )}
 
             <p className="text-sm text-slate-600 mb-4">
                 Crea y gestiona plantillas de Listas de Cotejo, Escalas de Valoración y Rúbricas para reutilizarlas en tus tareas.
@@ -371,16 +408,16 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
             </div>
 
             <div className="space-y-6">
-                <ToolSection type="checklist" tools={checklists} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
-                <ToolSection type="rating_scale" tools={ratingScales} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
-                <ToolSection type="rubric" tools={rubrics} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
-                <ToolSection type="criterial_exam" tools={criterialExams} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="checklist" tools={checklists} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onExport={handleExportarInstrumento} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="rating_scale" tools={ratingScales} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onExport={handleExportarInstrumento} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="rubric" tools={rubrics} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onExport={handleExportarInstrumento} onOpenModal={() => setIsModalOpen(true)} />
+                <ToolSection type="criterial_exam" tools={criterialExams} courses={courses} onEdit={handleEditExisting} onDelete={handleDelete} onExport={handleExportarInstrumento} onOpenModal={() => setIsModalOpen(true)} />
             </div>
 
             {isModalOpen && (
                 <EvaluationToolEditorModal
                     isOpen={isModalOpen}
-                    onClose={() => { setIsModalOpen(false); setInstrumentoGeneradoPendiente(false); }}
+                    onClose={() => { setIsModalOpen(false); setInstrumentoGeneradoPendiente(false); setOrigenSA(null); }}
                     onSave={handleSave}
                     toolToEdit={toolToEdit}
                     criteria={criteria}
@@ -388,22 +425,94 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                     defaultCourseId={filtroMateriaId && filtroMateriaId !== 'sin-materia' ? filtroMateriaId : undefined}
                 />
             )}
+            {showOrigenGenerarIA && (
+                <Modal isOpen={showOrigenGenerarIA} onClose={() => setShowOrigenGenerarIA(false)} title="Generar instrumento con IA" size="md">
+                    <div className="flex flex-col gap-3">
+                        <p className="text-sm text-slate-600">¿De dónde salen los criterios y el contexto para la IA?</p>
+                        <button
+                            type="button"
+                            onClick={handleDescribirParaIA}
+                            className="text-left p-3 border rounded-lg bg-white hover:bg-amber-50 hover:border-amber-300 transition-colors"
+                        >
+                            <span className="block text-sm font-medium text-slate-700">Describir lo que quiero evaluar</span>
+                            <span className="block text-xs text-slate-400">
+                                Escribes qué quieres evaluar (p.ej. un examen con sus preguntas) y la IA propone los criterios que encajen.
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setShowOrigenGenerarIA(false); setSugerenciaPendiente(null); setCriteriosParaIA(null); setShowCriteriaPickerParaIA(true); }}
+                            className="text-left px-3 -mt-2 text-xs text-slate-500 underline hover:text-amber-700"
+                        >
+                            ¿Prefieres elegir tú los criterios en vez de que la IA los proponga? Elígelos a mano.
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setShowOrigenGenerarIA(false); setShowSeleccionarActividadSA(true); }}
+                            className="text-left p-3 border rounded-lg bg-white hover:bg-amber-50 hover:border-amber-300 transition-colors"
+                        >
+                            <span className="block text-sm font-medium text-slate-700">Elegir una actividad de una Situación de Aprendizaje</span>
+                            <span className="block text-xs text-slate-400">
+                                Hereda sus criterios y su descripción, y al guardar el instrumento se enlaza automáticamente a esa actividad/producto/examen.
+                            </span>
+                        </button>
+                    </div>
+                </Modal>
+            )}
+            {showDescribir && (
+                <Modal isOpen={showDescribir} onClose={() => setShowDescribir(false)} title="Describir lo que quiero evaluar" size="md">
+                    <div className="flex flex-col gap-3">
+                        <div>
+                            <label className="text-sm font-semibold text-slate-700 mb-1.5 block">¿Qué quieres evaluar?</label>
+                            <Textarea
+                                value={descripcionParaSugerir}
+                                onChange={e => setDescripcionParaSugerir(e.target.value)}
+                                rows={5}
+                                placeholder="P.ej. un examen con las siguientes preguntas: ..."
+                                className="text-sm"
+                            />
+                            <p className="text-xs text-slate-500 mt-1.5">
+                                La IA propondrá qué criterios de evaluación de esta materia encajan -- los revisas y ajustas
+                                antes de generar el instrumento.
+                            </p>
+                        </div>
+                        {errorSugerencia && <p className="text-sm text-red-600">{errorSugerencia}</p>}
+                        <div className="flex justify-end gap-2 pt-2 border-t">
+                            <Button type="button" variant="secondary" onClick={() => setShowDescribir(false)}>Cancelar</Button>
+                            <Button type="button" onClick={handleSugerirCriterios} disabled={!descripcionParaSugerir.trim() || sugiriendoCriterios}>
+                                {sugiriendoCriterios ? 'Buscando criterios...' : 'Buscar criterios con IA'}
+                            </Button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
             {showCriteriaPickerParaIA && (
                 <CriteriaSelectorModal
                     isOpen={showCriteriaPickerParaIA}
-                    onClose={() => setShowCriteriaPickerParaIA(false)}
+                    onClose={() => { setShowCriteriaPickerParaIA(false); setSugerenciaPendiente(null); }}
                     allCriteria={criteria}
                     courses={courses}
-                    selectedIds={[]}
+                    selectedIds={criteriosParaIA?.ids || []}
+                    initialCourseId={criteriosParaIA?.courseId ?? (filtroMateriaId && filtroMateriaId !== 'sin-materia' ? filtroMateriaId : undefined)}
                     onSave={handleCriteriosElegidosParaIA}
+                />
+            )}
+            {showSeleccionarActividadSA && (
+                <SeleccionarActividadSAModal
+                    isOpen={showSeleccionarActividadSA}
+                    onClose={() => setShowSeleccionarActividadSA(false)}
+                    programmingUnits={programmingUnits}
+                    courses={courses}
+                    onSeleccionar={handleActividadSASeleccionada}
                 />
             )}
             {criteriosParaIA && (
                 <GenerarInstrumentoIAModal
                     isOpen={showGenerarIA}
-                    onClose={() => setShowGenerarIA(false)}
+                    onClose={() => { setShowGenerarIA(false); setOrigenSA(null); }}
                     courseId={criteriosParaIA.courseId}
                     linkedCriteriaIds={criteriosParaIA.ids}
+                    contexto={contextoParaIA}
                     onDraftReady={handleInstrumentoGenerado}
                 />
             )}
@@ -411,13 +520,33 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
     );
 };
 
-const ToolSection: React.FC<{ type: 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam', tools: EvaluationTool[], courses: Course[], onEdit: (tool: EvaluationTool) => void, onDelete: (id: string) => void, onOpenModal: () => void }> = ({ type, tools, courses, onEdit, onDelete, onOpenModal }) => {
+const TOOL_TYPE_ICON: Record<'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam', React.FC<{ className?: string }>> = {
+    checklist: ClipboardDocumentCheckIcon,
+    rating_scale: ChartBarIcon,
+    rubric: TableCellsIcon,
+    criterial_exam: AcademicCapIcon,
+};
+
+// Un tono distinto de PALETTE por tipo de instrumento, solo para dar vida
+// visual a esta lista (icono + borde + insignia) -- no tiene relación con
+// PAGE_ACCENT (esa es por página, esto es por subsección dentro de la misma
+// página). navy queda fuera por ser el color de marca/acción principal.
+const TOOL_TYPE_COLOR: Record<'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam', AccentColor> = {
+    checklist: PALETTE.green,
+    rating_scale: PALETTE.blue,
+    rubric: PALETTE.teal,
+    criterial_exam: PALETTE.sand,
+};
+
+const ToolSection: React.FC<{ type: 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam', tools: EvaluationTool[], courses: Course[], onEdit: (tool: EvaluationTool) => void, onDelete: (id: string) => void, onExport: (tool: EvaluationTool) => void, onOpenModal: () => void }> = ({ type, tools, courses, onEdit, onDelete, onExport, onOpenModal }) => {
     const title = {
         checklist: 'Listas de Cotejo',
         rating_scale: 'Escalas de Valoración',
         rubric: 'Rúbricas',
         criterial_exam: 'Exámenes Criteriales'
     }[type];
+    const TypeIcon = TOOL_TYPE_ICON[type];
+    const color = TOOL_TYPE_COLOR[type];
 
     const materiaLabel = (courseId?: string) => {
         if (!courseId) return null;
@@ -426,27 +555,47 @@ const ToolSection: React.FC<{ type: 'checklist' | 'rating_scale' | 'rubric' | 'c
     };
 
     return (
-        <div>
-            <h4 className="text-lg font-semibold text-slate-700 mb-2">{title}</h4>
-            <div className="space-y-2">
+        <details className="group rounded-lg bg-white border border-slate-200 shadow-sm overflow-hidden">
+            {/* Barra de acento como bloque real (no border-left ni
+                box-shadow: pintaban dentro del área de <summary> y su
+                fondo de hover los tapaba en la esquina). Va DUPLICADA --
+                una dentro de <summary> y otra dentro del contenido -- en
+                vez de una sola como hijo directo de <details>: los
+                navegadores ocultan cualquier hijo de <details> que no sea
+                <summary> mientras está plegado, así que una barra fuera de
+                <summary> desaparecía en la vista colapsada. */}
+            <summary
+                className="relative flex items-center gap-2 pl-4 pr-3 py-2.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-slate-50"
+            >
+                <div className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: color.base }} />
+                <span className="flex-shrink-0 opacity-50 transition-transform group-open:rotate-0 -rotate-90" style={{ color: color.base }}>
+                    <ChevronDownIcon className="w-4 h-4" />
+                </span>
+                <span className="flex-shrink-0" style={{ color: color.base }}>
+                    <TypeIcon className="w-5 h-5" />
+                </span>
+                <h4 className="text-lg font-semibold text-slate-700">{title}</h4>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: color.soft, color: color.header }}>{tools.length}</span>
+            </summary>
+            <div className="relative flex flex-wrap gap-2 pl-4 pr-3 pb-3">
+                <div className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: color.base }} />
                 {tools.length > 0 ? tools.map(tool => (
-                    <div key={tool.id} className="flex items-center justify-between p-3 border rounded-lg bg-white group">
-                        <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-medium truncate">{tool.name}</span>
-                            {materiaLabel(tool.courseId) && (
-                                <span className="flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{materiaLabel(tool.courseId)}</span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                            <button onClick={() => { onEdit(tool); onOpenModal(); }} className="p-2 hover:bg-slate-200 rounded-full"><PencilIcon className="w-4 h-4 text-slate-600" /></button>
-                            <button onClick={() => onDelete(tool.id)} className="p-2 hover:bg-red-100 rounded-full"><TrashIcon className="w-4 h-4 text-red-500" /></button>
+                    <div key={tool.id} className="group/item inline-flex items-center gap-1 pl-3 pr-1.5 py-1.5 rounded-full border" style={{ backgroundColor: color.soft, borderColor: `${color.base}40` }}>
+                        <span className="font-medium text-sm">{tool.name}</span>
+                        {materiaLabel(tool.courseId) && (
+                            <span className="text-xs text-slate-400">· {materiaLabel(tool.courseId)}</span>
+                        )}
+                        <div className="flex items-center opacity-0 group-hover/item:opacity-100 transition-opacity">
+                            <button onClick={() => onExport(tool)} title="Exportar JSON (para compartir con otro profesor)" className="p-1 hover:bg-slate-200 rounded-full"><ArrowDownTrayIcon className="w-3.5 h-3.5 text-slate-600" /></button>
+                            <button onClick={() => { onEdit(tool); onOpenModal(); }} className="p-1 hover:bg-slate-200 rounded-full"><PencilIcon className="w-3.5 h-3.5 text-slate-600" /></button>
+                            <button onClick={() => onDelete(tool.id)} className="p-1 hover:bg-red-100 rounded-full"><TrashIcon className="w-3.5 h-3.5 text-red-500" /></button>
                         </div>
                     </div>
                 )) : (
-                    <p className="text-slate-500 text-center py-4 bg-slate-50 rounded-lg">No hay {title.toLowerCase()} que coincidan.</p>
+                    <p className="text-slate-500 text-sm py-2">No hay {title.toLowerCase()} que coincidan.</p>
                 )}
             </div>
-        </div>
+        </details>
     );
 }
 
@@ -651,7 +800,7 @@ const ToolEditorFields: React.FC<ToolEditorFieldsProps> = ({tool, setTool, crite
                         {levels.map((level, index) => (
                             <div key={level.id} className="flex items-center gap-2">
                                 <Input type="text" value={level.name} onChange={e => handleLevelChange(index, 'name', e.target.value)} placeholder="Nombre Nivel" className="w-full" />
-                                <Input type="number" value={level.points} onChange={e => handleLevelChange(index, 'points', Number(e.target.value))} placeholder="Puntos" className="w-24" />
+                                <Input type="number" value={level.points} onChange={e => handleLevelChange(index, 'points', Number(e.target.value))} placeholder="Puntos" className="!w-24" />
                                 <button type="button" onClick={() => handleRemoveLevel(index)} disabled={levels.length <= 1} className="p-2 text-red-500 hover:bg-red-100 rounded-full disabled:opacity-30"><TrashIcon className="w-4 h-4" /></button>
                             </div>
                         ))}
@@ -689,7 +838,7 @@ const ToolEditorFields: React.FC<ToolEditorFieldsProps> = ({tool, setTool, crite
                     {scaleLevels.map((level, index) => (
                         <div key={level.id} className="flex items-center gap-2">
                             <Input type="text" value={level.name} onChange={e => handleLevelChange(index, 'name', e.target.value)} placeholder="Nombre Nivel" className="w-full" />
-                            <Input type="number" value={level.points} onChange={e => handleLevelChange(index, 'points', Number(e.target.value))} placeholder="Puntos" className="w-24" />
+                            <Input type="number" value={level.points} onChange={e => handleLevelChange(index, 'points', Number(e.target.value))} placeholder="Puntos" className="!w-24" />
                             <button type="button" onClick={() => handleRemoveLevel(index)} disabled={scaleLevels.length <= 1} className="p-2 text-red-500 hover:bg-red-100 rounded-full disabled:opacity-30"><TrashIcon className="w-4 h-4" /></button>
                         </div>
                     ))}
@@ -778,7 +927,7 @@ const ItemEditor: React.FC<ItemEditorProps> = ({ item, onItemChange, onRemove, c
                     <Input
                         type="number"
                         min="0"
-                        step="0.5"
+                        step="any"
                         value={item.weight}
                         onChange={e => onItemChange('weight', Number(e.target.value))}
                         className="w-24"
@@ -834,7 +983,7 @@ const RubricItemEditor: React.FC<RubricItemEditorProps> = ({item, levels, onItem
                         <Input
                             type="number"
                             min="0"
-                            step="0.5"
+                            step="any"
                             value={item.weight}
                             onChange={e => onItemChange('weight', Number(e.target.value))}
                             className="w-24"
@@ -879,12 +1028,16 @@ interface CriteriaSelectorProps {
     courses: Course[];
     selectedIds: string[];
     onSave: (ids: string[]) => void;
+    // Curso al que pertenecen `selectedIds` (p.ej. una sugerencia de la IA)
+    // -- sin esto, "Filtrar por Curso" defecto al primer curso de la lista,
+    // que podría no ser el de los criterios ya marcados.
+    initialCourseId?: string;
 }
 
 // Criteria Selector Modal
-const CriteriaSelectorModal: React.FC<CriteriaSelectorProps> = ({ isOpen, onClose, allCriteria, courses, selectedIds, onSave }) => {
+const CriteriaSelectorModal: React.FC<CriteriaSelectorProps> = ({ isOpen, onClose, allCriteria, courses, selectedIds, onSave, initialCourseId }) => {
     const [currentSelection, setCurrentSelection] = useState<Set<string>>(() => new Set(selectedIds));
-    const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id || '');
+    const [selectedCourseId, setSelectedCourseId] = useState(initialCourseId || courses[0]?.id || '');
 
     const filteredCriteria = useMemo(() => allCriteria.filter(c => c.courseId === selectedCourseId), [allCriteria, selectedCourseId]);
 
