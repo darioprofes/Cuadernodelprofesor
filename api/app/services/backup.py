@@ -92,6 +92,23 @@ def _jsonb_columns(cur, table: str) -> set[str]:
     return {row["column_name"] for row in cur.fetchall()}
 
 
+def _real_columns(cur, table: str) -> set[str]:
+    """Columnas REALES de la tabla, según el propio esquema -- import_all()
+    construye el INSERT a partir de las claves del JSON subido, así que sin
+    esto cualquier clave de fila (nombre de "columna" arbitrario puesto por
+    quien sea que generó el archivo) se concatenaría sin escapar en el SQL.
+    Filtrar contra esta lista blanca antes de construir la sentencia cierra
+    esa vía -- cualquier clave que no sea una columna real de esta tabla se
+    descarta en vez de llegar al f-string."""
+
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+        [table]
+    )
+
+    return {row["column_name"] for row in cur.fetchall()}
+
+
 # Todo o nada: si algo falla a mitad, la conexión no hace commit (get_conn
 # hace rollback automático en excepción, ver services/db.py) — no se puede
 # dejar una restauración a medias como estado final.
@@ -113,8 +130,12 @@ def import_all(dump: dict[str, list[Any]]) -> None:
                     continue
 
                 jsonb_cols = _jsonb_columns(cur, table)
+                columnas_reales = _real_columns(cur, table)
 
-                columns = list(rows[0].keys())
+                columns = [c for c in rows[0].keys() if c in columnas_reales]
+
+                if not columns:
+                    continue
 
                 placeholders = ", ".join(["%s"] * len(columns))
 
