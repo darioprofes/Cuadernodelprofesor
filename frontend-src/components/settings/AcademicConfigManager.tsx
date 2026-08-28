@@ -301,8 +301,8 @@ const AcademicConfigManager: React.FC<{
                         {academicConfiguration.holidays.map((holiday, index) => (
                             <div key={holiday.id} className="flex gap-2 items-center">
                                 <Input type="text" value={holiday.name} onChange={e => handleListItemChange('holidays', index, 'name', e.target.value)} className="flex-grow text-xs" placeholder="Nombre festivo"/>
-                                <Input type="date" value={holiday.startDate} onChange={e => handleListItemChange('holidays', index, 'startDate', e.target.value)} className="w-24 text-xs"/>
-                                <Input type="date" value={holiday.endDate} onChange={e => handleListItemChange('holidays', index, 'endDate', e.target.value)} className="w-24 text-xs"/>
+                                <Input type="date" value={holiday.startDate} onChange={e => handleListItemChange('holidays', index, 'startDate', e.target.value)} className="!w-24 text-xs"/>
+                                <Input type="date" value={holiday.endDate} onChange={e => handleListItemChange('holidays', index, 'endDate', e.target.value)} className="!w-24 text-xs"/>
                                 <button onClick={() => handleRemoveListItem('holidays', holiday.id)} className="p-1 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="w-3 h-3"/></button>
                             </div>
                         ))}

@@ -193,21 +193,21 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
                                         value={student.primerApellido}
                                         onChange={e => patchStudent(student.id, { primerApellido: e.target.value })}
                                         placeholder="1er apellido"
-                                        className="flex-1 min-w-0"
+                                        className="!w-auto flex-1 min-w-0"
                                     />
                                     <Input
                                         type="text"
                                         value={student.segundoApellido}
                                         onChange={e => patchStudent(student.id, { segundoApellido: e.target.value })}
                                         placeholder="2º apellido"
-                                        className="flex-1 min-w-0"
+                                        className="!w-auto flex-1 min-w-0"
                                     />
                                     <Input
                                         type="text"
                                         value={student.nombre}
                                         onChange={e => patchStudent(student.id, { nombre: e.target.value })}
                                         placeholder="Nombre"
-                                        className="flex-1 min-w-0"
+                                        className="!w-auto flex-1 min-w-0"
                                     />
                                     <Input
                                         type="text"
@@ -215,7 +215,7 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
                                         onChange={e => patchStudent(student.id, { nie: e.target.value })}
                                         placeholder="NIE"
                                         title="NIE — Nº Identificación Escolar (SAUCE), opcional pero recomendable"
-                                        className="w-24 flex-shrink-0"
+                                        className="!w-24 flex-shrink-0"
                                     />
                                     <AcneaeSelector
                                         selected={student.acneae}
