@@ -358,7 +358,13 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
 
     const parseCurriculumCsv = (csvText: string, courseId: string, existingSpecificCompetences: SpecificCompetence[]) => {
         const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
-        if (lines.length < 1) return { newKCs: [], newODs: [], newSCs: [], newECs: [], newSBs: [] };
+        if (lines.length < 1) return { newKCs: [], newODs: [], newSCs: [], newECs: [], newSBs: [], avisos: [] };
+
+        // Antes estos avisos solo iban a la consola del navegador -- invisible
+        // para un profesor sin herramientas de desarrollador. Se recogen aquí
+        // para mostrarlos junto al resto del resultado, igual que ya hace la
+        // importación de pesos de criterios más abajo en este mismo archivo.
+        const avisos: string[] = [];
 
         const headerLine = lines.shift()!; // Remove header line
         // Algunos CSV propios (p.ej. los de Ámbito) añaden una columna final
@@ -454,9 +460,13 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                             const existingSc = existingSpecificCompetences.find(sc => sc.code === targetScCode && sc.courseId === courseId);
                             if (existingSc) {
                                 competenceId = existingSc.id;
-                                console.warn(`WARN: El criterio '${criterionCode}' se ha vinculado a una Competencia Específica existente ('${targetScCode}') porque no se encontró una con ese código en el archivo CSV importado.`);
+                                const aviso = `El criterio '${criterionCode}' se ha vinculado a una competencia específica existente ('${targetScCode}') porque no había una con ese código en el archivo importado.`;
+                                console.warn(aviso);
+                                avisos.push(aviso);
                             } else {
-                                console.error(`ERROR: No se pudo encontrar una Competencia Específica con el código '${targetScCode}' para vincular el criterio '${criterionCode}'. Por favor, asegúrate de que la competencia está definida en el mismo archivo CSV.`);
+                                const aviso = `No se pudo vincular el criterio '${criterionCode}': no existe ninguna competencia específica con el código '${targetScCode}' ni en este curso ni en el archivo importado.`;
+                                console.error(aviso);
+                                avisos.push(aviso);
                             }
                         }
                     }
@@ -473,7 +483,7 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                 }
             }
         }
-        return { newKCs, newODs, newSCs, newECs, newSBs };
+        return { newKCs, newODs, newSCs, newECs, newSBs, avisos };
     };
 
     // KC/OD: fusión inteligente por código, pero contra el backend nuevo —
@@ -594,12 +604,13 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         }
     };
 
-    const updateCurriculumState = async ({ newKCs, newODs, newSCs, newECs, newSBs }: {
+    const updateCurriculumState = async ({ newKCs, newODs, newSCs, newECs, newSBs, avisos }: {
         newKCs: (Omit<KeyCompetence, 'descriptors'>)[];
         newODs: (OperationalDescriptor & { parentKcId: string })[];
         newSCs: SpecificCompetence[];
         newECs: EvaluationCriterion[];
         newSBs: BasicKnowledge[];
+        avisos: string[];
     }, courseId: string) => {
         if ([newKCs, newODs, newSCs, newECs, newSBs].every(arr => arr.length === 0)) {
             alert("No se encontraron elementos curriculares válidos en el archivo.");
@@ -631,7 +642,11 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         await syncCourseContentFromImport(courseId, newSCs, newECs, newSBs, odIdReplacementMap, suffix);
 
         const courseName = `${course.level} - ${course.subject}`;
-        alert(`Currículo para '${courseName}' (${stage.toUpperCase()}) importado con éxito.\n\nSe ha aplicado una fusión inteligente de Descriptores Operativos para evitar duplicados entre cursos.`);
+        alert(
+            `Currículo para '${courseName}' (${stage.toUpperCase()}) importado con éxito.\n\nSe ha aplicado una fusión `
+            + 'inteligente de Descriptores Operativos para evitar duplicados entre cursos.'
+            + (avisos.length > 0 ? `\n\nAvisos (${avisos.length}):\n${avisos.join('\n')}` : '')
+        );
     };
 
     const handleDeleteCurriculum = async () => {
@@ -903,6 +918,82 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                             });
                         };
 
+                        // Compartir pesos entre compañeros -- separado del CSV grande de
+                        // currículo (ese no lleva columna de peso, y mezclar ambos formatos
+                        // sería confuso). Solo tiene sentido si el compañero ya tiene cargado
+                        // el MISMO currículo oficial: se empareja por código contra los
+                        // criterios que YA existen en su curso, nunca crea ni borra ninguno.
+                        const handleExportarPesos = () => {
+                            const filas = criteriaEnJuego
+                                .concat(filteredCriteria.filter((c: EvaluationCriterion) => c.excludeFromWeighting))
+                                .sort((a: EvaluationCriterion, b: EvaluationCriterion) => compararCodigo(a.code, b.code))
+                                .map((c: EvaluationCriterion) => `${c.code},${c.weight ?? ''},${c.excludeFromWeighting ? 'true' : 'false'}`);
+                            const csv = ['code,weight,excludeFromWeighting', ...filas].join('\n');
+                            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `pesos-${courseName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                        };
+
+                        const handleImportarPesosFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+                            const file = event.target.files?.[0];
+                            if (event.target) event.target.value = '';
+                            if (!file) return;
+
+                            const reader = new FileReader();
+                            reader.onload = async (e) => {
+                                const text = e.target?.result as string;
+                                const lineas = text.split(/\r\n|\n/).filter(l => l.trim() !== '');
+                                lineas.shift(); // cabecera
+                                const criteriosPorCodigo = new Map(filteredCriteria.map((c: EvaluationCriterion) => [c.code, c]));
+                                const noEncontrados: string[] = [];
+                                // Un peso no numérico (columna corrupta, fila mal editada a mano) se
+                                // convertía antes en NaN -> null en silencio, la misma ambigüedad que
+                                // ya se evita en el resto de este formulario -- se avisa igual que un
+                                // código sin encontrar, no se aplica callado.
+                                const pesosInvalidos: string[] = [];
+                                const aAplicar: { id: string; weight: number | undefined; excludeFromWeighting: boolean }[] = [];
+
+                                for (const linea of lineas) {
+                                    const [code, weightTexto, excludeTexto] = linea.split(',').map(s => s.trim());
+                                    const criterio = criteriosPorCodigo.get(code);
+                                    if (!criterio) {
+                                        noEncontrados.push(code);
+                                        continue;
+                                    }
+                                    const excludeFromWeighting = excludeTexto === 'true';
+                                    if (!excludeFromWeighting && weightTexto !== '' && isNaN(Number(weightTexto))) {
+                                        pesosInvalidos.push(code);
+                                        continue;
+                                    }
+                                    const weight = excludeFromWeighting || weightTexto === '' ? undefined : Number(weightTexto);
+                                    aAplicar.push({ id: criterio.id, weight, excludeFromWeighting });
+                                }
+
+                                const resultados = await Promise.allSettled(
+                                    aAplicar.map(({ id, weight, excludeFromWeighting }) =>
+                                        updateCriterionMutation.mutateAsync({ id, courseId: selectedCourseId, data: { weight, excludeFromWeighting } })
+                                    )
+                                );
+                                const aplicados = resultados.filter(r => r.status === 'fulfilled').length;
+                                const fallidos = resultados.length - aplicados;
+
+                                if (aplicados > 0 && !repartoManual) onUpdateCourse(selectedCourseId, { pesoCriteriosManual: true });
+
+                                alert(
+                                    `Pesos importados: ${aplicados} criterio(s) actualizado(s) de verdad.` +
+                                    (fallidos > 0 ? `\n\n${fallidos} actualización(es) fallaron (revisa tu conexión e inténtalo de nuevo).` : '') +
+                                    (pesosInvalidos.length > 0 ? `\n\n${pesosInvalidos.length} peso(s) no eran un número válido, se han ignorado: ${pesosInvalidos.join(', ')}.` : '') +
+                                    (noEncontrados.length > 0 ? `\n\n${noEncontrados.length} código(s) del archivo no existen en este curso, se han ignorado: ${noEncontrados.join(', ')}.` : '')
+                                );
+                            };
+                            reader.onerror = () => alert('Error al leer el archivo.');
+                            reader.readAsText(file, 'utf-8');
+                        };
+
                         return (
                             <div className="mb-3 space-y-2">
                                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
@@ -932,6 +1023,28 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
                                                 {sinResolver.length === 1 ? 'Hay 1 criterio' : `Hay ${sinResolver.length} criterios`} sin peso ni marcar como excluido — cuenta{sinResolver.length === 1 ? '' : 'n'} como 0% mientras tanto: {sinResolver.map((c: EvaluationCriterion) => c.code).join(', ')}.
                                             </p>
                                         )}
+                                        <div className="flex items-center gap-2 pt-1">
+                                            <button
+                                                onClick={handleExportarPesos}
+                                                className="text-xs font-semibold px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700"
+                                            >
+                                                Exportar pesos (CSV)
+                                            </button>
+                                            <input
+                                                type="file"
+                                                accept=".csv"
+                                                id="pesos-importer"
+                                                className="hidden"
+                                                onChange={handleImportarPesosFile}
+                                            />
+                                            <label
+                                                htmlFor="pesos-importer"
+                                                className="cursor-pointer text-xs font-semibold px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700"
+                                            >
+                                                Importar pesos (CSV)
+                                            </label>
+                                            <span className="text-xs text-slate-400">para compartir con compañeros con el mismo currículo</span>
+                                        </div>
                                     </>
                                 ) : (
                                     <p className="text-xs text-slate-400">
@@ -1168,7 +1281,7 @@ const EditableItem: React.FC<EditableItemProps> = ({ item, type, onSave, onDelet
                                 type="number" min="0" max="100" step="1"
                                 value={weight ?? ''}
                                 onChange={(e) => setData({ ...data, weight: e.target.value === '' ? undefined : Number(e.target.value) } as EvaluationCriterion)}
-                                className="w-28"
+                                className="!w-28"
                                 disabled={excluded}
                                 error={pesoInvalido}
                             />
