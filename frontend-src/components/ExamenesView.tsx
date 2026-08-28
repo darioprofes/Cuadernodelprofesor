@@ -2,12 +2,12 @@ import React, { useMemo, useState } from 'react';
 import type { ClassData, Course, View } from '../types';
 import { ClipboardDocumentCheckIcon, PlusIcon } from './Icons';
 import PageHeader from './PageHeader';
-import { PAGE_ACCENT } from '../theme/palette';
+import { PAGE_ACCENT, PALETTE, SEMANTIC } from '../theme/palette';
 import EmptyState from './EmptyState';
 import Input from './Input';
 import Select from './Select';
 import Button from './Button';
-import { toYYYYMMDD, addDays, getDayOfWeek1a7, getMateria, getSiglas, getClassAccentColor, formatClassLabel, formatFechaEs } from '../utils';
+import { toYYYYMMDD, addDays, getDayOfWeek1a7, getMateria, getSiglas, getClassAccentColor, formatClassLabel } from '../utils';
 
 interface ExamenesViewProps {
     classes: ClassData[];
@@ -29,6 +29,22 @@ type RangoFecha = 'hoy' | 'semana' | 'mes' | 'todas';
 
 const finDeSemana = (hoy: Date): string => toYYYYMMDD(addDays(hoy, 7 - getDayOfWeek1a7(hoy)));
 const finDeMes = (hoy: Date): string => toYYYYMMDD(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0));
+
+const MESES_ABBR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+// Fecha como una "hoja de calendario" (día grande + mes abreviado), en vez
+// de texto plano -- se lee de un vistazo, como el resto de la app ya hace
+// con tarjetas de fecha en Agenda/Horario.
+const DateBadge: React.FC<{ fecha: string; color: string }> = ({ fecha, color }) => {
+    const [anio, mes, dia] = fecha.split('-');
+    return (
+        <div className="flex flex-col items-center justify-center w-9 h-11 rounded-lg bg-white flex-shrink-0 py-1" style={{ boxShadow: `inset 0 0 0 1px ${color}66` }}>
+            <span className="text-[8px] font-bold uppercase leading-none" style={{ color }}>{MESES_ABBR[parseInt(mes, 10) - 1]}</span>
+            <span className="text-sm font-bold leading-none text-slate-700 mt-0.5">{parseInt(dia, 10)}</span>
+            <span className="text-[7px] text-slate-400 leading-none mt-0.5">{anio}</span>
+        </div>
+    );
+};
 
 // Lista agregada de tareas evaluables (Assignment) de todas las clases, con
 // filtro por rango de fechas (desde hoy / esta semana / este mes / todas,
@@ -87,6 +103,18 @@ const ExamenesView: React.FC<ExamenesViewProps> = ({ classes, courses, setActive
         setActiveView('gradebook');
     };
 
+    // Color según la urgencia de la fecha -- mismo criterio que Instrumentos
+    // de Evaluación (un color por "tipo", aquí el tipo es la cercanía de la
+    // fecha en vez del formato del instrumento). `text` usa siempre el tono
+    // `header` (oscurecido donde hace falta, p.ej. el dorado) en vez de
+    // `base` -- este sí lleva texto encima, y el dorado medido en Educastur
+    // es demasiado claro para eso.
+    const urgencia = (fecha: string): { text: string; soft: string } => {
+        if (fecha < hoyStr) return { text: SEMANTIC.danger.base, soft: SEMANTIC.danger.soft };
+        if (fecha === hoyStr) return { text: PALETTE.sand.header, soft: PALETTE.sand.soft };
+        return { text: PALETTE.blue.header, soft: PALETTE.blue.soft };
+    };
+
     const header = (
         <PageHeader title="Tareas evaluables" subtitle="Tareas y exámenes programados en todas tus clases." accent={PAGE_ACCENT.tareasEvaluables} icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />} />
     );
@@ -142,41 +170,35 @@ const ExamenesView: React.FC<ExamenesViewProps> = ({ classes, courses, setActive
             {tareas.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-8 bg-white rounded-xl border">Ninguna tarea coincide con el filtro actual.</p>
             ) : (
-                <div className="bg-white rounded-xl shadow-sm border divide-y">
+                <div className="flex flex-wrap gap-2">
                     {tareas.map(tarea => {
                         const cls = classes.find(c => c.id === tarea.classId);
                         const materia = cls ? getMateria(cls, courses) : '';
                         const accent = cls ? getClassAccentColor(materia, cls.colorAcento) : null;
+                        const { text: urgenciaColor, soft: urgenciaSoft } = urgencia(tarea.date);
                         return (
                             <button
                                 key={tarea.id}
                                 onClick={() => handleOpenCuaderno(tarea.classId)}
-                                className="w-full text-left p-3 flex items-center gap-3 hover:bg-slate-50"
+                                className="inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl border hover:shadow-sm transition-shadow max-w-full"
+                                style={{ backgroundColor: urgenciaSoft, borderColor: `${urgenciaColor}40` }}
                             >
+                                <DateBadge fecha={tarea.date} color={urgenciaColor} />
                                 {accent && (
-                                    <div className="flex flex-col gap-1 flex-shrink-0 w-20">
-                                        <span
-                                            className="px-2 py-0.5 rounded text-xs font-mono font-semibold text-center truncate"
-                                            style={{ backgroundColor: accent.pillBg, color: accent.text }}
-                                            title={materia}
-                                        >
-                                            {cls?.grupo || getSiglas(materia)}
-                                        </span>
-                                        {tarea.categoryName && (
-                                            <span
-                                                className="px-2 py-0.5 rounded text-xs font-semibold text-center truncate bg-white border"
-                                                style={{ color: accent.text, borderColor: accent.pillBg }}
-                                                title={tarea.categoryName}
-                                            >
-                                                {tarea.categoryName}
-                                            </span>
-                                        )}
-                                    </div>
+                                    <span
+                                        className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold flex-shrink-0"
+                                        style={{ backgroundColor: accent.pillBg, color: accent.text }}
+                                        title={materia}
+                                    >
+                                        {cls?.grupo || getSiglas(materia)}
+                                    </span>
                                 )}
-                                <div className="flex-grow min-w-0">
-                                    <div className="text-sm font-medium text-slate-800 truncate">{tarea.name}</div>
-                                </div>
-                                <span className="text-xs text-slate-400 flex-shrink-0">{formatFechaEs(tarea.date)}</span>
+                                <span className="text-sm text-slate-800 truncate max-w-[20rem]">
+                                    {tarea.categoryName && (
+                                        <span className="font-semibold" style={{ color: accent?.text ?? undefined }}>{tarea.categoryName}: </span>
+                                    )}
+                                    <span className="font-medium">{tarea.name}</span>
+                                </span>
                             </button>
                         );
                     })}

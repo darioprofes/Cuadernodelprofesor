@@ -1,9 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import type { Meeting } from '../types';
-import { TrashIcon, PlusIcon, UsersIcon, PencilIcon } from './Icons';
+import { TrashIcon, PlusIcon, UsersIcon, PencilIcon, ExclamationTriangleIcon, ClockIcon, CalendarDaysIcon } from './Icons';
 import { toYYYYMMDD, addDays, getDayOfWeek1a7, formatFechaEs } from '../utils';
 import PageHeader from './PageHeader';
-import { PAGE_ACCENT } from '../theme/palette';
+import { PAGE_ACCENT, PALETTE, SEMANTIC } from '../theme/palette';
 import Modal from './Modal';
 import Input from './Input';
 import Select from './Select';
@@ -31,6 +31,16 @@ const TIPO_COLOR: Record<Meeting['tipo'], string> = {
     r_tutores: 'bg-amber-100 text-amber-700',
     departamento: 'bg-purple-100 text-purple-700',
     familia: 'bg-teal-100 text-teal-700',
+};
+
+// Mismo color que TIPO_COLOR de arriba pero en hex (tono "700" de cada
+// familia) -- hace falta como valor real para el acento de la fila
+// (box-shadow inset), no solo como clase de Tailwind para el badge.
+const TIPO_ACCENT: Record<Meeting['tipo'], string> = {
+    tutoria: '#1d4ed8',
+    r_tutores: '#b45309',
+    departamento: '#7e22ce',
+    familia: '#0f766e',
 };
 
 type RangoFecha = 'hoy' | 'semana' | 'mes' | 'todas';
@@ -136,6 +146,15 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
 
     const sorted = useMemo(() => [...meetings].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id)), [meetings]);
 
+    // Icono + color según la urgencia de la fecha -- mismo criterio que
+    // Tareas evaluables (un color por "tipo", aquí el tipo es la cercanía
+    // de la fecha en vez del formato del instrumento).
+    const urgencia = (fecha: string): { Icon: React.FC<{ className?: string }>; color: string } => {
+        if (fecha < hoyStr) return { Icon: ExclamationTriangleIcon, color: SEMANTIC.danger.base };
+        if (fecha === hoyStr) return { Icon: ClockIcon, color: PALETTE.sand.header };
+        return { Icon: CalendarDaysIcon, color: PALETTE.blue.header };
+    };
+
     const filtered = useMemo(() => {
         const query = busqueda.trim().toLowerCase();
         return sorted.filter(m => {
@@ -183,16 +202,21 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border divide-y">
+            <div className="bg-white rounded-xl shadow-sm border divide-y overflow-hidden">
                 {meetings.length === 0 ? (
                     <p className="p-6 text-center text-slate-400 text-sm">No hay reuniones registradas.</p>
                 ) : filtered.length === 0 ? (
                     <p className="p-6 text-center text-slate-400 text-sm">Ninguna reunión coincide con el filtro actual.</p>
                 ) : (
-                    filtered.map(m => (
-                        <div key={m.id} className="p-4">
+                    filtered.map(m => {
+                        const { Icon: UrgenciaIcon, color: urgenciaColor } = urgencia(m.fecha);
+                        return (
+                        <div key={m.id} className="p-4 first:rounded-t-xl last:rounded-b-xl" style={{ boxShadow: `inset 4px 0 0 0 ${TIPO_ACCENT[m.tipo]}` }}>
                             <div className="flex items-start justify-between gap-2">
                                 <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="flex-shrink-0" style={{ color: urgenciaColor }}>
+                                        <UrgenciaIcon className="w-4 h-4" />
+                                    </span>
                                     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${TIPO_COLOR[m.tipo]}`}>{TIPO_LABEL[m.tipo]}</span>
                                     <span className="text-xs text-slate-400">{formatFechaEs(m.fecha)}{m.hora ? ` · ${m.hora}` : ''}</span>
                                     {m.conQuien && <span className="text-sm font-medium text-slate-800">{m.conQuien}</span>}
@@ -212,7 +236,8 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                                 {m.seguimiento && <p><span className="font-semibold text-slate-700">Seguimiento:</span> {m.seguimiento}</p>}
                             </div>
                         </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
 
