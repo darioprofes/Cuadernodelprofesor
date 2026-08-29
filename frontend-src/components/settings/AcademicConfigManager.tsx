@@ -1,25 +1,94 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { AcademicConfiguration, Holiday, EvaluationPeriod, GradeScaleRule } from '../../types';
-import { TrashIcon } from '../Icons';
+import { TrashIcon, ChevronDownIcon, CalendarDaysIcon, ChartBarIcon } from '../Icons';
 import Input from '../Input';
-import Select from '../Select';
-import Button from '../Button';
 import BufferedInput from '../BufferedInput';
 import { linkClassName } from '../../theme/components/Link';
 import { useCurrentAcademicYear, useUpdateAcademicYear, useEvaluationPeriods, useCreateEvaluationPeriod, useUpdateEvaluationPeriod, useDeleteEvaluationPeriod } from '../../hooks/useAcademicYears';
 
-// Rasgos de estilo docente habituales -- se inyectan en el prompt de cada
-// SA generada con IA (ver services/prompts/situacion_aprendizaje.py) para que
-// escriba coherente con cómo enseña este profesor, no con un "eres un
-// profesor" genérico. Se guardan una sola vez aquí y se reutilizan siempre,
-// sin repreguntarse en cada wizard -- mismo patrón que
-// CARACTERISTICAS_HABITUALES en ClassModal.tsx.
-export const RASGOS_DOCENTE_HABITUALES = [
-    'Cercano y motivador', 'Exigente y riguroso', 'Prioriza la práctica sobre la teoría',
-    'Prioriza la teoría bien explicada', 'Fomenta la autonomía del alumnado',
-    'Explica paso a paso, muy guiado', 'Con humor', 'Estructurado y metódico',
-    'Flexible, se adapta sobre la marcha',
-];
+// Swatch sólido para cada color del semáforo -- mismo listado de colores que
+// ya usa getGradeColorClass (services/gradeCalculations/shared.ts) para
+// pintar las notas, pero en su tono -500 (más saturado que el bg-*-100 de
+// las celdas del cuaderno) para que se distinga bien como círculo pequeño.
+// Clases literales a propósito (nada de `bg-${color}-500`): Tailwind solo
+// incluye en el build las clases que puede ver escritas tal cual.
+const SEMAFORO_SWATCH_CLASS: Record<GradeScaleRule['color'], string> = {
+    red: 'bg-red-500',
+    orange: 'bg-orange-500',
+    yellow: 'bg-yellow-500',
+    lime: 'bg-lime-500',
+    green: 'bg-green-500',
+    emerald: 'bg-emerald-500',
+    teal: 'bg-teal-500',
+    blue: 'bg-blue-500',
+    indigo: 'bg-indigo-500',
+    violet: 'bg-violet-500',
+    gray: 'bg-gray-400',
+};
+
+const SEMAFORO_COLOR_LABEL: Record<GradeScaleRule['color'], string> = {
+    emerald: 'Esmeralda (Verde oscuro)',
+    green: 'Verde',
+    lime: 'Lima',
+    yellow: 'Amarillo',
+    orange: 'Naranja',
+    red: 'Rojo',
+    teal: 'Turquesa',
+    blue: 'Azul',
+    indigo: 'Índigo',
+    violet: 'Violeta',
+    gray: 'Gris',
+};
+
+const SEMAFORO_COLOR_OPTIONS = Object.keys(SEMAFORO_SWATCH_CLASS) as GradeScaleRule['color'][];
+
+// Círculo de color + flecha que abre una paleta de swatches clicables --
+// pedido explícito del usuario en vez del <select> de texto anterior (los
+// nombres largos como "Esmeralda (Verde oscuro)" se cortaban en columnas
+// estrechas). Popover en vez de grid siempre visible para no deshacer lo
+// compacto de la rejilla de 3 columnas de la Escala de Calificaciones.
+const ColorSwatchPicker: React.FC<{ value: GradeScaleRule['color']; onChange: (color: GradeScaleRule['color']) => void }> = ({ value, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const handleClickOutside = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [open]);
+
+    return (
+        <div className="relative flex-shrink-0" ref={containerRef}>
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                title={SEMAFORO_COLOR_LABEL[value]}
+                className="flex items-center gap-1 px-1.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50"
+            >
+                <span className={`w-4 h-4 rounded-full border border-black/10 flex-shrink-0 ${SEMAFORO_SWATCH_CLASS[value]}`} />
+                <ChevronDownIcon className="w-3 h-3 text-slate-400 flex-shrink-0" />
+            </button>
+            {open && (
+                <div className="absolute z-10 top-full left-0 mt-1 p-2 bg-white border border-slate-200 rounded-lg shadow-lg grid grid-cols-4 gap-1.5 w-max">
+                    {SEMAFORO_COLOR_OPTIONS.map(color => (
+                        <button
+                            key={color}
+                            type="button"
+                            onClick={() => { onChange(color); setOpen(false); }}
+                            title={SEMAFORO_COLOR_LABEL[color]}
+                            className={`w-6 h-6 rounded-full flex-shrink-0 ${SEMAFORO_SWATCH_CLASS[color]} ${value === color ? 'ring-2 ring-offset-1 ring-slate-500' : 'border border-black/10'}`}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const AcademicConfigManager: React.FC<{
     academicConfiguration: AcademicConfiguration;
@@ -32,7 +101,6 @@ const AcademicConfigManager: React.FC<{
     const createPeriodMutation = useCreateEvaluationPeriod();
     const updatePeriodMutation = useUpdateEvaluationPeriod();
     const deletePeriodMutation = useDeleteEvaluationPeriod();
-    const [nuevoRasgoDocente, setNuevoRasgoDocente] = useState('');
 
     // Fechas del curso (Fase 8 en web, Fase 7 bloque 4 en escritorio): antes
     // escribían solo en el blob (academicConfiguration.academicYearStart/
@@ -98,10 +166,10 @@ const AcademicConfigManager: React.FC<{
                 teacherProfile: Array.isArray(prev?.teacherProfile) ? prev.teacherProfile : [],
                 // Initialize defaults if missing
                 gradeScale: Array.isArray(prev?.gradeScale) && prev.gradeScale.length > 0 ? prev.gradeScale : [
-                    { min: 9, color: 'emerald', label: 'Sobresaliente' },
-                    { min: 7, color: 'lime', label: 'Notable' },
-                    { min: 6, color: 'yellow', label: 'Bien' },
-                    { min: 5, color: 'orange', label: 'Suficiente' },
+                    { min: 8.5, color: 'blue', label: 'Sobresaliente' },
+                    { min: 7, color: 'teal', label: 'Notable' },
+                    { min: 6, color: 'lime', label: 'Bien' },
+                    { min: 5, color: 'yellow', label: 'Suficiente' },
                     { min: 0, color: 'red', label: 'Insuficiente' },
                 ]
             }));
@@ -112,32 +180,13 @@ const AcademicConfigManager: React.FC<{
         return <div className="text-center p-4">Cargando configuración...</div>;
     }
 
-    const { gradeScale = [], teacherProfile = [] } = academicConfiguration;
+    const { gradeScale = [] } = academicConfiguration;
 
     // Calculate total weight for display
     let totalWeight = 0;
     for (const w of Object.values(effectiveWeights)) {
         if (typeof w === 'number') totalWeight += w;
     }
-
-
-    const handleConfigChange = <K extends keyof AcademicConfiguration>(field: K, value: AcademicConfiguration[K]) => {
-        setAcademicConfiguration(prev => ({ ...prev, [field]: value }));
-    };
-
-    const toggleRasgoDocente = (rasgo: string) => {
-        const nuevos = teacherProfile.includes(rasgo)
-            ? teacherProfile.filter(r => r !== rasgo)
-            : [...teacherProfile, rasgo];
-        handleConfigChange('teacherProfile', nuevos);
-    };
-
-    const anadirRasgoDocenteLibre = () => {
-        const rasgo = nuevoRasgoDocente.trim();
-        if (!rasgo || teacherProfile.includes(rasgo)) return;
-        handleConfigChange('teacherProfile', [...teacherProfile, rasgo]);
-        setNuevoRasgoDocente('');
-    };
 
     // Solo 'holidays' — 'periods' (franjas horarias) se gestiona ahora en
     // Horario Semanal (ScheduleManager.tsx), 'evaluationPeriods' ya se
@@ -190,174 +239,165 @@ const AcademicConfigManager: React.FC<{
     };
 
     return (
-        <div className="space-y-8 pb-8">
-            <h3 className="text-xl font-bold text-slate-800 mb-4">Configuración del Curso Académico</h3>
+        <div className="space-y-4 pb-8">
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Configuración del Curso Académico</h3>
 
-            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                <label className="block text-sm font-medium text-slate-700">Tu perfil como docente</label>
-                <p className="text-xs text-slate-500">
-                    Se guarda una sola vez aquí y se reutiliza en todas las Situaciones de Aprendizaje que generes con
-                    IA, para que el resultado encaje con cómo enseñas -- no hace falta repetirlo cada vez.
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                    {RASGOS_DOCENTE_HABITUALES.map(rasgo => (
-                        <button
-                            key={rasgo}
-                            type="button"
-                            onClick={() => toggleRasgoDocente(rasgo)}
-                            className={`text-xs font-medium px-2 py-1 rounded-full border transition-colors ${
-                                teacherProfile.includes(rasgo)
-                                    ? 'bg-slate-700 text-white border-slate-700'
-                                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
-                            }`}
-                        >
-                            {rasgo}
-                        </button>
-                    ))}
-                </div>
-                {teacherProfile.filter(r => !RASGOS_DOCENTE_HABITUALES.includes(r)).length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                        {teacherProfile.filter(r => !RASGOS_DOCENTE_HABITUALES.includes(r)).map(rasgo => (
-                            <span key={rasgo} className="text-xs font-medium px-2 py-1 rounded-full bg-slate-700 text-white inline-flex items-center gap-1">
-                                {rasgo}
-                                <button type="button" onClick={() => toggleRasgoDocente(rasgo)} className="hover:text-red-200" title="Quitar">&times;</button>
-                            </span>
-                        ))}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-4 items-start">
+                <div className="min-w-0 p-3 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="flex items-center gap-2">
+                        <CalendarDaysIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                        <h4 className="font-semibold text-slate-700">🎉 Vacaciones y Festivos</h4>
                     </div>
-                )}
-                <div className="flex gap-1.5">
-                    <Input
-                        type="text"
-                        value={nuevoRasgoDocente}
-                        onChange={e => setNuevoRasgoDocente(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); anadirRasgoDocenteLibre(); } }}
-                        placeholder="Otro rasgo..."
-                    />
-                    <Button type="button" variant="secondary" onClick={anadirRasgoDocenteLibre}>Añadir</Button>
-                </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <h4 className="font-semibold text-slate-700 mb-2">Fechas del Curso</h4>
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className="text-xs text-slate-500">Inicio</label>
-                            <BufferedInput type="date" value={effectiveYearStart} onCommit={v => handleYearDateChange('startDate', v)} className="w-full"/>
-                        </div>
-                        <div>
-                            <label className="text-xs text-slate-500">Fin</label>
-                            <BufferedInput type="date" value={effectiveYearEnd} onCommit={v => handleYearDateChange('endDate', v)} className="w-full"/>
-                        </div>
-                    </div>
-                </div>
-                <div>
-                    <h4 className="font-semibold text-slate-700 mb-2">Periodos de Evaluación</h4>
-                    <div className="space-y-2">
-                        {effectivePeriods.map((period, index) => (
-                            <div key={period.id} className="flex gap-2 items-center">
-                                <BufferedInput type="text" value={period.name} onCommit={v => handlePeriodFieldChange(index, 'name', v)} className="w-1/3 text-sm" placeholder="Nombre"/>
-                                <BufferedInput type="date" value={period.startDate} onCommit={v => handlePeriodFieldChange(index, 'startDate', v)} className="w-1/3 text-sm"/>
-                                <BufferedInput type="date" value={period.endDate} onCommit={v => handlePeriodFieldChange(index, 'endDate', v)} className="w-1/3 text-sm"/>
-                                <button onClick={() => handleRemovePeriod(period.id)} className="p-1 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="w-4 h-4"/></button>
-                            </div>
-                        ))}
-                        <button onClick={handleAddPeriod} className={`text-sm ${linkClassName}`}>+ Añadir Periodo</button>
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                    <h4 className="font-semibold text-slate-700 mb-2">Ponderación de Evaluaciones</h4>
-                    <p className="text-xs text-slate-500 mb-2">Asigna un peso proporcional a cada evaluación. El porcentaje se calcula automáticamente.</p>
-                    <div className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                        {effectivePeriods.map((period) => {
-                            const weight = effectiveWeights[period.id] ?? 1;
-                            const percentage = totalWeight > 0 ? ((weight / totalWeight) * 100).toFixed(1) : '0.0';
-                            return (
-                                <div key={period.id} className="flex justify-between items-center">
-                                    <span className="text-sm font-medium text-slate-700">{period.name}</span>
-                                    <div className="flex items-center gap-2">
-                                        <BufferedInput
-                                            type="number"
-                                            min="0"
-                                            step="0.1"
-                                            value={String(weight)}
-                                            onCommit={v => handlePeriodWeightChange(period.id, v)}
-                                            className="w-16 text-right text-sm"
-                                        />
-                                        <span className="text-xs text-slate-500 w-12 text-right">{percentage}%</span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                <div>
-                    <h4 className="font-semibold text-slate-700 mb-2">Vacaciones y Festivos</h4>
-                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    <div className="space-y-1.5">
                         {academicConfiguration.holidays.map((holiday, index) => (
-                            <div key={holiday.id} className="flex gap-2 items-center">
-                                <Input type="text" value={holiday.name} onChange={e => handleListItemChange('holidays', index, 'name', e.target.value)} className="flex-grow text-xs" placeholder="Nombre festivo"/>
-                                <Input type="date" value={holiday.startDate} onChange={e => handleListItemChange('holidays', index, 'startDate', e.target.value)} className="!w-24 text-xs"/>
-                                <Input type="date" value={holiday.endDate} onChange={e => handleListItemChange('holidays', index, 'endDate', e.target.value)} className="!w-24 text-xs"/>
-                                <button onClick={() => handleRemoveListItem('holidays', holiday.id)} className="p-1 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="w-3 h-3"/></button>
+                            <div key={holiday.id} className="px-2 py-1.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                                <div className="flex gap-2 items-center">
+                                    <Input type="text" value={holiday.name} onChange={e => handleListItemChange('holidays', index, 'name', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs !text-amber-700 font-semibold" placeholder="Nombre festivo" title={holiday.name}/>
+                                    <button onClick={() => handleRemoveListItem('holidays', holiday.id)} className="p-1 text-red-500 hover:bg-red-50 rounded flex-shrink-0"><TrashIcon className="w-3 h-3"/></button>
+                                </div>
+                                <div className="flex gap-2 items-center">
+                                    <Input type="date" value={holiday.startDate} onChange={e => handleListItemChange('holidays', index, 'startDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
+                                    <Input type="date" value={holiday.endDate} onChange={e => handleListItemChange('holidays', index, 'endDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
+                                </div>
                             </div>
                         ))}
                         <button onClick={() => handleAddListItem('holidays')} className={`text-xs ${linkClassName}`}>+ Añadir Festivo</button>
                     </div>
                 </div>
 
-                <div>
-                    <h4 className="font-semibold text-slate-700 mb-2">Escala de Calificaciones (Semáforo)</h4>
-                    <p className="text-xs text-slate-500 mb-2">
-                        Define la nota mínima (&gt;=) a partir de la cual se aplica el color. El sistema prioriza el valor más alto alcanzado (ej. si tienes &gt;=5 y &gt;=7, un 8 usará el color de 7, no el de 5).
-                    </p>
-                    <div className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-200 max-h-60 overflow-y-auto">
-                        {gradeScale.map((rule, index) => (
-                            <div key={index} className="flex gap-2 items-center">
-                                <div className="flex items-center gap-1">
-                                    <span className="text-xs text-slate-500">≥</span>
-                                    <Input
-                                        type="number"
-                                        min="0"
-                                        max="10"
-                                        step="0.1"
-                                        value={rule.min}
-                                        onChange={e => handleGradeScaleChange(index, 'min', parseFloat(e.target.value))}
-                                        className="w-14 text-sm text-center"
-                                    />
-                                </div>
-                                <Select
-                                    value={rule.color}
-                                    onChange={e => handleGradeScaleChange(index, 'color', e.target.value as GradeScaleRule['color'])}
-                                    className="text-sm"
-                                >
-                                    <option value="emerald">Esmeralda (Verde oscuro)</option>
-                                    <option value="green">Verde</option>
-                                    <option value="lime">Lima</option>
-                                    <option value="yellow">Amarillo</option>
-                                    <option value="orange">Naranja</option>
-                                    <option value="red">Rojo</option>
-                                    <option value="teal">Turquesa</option>
-                                    <option value="blue">Azul</option>
-                                    <option value="indigo">Índigo</option>
-                                    <option value="violet">Violeta</option>
-                                    <option value="gray">Gris</option>
-                                </Select>
-                                <Input
-                                    type="text"
-                                    value={rule.label || ''}
-                                    onChange={e => handleGradeScaleChange(index, 'label', e.target.value)}
-                                    placeholder="Etiqueta (opcional)"
-                                    className="flex-grow text-sm"
-                                />
-                                <button onClick={() => handleRemoveGradeRule(index)} className="p-1 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="w-4 h-4"/></button>
+                <div className="min-w-0 space-y-4">
+                    <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center gap-2 mb-1.5">
+                            <CalendarDaysIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                            <h4 className="font-semibold text-slate-700">🎓 Fechas del curso</h4>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-xs text-slate-500">Inicio</label>
+                                <BufferedInput type="date" value={effectiveYearStart} onCommit={v => handleYearDateChange('startDate', v)} className="!py-1 w-full text-xs"/>
                             </div>
-                        ))}
-                        <button onClick={handleAddGradeRule} className={`text-sm ${linkClassName}`}>+ Añadir Regla</button>
+                            <div>
+                                <label className="text-xs text-slate-500">Fin</label>
+                                <BufferedInput type="date" value={effectiveYearEnd} onCommit={v => handleYearDateChange('endDate', v)} className="!py-1 w-full text-xs"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="flex items-center gap-2">
+                        <ChartBarIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                        <h4 className="font-semibold text-slate-700">Evaluación y Calificaciones</h4>
+                    </div>
+
+                    <div>
+                        <h5 className="text-sm font-medium text-slate-600">📊 Periodos de evaluación</h5>
+                        <p className="text-xs text-slate-500 mb-1.5">El peso determina cuánto cuenta cada periodo en la nota final (pasa el ratón por encima para ver el %).</p>
+                        <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+                                        <th className="py-1.5 pl-1.5 pr-0.5 font-medium">Periodo</th>
+                                        <th className="py-1.5 px-0.5 font-medium">Inicio</th>
+                                        <th className="py-1.5 px-0.5 font-medium">Fin</th>
+                                        <th className="py-1.5 px-0.5 font-medium text-right">Peso</th>
+                                        <th className="py-1.5 pr-1.5"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200">
+                                    {effectivePeriods.map((period, index) => {
+                                        const weight = effectiveWeights[period.id] ?? 1;
+                                        const percentage = totalWeight > 0 ? ((weight / totalWeight) * 100).toFixed(1) : '0.0';
+                                        return (
+                                            <tr key={period.id}>
+                                                <td className="py-1.5 pl-1.5 pr-0.5">
+                                                    <BufferedInput type="text" value={period.name} onCommit={v => handlePeriodFieldChange(index, 'name', v)} className="!py-1 !w-28 text-xs" placeholder="Nombre" title={period.name}/>
+                                                </td>
+                                                <td className="py-1.5 px-0.5">
+                                                    <BufferedInput type="date" value={period.startDate} onCommit={v => handlePeriodFieldChange(index, 'startDate', v)} className="!py-1 !w-[7.5rem] text-xs"/>
+                                                </td>
+                                                <td className="py-1.5 px-0.5">
+                                                    <BufferedInput type="date" value={period.endDate} onCommit={v => handlePeriodFieldChange(index, 'endDate', v)} className="!py-1 !w-[7.5rem] text-xs"/>
+                                                </td>
+                                                <td className="py-1.5 px-0.5">
+                                                    <BufferedInput
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.1"
+                                                        value={String(weight)}
+                                                        onCommit={v => handlePeriodWeightChange(period.id, v)}
+                                                        className="!py-1 !w-11 text-right text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                        title={`${percentage}%`}
+                                                    />
+                                                </td>
+                                                <td className="py-1.5 pr-1.5">
+                                                    <button onClick={() => handleRemovePeriod(period.id)} className="p-1 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="w-4 h-4"/></button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                            <button onClick={handleAddPeriod} className={`text-xs ${linkClassName} block p-2`}>+ Añadir Periodo</button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h5 className="text-sm font-medium text-slate-600 flex items-center gap-1.5">
+                            <span aria-hidden="true">🚦</span> Escala de Calificaciones (Semáforo)
+                        </h5>
+                        <p className="text-xs text-slate-500 mb-1.5">
+                            Define la nota mínima (&gt;=) a partir de la cual se aplica el color. El sistema prioriza el valor más alto alcanzado.
+                        </p>
+                        <div className="bg-slate-50 rounded-lg border border-slate-200">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+                                        <th className="py-1.5 pl-2 pr-1 font-medium">Nota mín. (&gt;=)</th>
+                                        <th className="py-1.5 px-1 font-medium">Color</th>
+                                        <th className="py-1.5 px-1 font-medium">Etiqueta</th>
+                                        <th className="py-1.5 pr-2"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200">
+                                    {gradeScale.map((rule, index) => (
+                                        <tr key={index}>
+                                            <td className="py-1.5 pl-2 pr-1">
+                                                <Input
+                                                    type="number"
+                                                    min="0"
+                                                    max="10"
+                                                    step="0.1"
+                                                    value={rule.min}
+                                                    onChange={e => handleGradeScaleChange(index, 'min', parseFloat(e.target.value))}
+                                                    className="!py-1 !w-16 text-xs text-center"
+                                                />
+                                            </td>
+                                            <td className="py-1.5 px-1">
+                                                <ColorSwatchPicker
+                                                    value={rule.color}
+                                                    onChange={color => handleGradeScaleChange(index, 'color', color)}
+                                                />
+                                            </td>
+                                            <td className="py-1.5 px-1">
+                                                <Input
+                                                    type="text"
+                                                    value={rule.label || ''}
+                                                    onChange={e => handleGradeScaleChange(index, 'label', e.target.value)}
+                                                    placeholder="Opcional"
+                                                    className="!py-1 w-full text-xs"
+                                                />
+                                            </td>
+                                            <td className="py-1.5 pr-2">
+                                                <button onClick={() => handleRemoveGradeRule(index)} className="p-1 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="w-4 h-4"/></button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            <button onClick={handleAddGradeRule} className={`text-xs ${linkClassName} block p-2`}>+ Añadir Regla</button>
+                        </div>
+                    </div>
                     </div>
                 </div>
             </div>
