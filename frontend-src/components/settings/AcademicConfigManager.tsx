@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { AcademicConfiguration, Holiday, EvaluationPeriod, GradeScaleRule } from '../../types';
-import { TrashIcon, ChevronDownIcon, CalendarDaysIcon, ChartBarIcon } from '../Icons';
+import { TrashIcon, ChevronDownIcon, CalendarDaysIcon, ChartBarIcon, ArrowUpTrayIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
 import BufferedInput from '../BufferedInput';
@@ -116,6 +116,16 @@ const AcademicConfigManager: React.FC<{
     const updatePeriodMutation = useUpdateEvaluationPeriod();
     const deletePeriodMutation = useDeleteEvaluationPeriod();
 
+    // Importar no lectivo/vacaciones del PDF oficial directamente aquí,
+    // además de en los dos asistentes de Excel (StartOfYearWizardModal/
+    // SyncAcademicYearModal) -- mismo endpoint, pero sin pasar por ningún
+    // Excel intermedio: se añaden directo a la lista de festivos de este
+    // curso. Festivos (nacional/autonómico/local) no vienen en el PDF, se
+    // siguen añadiendo con "+ Añadir Festivo".
+    const calendarioFileInputRef = useRef<HTMLInputElement>(null);
+    const [importandoCalendario, setImportandoCalendario] = useState(false);
+    const [avisoImportacion, setAvisoImportacion] = useState<string | null>(null);
+
     // Fechas del curso (Fase 8 en web, Fase 7 bloque 4 en escritorio): antes
     // escribían solo en el blob (academicConfiguration.academicYearStart/
     // End), un campo huérfano y desincronizado de academic_years.startDate/
@@ -222,6 +232,69 @@ const AcademicConfigManager: React.FC<{
         });
     };
 
+    const handleImportarFestivosPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Sin esto, importar antes de que el curso activo haya cargado del
+        // servidor fusiona los festivos nuevos con un `prev.holidays`
+        // todavía vacío (el valor por defecto antes de que llegue la
+        // respuesta real) -- lo que en la práctica BORRA los festivos ya
+        // guardados en cuanto se envía el PATCH. Bug real, encontrado
+        // 2026-08-29 al probar este mismo botón: se perdieron 9 festivos
+        // reales de producción hasta restaurarlos a mano.
+        if (!currentYear.data) {
+            setAvisoImportacion('Espera a que termine de cargar la configuración del curso antes de importar.');
+            return;
+        }
+
+        setImportandoCalendario(true);
+        setAvisoImportacion(null);
+
+        try {
+            const formData = new FormData();
+            formData.append('archivo', file);
+            const response = await fetch('/api/calendario/importar-pdf', { method: 'POST', body: formData });
+
+            if (!response.ok) {
+                const body = await response.json().catch(() => null);
+                throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+            }
+
+            const data: {
+                noLectivo: { nombre: string; fechaInicio: string; fechaFin: string }[];
+                vacaciones: { nombre: string; fechaInicio: string; fechaFin: string | null }[];
+                festivos: { nombre: string; fechaInicio: string; fechaFin: string }[];
+                errores: string[];
+            } = await response.json();
+
+            const noLectivo: Holiday[] = data.noLectivo.map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin, type: 'no_lectivo' }));
+            // Excluye entradas sin fecha de fin exacta (p.ej. vacaciones de
+            // verano hasta el inicio del curso siguiente, ver
+            // calendario_pdf.py) -- el aviso ya viene en `data.errores`.
+            const vacaciones: Holiday[] = data.vacaciones
+                .filter((h): h is { nombre: string; fechaInicio: string; fechaFin: string } => !!h.fechaFin)
+                .map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin, type: 'vacaciones' }));
+            // Festivo nacional/autonómico: leído del color de cada día en el
+            // dibujo del calendario (ver calendario_pdf.py), no de texto --
+            // festivos locales (cada municipio el suyo) siguen sin venir del
+            // PDF, se añaden a mano.
+            const festivos: Holiday[] = data.festivos.map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin, type: 'festivo' }));
+            const nuevos = [...festivos, ...noLectivo, ...vacaciones];
+
+            setAcademicConfiguration(prev => ({ ...prev, holidays: [...(prev.holidays ?? []), ...nuevos] }));
+            setAvisoImportacion([
+                `${nuevos.length} festivo(s) importado(s) del PDF.`,
+                ...data.errores,
+            ].join(' '));
+        } catch (err) {
+            setAvisoImportacion(`Error al importar el PDF: ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+            setImportandoCalendario(false);
+            if (calendarioFileInputRef.current) calendarioFileInputRef.current.value = '';
+        }
+    };
+
     const handleRemoveListItem = (type: 'holidays', idOrIndex: string) => {
         setAcademicConfiguration(prev => {
             const currentList = prev[type] || [];
@@ -281,7 +354,21 @@ const AcademicConfigManager: React.FC<{
                                 </Select>
                             </div>
                         ))}
-                        <button onClick={() => handleAddListItem('holidays')} className={`text-xs ${linkClassName}`}>+ Añadir Festivo</button>
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <button onClick={() => handleAddListItem('holidays')} className={`text-xs ${linkClassName}`}>+ Añadir Festivo</button>
+                            <input type="file" ref={calendarioFileInputRef} onChange={handleImportarFestivosPdf} accept=".pdf" className="hidden" />
+                            <button
+                                onClick={() => calendarioFileInputRef.current?.click()}
+                                disabled={importandoCalendario}
+                                className={`text-xs ${linkClassName} inline-flex items-center gap-1 disabled:opacity-50`}
+                            >
+                                <ArrowUpTrayIcon className="w-3 h-3" />
+                                {importandoCalendario ? 'Leyendo el PDF…' : 'Importar del PDF'}
+                            </button>
+                        </div>
+                        {avisoImportacion && (
+                            <p className="text-xs text-slate-500 mt-1">{avisoImportacion}</p>
+                        )}
                     </div>
                 </div>
 

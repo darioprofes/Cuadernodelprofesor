@@ -33,6 +33,10 @@ interface CalendarioPdfResultado {
     finClases: OpcionFechaClases[];
     noLectivo: FilaFestivo[];
     vacaciones: FilaFestivo[];
+    // Festivo nacional/autonómico leído del color de cada día en el
+    // dibujo del calendario (ver calendario_pdf.py), no de texto --
+    // festivos locales (cada municipio el suyo) no vienen del PDF.
+    festivos: FilaFestivo[];
     errores: string[];
 }
 
@@ -132,9 +136,10 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
     // `calendarioImportado.errores` y se muestra tal cual más abajo.
     const festivosImportados: FilaFestivo[] = useMemo(() => {
         if (!calendarioImportado) return [];
+        const festivos = calendarioImportado.festivos.map(h => ({ ...h, tipo: 'festivo' as const }));
         const noLectivo = calendarioImportado.noLectivo.map(h => ({ ...h, tipo: 'no_lectivo' as const }));
         const vacaciones = calendarioImportado.vacaciones.filter(h => h.fechaFin).map(h => ({ ...h, tipo: 'vacaciones' as const }));
-        return [...noLectivo, ...vacaciones];
+        return [...festivos, ...noLectivo, ...vacaciones];
     }, [calendarioImportado]);
 
     const handleImportarCalendarioPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -473,7 +478,7 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
                                             </div>
                                         </div>
                                         <p className="text-slate-500">
-                                            {festivosImportados.length} fecha(s) de no lectivo/vacaciones detectadas — se incluirán en la plantilla, columna "Tipo" ya rellena.
+                                            {festivosImportados.length} festivo(s)/no lectivo(s)/vacaciones detectados — se incluirán en la plantilla, columna "Tipo" ya rellena.
                                         </p>
                                         {calendarioImportado.errores.length > 0 && (
                                             <ul className="list-disc list-inside text-orange-700">

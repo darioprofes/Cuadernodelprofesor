@@ -14,14 +14,21 @@
 # 2026-2027 -- si Educastur cambia la maquetación en años
 # futuros, estos rangos de x0 podrían necesitar un ajuste.
 #
-# Las columnas "Inicio curso"/"Fin curso" (fechas administrativas
-# únicas) y "Festivos" (sin fechas, solo "Festivos
-# nacionales"/"Festivos Asturias" como texto) quedan fuera a
-# propósito: la app usa "Inicio/Fin de clases" como
-# academicYearStart/End (confirmado contra datos reales de
-# producción), y los festivos nacionales/autonómicos concretos no
-# existen como texto en el PDF, solo como color en el dibujo del
-# calendario -- se siguen añadiendo a mano.
+# La columna "Inicio curso"/"Fin curso" (fechas administrativas
+# únicas) queda fuera a propósito: la app usa "Inicio/Fin de
+# clases" como academicYearStart/End (confirmado contra datos
+# reales de producción).
+#
+# "Festivos" (nacional/autonómico) SÍ se extrae, pero no de esa
+# columna de texto (que solo dice "Festivos nacionales"/"Festivos
+# Asturias", sin fechas) -- se lee del COLOR de cada día en el
+# dibujo del calendario (relleno rosa RGB 1.0/0.2/0.6, medido
+# sobre el PDF real), correlacionando cada número de día con el
+# mes al que pertenece por posición. Investigado a fondo: ninguna
+# fuente de datos abiertos (Asturias, Gobierno de España) tiene
+# publicado el curso siguiente a tiempo, y una regla calculada a
+# mano (festivos fijos + Pascua) fue rechazada por el usuario --
+# esto lee directamente el documento oficial, sin inventar nada.
 # ==========================================================
 
 import io
@@ -51,6 +58,29 @@ _COL_VACACIONES = (600, 725)
 # calendario de EEI 0-3 años", que cae dentro del rango x de
 # Vacaciones/Festivos -- sin este límite se colaría como un festivo falso.
 _TOP_LIMITE_INFERIOR = 502
+
+# --- Festivos por color (dibujo del calendario, no la leyenda) ---
+
+_MESES_CABECERA = {
+    "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5, "JUNIO": 6,
+    "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "OCTUBRE": 10, "NOVIEMBRE": 11, "DICIEMBRE": 12,
+}
+
+# Relleno rosa de un día festivo en el dibujo, medido sobre el PDF real
+# (valores 0-1 tal como los da pdfplumber, no 0-255).
+_COLOR_FESTIVO_PDF = (1.0, 0.2, 0.6)
+
+# Por debajo de esto empieza la leyenda de abajo, ya no la rejilla de los
+# 12 meses -- sin este límite el propio icono de color junto a la palabra
+# "Festivos" de la leyenda se colaría como un día festivo falso.
+_TOP_LIMITE_CALENDARIO = 440
+
+# Desplazamiento entre la posición del texto de cabecera de cada mes
+# ("SEPTIEMBRE" + "2026") y el área real de su rejilla de días, medido
+# comparando las 4 tablas que pdfplumber sí reconoce bien con
+# find_tables() contra la posición de sus cabeceras -- se aplica igual a
+# los 12 meses porque la maquetación de la rejilla es uniforme.
+_MES_DX0, _MES_DTOP, _MES_ANCHO, _MES_ALTO = -36.4, 13.13, 156, 98
 
 
 def _fecha_iso(dia, mes_abrev, aa):
@@ -219,6 +249,98 @@ def _parsear_vacaciones(palabras, errores):
     return registros
 
 
+def _cabeceras_de_mes(palabras):
+
+    cabeceras = []
+
+    for i, p in enumerate(palabras):
+
+        mes = _MESES_CABECERA.get(p["text"].upper())
+
+        if mes is None:
+            continue
+
+        anio = None
+
+        for p2 in palabras[i:i + 2]:
+            m = re.match(r"^(20\d\d)$", p2["text"])
+            if m:
+                anio = int(m.group(1))
+                break
+
+        if anio is not None:
+            cabeceras.append({"mes": mes, "anio": anio, "x0": p["x0"], "top": p["top"]})
+
+    return cabeceras
+
+
+def _cajas_de_mes(cabeceras):
+
+    cajas = []
+
+    for c in cabeceras:
+        x0 = c["x0"] + _MES_DX0
+        top = c["top"] + _MES_DTOP
+        cajas.append({"mes": c["mes"], "anio": c["anio"], "caja": (x0, top, x0 + _MES_ANCHO, top + _MES_ALTO)})
+
+    return cajas
+
+
+def _mes_de_punto(cajas, cx, cy):
+
+    for c in cajas:
+        x0, top, x1, bottom = c["caja"]
+        if x0 <= cx <= x1 and top <= cy <= bottom:
+            return c
+
+    return None
+
+
+def _parsear_festivos(pagina, palabras):
+
+    # Cuando la fecha original cae en domingo, el calendario traslada su
+    # observancia al lunes siguiente y colorea AMBOS días -- el domingo
+    # con un simple contorno, el lunes trasladado con relleno completo. El
+    # margen ajustado de `hay_rosa_bajo` solo detecta color pegado al
+    # propio número del día, así que en la práctica solo coge el lunes
+    # trasladado (el domingo, ya no lectivo de por sí, queda fuera sin
+    # necesidad de distinguir contorno de relleno a propósito).
+    cabeceras = _cabeceras_de_mes(palabras)
+    cajas = _cajas_de_mes(cabeceras)
+    rects_rosa = [
+        r for r in pagina.rects
+        if r.get("non_stroking_color") == _COLOR_FESTIVO_PDF and r["top"] < _TOP_LIMITE_CALENDARIO
+    ]
+
+    def hay_rosa_bajo(x0, top, x1, bottom, margen=1.5):
+        return any(
+            r["x0"] <= x1 + margen and x0 - margen <= r["x1"]
+            and r["top"] <= bottom + margen and top - margen <= r["bottom"]
+            for r in rects_rosa
+        )
+
+    festivos = []
+
+    for p in palabras:
+
+        if not re.match(r"^\d{1,2}$", p["text"]):
+            continue
+
+        cx, cy = (p["x0"] + p["x1"]) / 2, (p["top"] + p["bottom"]) / 2
+        caja = _mes_de_punto(cajas, cx, cy)
+
+        if not caja:
+            continue
+
+        if hay_rosa_bajo(p["x0"], p["top"], p["x1"], p["bottom"]):
+            fecha = f"{caja['anio']:04d}-{caja['mes']:02d}-{int(p['text']):02d}"
+            festivos.append({"nombre": "Festivo nacional/autonómico", "fechaInicio": fecha, "fechaFin": fecha})
+
+    festivos.sort(key=lambda f: f["fechaInicio"])
+
+    return festivos
+
+
 def extraer_calendario_pdf(contenido_bytes):
 
     import pdfplumber
@@ -228,7 +350,7 @@ def extraer_calendario_pdf(contenido_bytes):
     with pdfplumber.open(io.BytesIO(contenido_bytes)) as pdf:
 
         if not pdf.pages:
-            return {"inicioClases": [], "finClases": [], "noLectivo": [], "vacaciones": []}, errores
+            return {"inicioClases": [], "finClases": [], "noLectivo": [], "vacaciones": [], "festivos": []}, errores
 
         pagina = pdf.pages[0]
         palabras = pagina.extract_words(use_text_flow=False, keep_blank_chars=False)
@@ -237,16 +359,21 @@ def extraer_calendario_pdf(contenido_bytes):
 
         if not palabras_cabecera:
             errores.append("No se ha encontrado la tabla de leyenda del calendario en el PDF (¿es el documento oficial correcto?).")
-            return {"inicioClases": [], "finClases": [], "noLectivo": [], "vacaciones": []}, errores
+            return {"inicioClases": [], "finClases": [], "noLectivo": [], "vacaciones": [], "festivos": []}, errores
 
         top_cabecera = min(p["top"] for p in palabras_cabecera)
         zona = [p for p in palabras if top_cabecera - 2 <= p["top"] < _TOP_LIMITE_INFERIOR]
+
+        # Necesita `pagina.rects` (color de cada celda) -- por eso se calcula
+        # aquí dentro, antes de que se cierre el documento.
+        festivos = _parsear_festivos(pagina, palabras)
 
     resultado = {
         "inicioClases": _parsear_inicio_fin_clases(zona, _COL_INICIO_CLASES),
         "finClases": _parsear_inicio_fin_clases(zona, _COL_FIN_CLASES),
         "noLectivo": _parsear_no_lectivo(zona),
         "vacaciones": _parsear_vacaciones(zona, errores),
+        "festivos": festivos,
     }
 
     if not resultado["inicioClases"] and not resultado["finClases"]:

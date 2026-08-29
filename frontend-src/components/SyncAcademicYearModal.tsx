@@ -18,15 +18,17 @@ import { resolverAlumno } from '../services/excelSync';
 
 // Respuesta de POST /calendario/importar-pdf -- ver
 // api/app/services/calendario_pdf.py y el mismo tipo en
-// StartOfYearWizardModal.tsx. Aquí solo interesan noLectivo/vacaciones: el
-// curso ya existe, sus fechas de inicio/fin no se tocan desde este modal
-// (no hay campo editable para ellas, a diferencia del asistente de curso
-// nuevo), así que inicioClases/finClases del PDF no tienen dónde aplicarse.
+// StartOfYearWizardModal.tsx. Aquí solo interesan festivos/noLectivo/
+// vacaciones: el curso ya existe, sus fechas de inicio/fin no se tocan
+// desde este modal (no hay campo editable para ellas, a diferencia del
+// asistente de curso nuevo), así que inicioClases/finClases del PDF no
+// tienen dónde aplicarse.
 interface CalendarioPdfResultado {
     inicioClases: { fecha: string; etiqueta: string }[];
     finClases: { fecha: string; etiqueta: string }[];
     noLectivo: FilaFestivo[];
     vacaciones: FilaFestivo[];
+    festivos: FilaFestivo[];
     errores: string[];
 }
 
@@ -125,9 +127,10 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
     // `calendarioImportado.errores` y se muestra tal cual.
     const festivosImportados: FilaFestivo[] = useMemo(() => {
         if (!calendarioImportado) return [];
+        const festivos = calendarioImportado.festivos.map(h => ({ ...h, tipo: 'festivo' as const }));
         const noLectivo = calendarioImportado.noLectivo.map(h => ({ ...h, tipo: 'no_lectivo' as const }));
         const vacaciones = calendarioImportado.vacaciones.filter(h => h.fechaFin).map(h => ({ ...h, tipo: 'vacaciones' as const }));
-        return [...noLectivo, ...vacaciones];
+        return [...festivos, ...noLectivo, ...vacaciones];
     }, [calendarioImportado]);
 
     const handleImportarCalendarioPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -463,7 +466,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
                         {calendarioImportado && (
                             <div className="p-2 bg-slate-50 border rounded-lg text-xs text-slate-600 space-y-1">
                                 <p>
-                                    {festivosImportados.length} fecha(s) de no lectivo/vacaciones detectadas en el PDF — se incluirán,
+                                    {festivosImportados.length} festivo(s)/no lectivo(s)/vacaciones detectados en el PDF — se incluirán,
                                     con su Tipo ya puesto, al descargar "Configuración actual".
                                 </p>
                                 {calendarioImportado.errores.length > 0 && (
