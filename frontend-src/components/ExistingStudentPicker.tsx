@@ -42,20 +42,21 @@ const ExistingStudentPicker: React.FC<{
     alreadyEnrolledIds: Set<string>;
     currentYearId?: string;
     onEnroll: (studentId: string) => Promise<void> | void;
-    // Borrado definitivo de la ficha (no solo desmatricular) — opcional
+    // Borrado definitivo de ficha(s) (no solo desmatricular) — opcional
     // porque solo tiene sentido donde exista un registro global de
-    // STUDENT propio (ver ClassManager.tsx). El backend ya rechaza el
-    // borrado con un mensaje claro si la persona tiene matrículas en
-    // cualquier clase/curso académico, así que aquí no hace falta
-    // comprobarlo por adelantado — el mensaje de error lo cuenta.
-    onDeleteStudent?: (studentId: string) => Promise<void> | void;
-}> = ({ allStudents, alreadyEnrolledIds, currentYearId, onEnroll, onDeleteStudent }) => {
+    // STUDENT propio (ver ClassManager.tsx). Un único id sirve tanto para
+    // el icono de papelera de una fila como para "Eliminar seleccionados";
+    // el llamante decide qué hacer con quien siga matriculado en otra
+    // clase (preguntar si desmatricular también, o dejarlo tal cual).
+    onDeleteStudents?: (studentIds: string[]) => Promise<void> | void;
+}> = ({ allStudents, alreadyEnrolledIds, currentYearId, onEnroll, onDeleteStudents }) => {
     const [query, setQuery] = useState('');
     const [verTodos, setVerTodos] = useState(false);
     const [filtroCurso, setFiltroCurso] = useState('');
     const [filtroUnidad, setFiltroUnidad] = useState('');
     const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
     const [matriculando, setMatriculando] = useState(false);
+    const [borrando, setBorrando] = useState(false);
 
     const disponibles = useMemo(
         () => allStudents.filter(s => !alreadyEnrolledIds.has(s.id)),
@@ -133,6 +134,14 @@ const ExistingStudentPicker: React.FC<{
         setMatriculando(false);
     };
 
+    const handleDeleteSeleccionados = async () => {
+        if (!onDeleteStudents) return;
+        setBorrando(true);
+        await onDeleteStudents(Array.from(seleccionados));
+        setSeleccionados(new Set());
+        setBorrando(false);
+    };
+
     return (
         <div className="space-y-2">
             <div className="flex items-center gap-2">
@@ -199,12 +208,12 @@ const ExistingStudentPicker: React.FC<{
                                 </span>
                             )}
                         </label>
-                        {onDeleteStudent && (
+                        {onDeleteStudents && (
                             <IconButton
                                 label="Borrar ficha definitivamente"
                                 tone="danger"
                                 size="sm"
-                                onClick={() => onDeleteStudent(s.id)}
+                                onClick={() => onDeleteStudents([s.id])}
                             >
                                 <TrashIcon className="w-4 h-4" />
                             </IconButton>
@@ -217,8 +226,13 @@ const ExistingStudentPicker: React.FC<{
             </div>
 
             {seleccionados.size > 0 && (
-                <div className="flex justify-end pt-1 border-t">
-                    <Button variant="primary" onClick={handleEnrollSeleccionados} disabled={matriculando}>
+                <div className="flex justify-end items-center gap-2 pt-1 border-t">
+                    {onDeleteStudents && (
+                        <Button variant="danger" onClick={handleDeleteSeleccionados} disabled={borrando || matriculando}>
+                            {borrando ? 'Eliminando…' : `Eliminar ${seleccionados.size} seleccionado(s)`}
+                        </Button>
+                    )}
+                    <Button variant="primary" onClick={handleEnrollSeleccionados} disabled={matriculando || borrando}>
                         {matriculando ? 'Matriculando…' : `Matricular ${seleccionados.size} seleccionado(s) →`}
                     </Button>
                 </div>

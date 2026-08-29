@@ -15,7 +15,7 @@ import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tabl
 import { useCurrentAcademicYear, useEvaluationPeriods } from '../../hooks/useAcademicYears';
 import { useApiClasses, useCreateClass, useUpdateClass, useDeleteClass } from '../../hooks/useApiClasses';
 import { useApiStudents, useUpdateStudent, useDeleteStudent } from '../../hooks/useApiStudents';
-import { useEnrollments, useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from '../../hooks/useEnrollments';
+import { useEnrollments, useEnrollmentsForClasses, useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from '../../hooks/useEnrollments';
 import { useCreateCategory } from '../../hooks/useCategories';
 import { apiClassToLocal, joinStudentEnrollment, splitStudentPatch, syncStudentPhoto } from '../../services/apiAdapters';
 import { ApiError } from '../../services/api';
@@ -28,11 +28,16 @@ interface StudentRowProps {
     onOpenFicha: (student: Student) => void;
     index: number;
     totalStudents: number;
+    selected: boolean;
+    onToggleSelect: (id: string) => void;
 }
 
-const StudentRow: React.FC<StudentRowProps> = ({ student, onDelete, onReorder, onOpenFicha, index, totalStudents }) => {
+const StudentRow: React.FC<StudentRowProps> = ({ student, onDelete, onReorder, onOpenFicha, index, totalStudents, selected, onToggleSelect }) => {
     return (
         <tr className={tableRowClassName}>
+            <td className="p-3 text-center">
+                <input type="checkbox" checked={selected} onChange={() => onToggleSelect(student.id)} aria-label={`Seleccionar a ${getNombreCompleto(student)}`} />
+            </td>
             <td className="p-3 text-center text-slate-500">{index + 1}</td>
             <td className="p-3 text-sm text-slate-800">{getNombreCompleto(student)}</td>
             <td className="p-3">
@@ -102,12 +107,36 @@ const ClassManager: React.FC<{
         return effectiveClasses.filter(c => academicCourseIds.has(c.courseId));
     }, [effectiveClasses, courses]);
 
+    // Matrículas de TODAS las clases del curso activo (no solo la clase
+    // seleccionada) -- necesario para saber, al borrar una ficha de
+    // alumnado, si esa persona sigue matriculada en OTRA clase antes de
+    // dejar que el 409 del backend sea la única pista (ver
+    // handleDeleteStudentsPermanently).
+    const academicClassIds = useMemo(() => academicClasses.map(c => c.id), [academicClasses]);
+    const allEnrollmentsQueries = useEnrollmentsForClasses(academicClassIds, { enabled: academicClassIds.length > 0 });
+    const enrollmentsByStudent = useMemo(() => {
+        const map = new Map<string, { enrollmentId: string; classId: string }[]>();
+        allEnrollmentsQueries.forEach(q => {
+            (q.data ?? []).forEach(e => {
+                const list = map.get(e.studentId) ?? [];
+                list.push({ enrollmentId: e.id, classId: e.classId });
+                map.set(e.studentId, list);
+            });
+        });
+        return map;
+    }, [allEnrollmentsQueries]);
+
     const [activeClassId, setActiveClassId] = useState(academicClasses[0]?.id || '');
     const [isClassModalOpen, setIsClassModalOpen] = useState(false);
     const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
     const [isSauceImportOpen, setIsSauceImportOpen] = useState(false);
     const [classToEdit, setClassToEdit] = useState<ClassData | null>(null);
     const [studentForFicha, setStudentForFicha] = useState<Student | null>(null);
+    // Selección múltiple para desmatricular en bloque (p.ej. deshacer un
+    // "Añadir Alumnado en Lote" hecho por error) -- mismo patrón que ya
+    // tenía "Alumnado disponible" (ExistingStudentPicker) solo para
+    // matricular, ahora también en la clase activa para el caso contrario.
+    const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         if (academicClasses.length > 0 && !academicClasses.find(c => c.id === activeClassId)) {
@@ -116,6 +145,12 @@ const ClassManager: React.FC<{
             setActiveClassId('');
         }
     }, [academicClasses, activeClassId]);
+
+    // La selección es relativa a la clase activa (mismos ids de alumno
+    // podrían no estar matriculados en la siguiente clase que se mire).
+    useEffect(() => {
+        setSeleccionados(new Set());
+    }, [activeClassId]);
 
     const remoteEnrollments = useEnrollments(activeClassId, { enabled: !!activeClassId });
 
@@ -158,20 +193,63 @@ const ClassManager: React.FC<{
         await deleteEnrollmentMutation.mutateAsync({ id: enrollment.enrollmentId, classId: activeClassId });
     };
 
-    // Borrado definitivo de la ficha (persona), no solo desmatricular —
-    // para alumnado dado de alta por error o que ya no tiene matrícula en
-    // ningún curso académico. El backend rechaza con un mensaje claro
-    // (409) si todavía tiene matrículas en algún sitio, así que aquí no
-    // hace falta comprobarlo antes: se intenta y se muestra ese mensaje
-    // si falla.
-    const handleDeleteStudentPermanently = async (studentId: string) => {
-        if (!window.confirm('¿Borrar definitivamente la ficha de este/a alumn@? Solo es posible si no tiene matrículas en ningún curso académico. Esta acción no se puede deshacer.')) {
+    const remoteStudentsById = useMemo(
+        () => new Map((remoteStudents.data ?? []).map(s => [s.id, s])),
+        [remoteStudents.data]
+    );
+
+    // Borrado definitivo de ficha(s) (persona), no solo desmatricular — para
+    // alumnado dado de alta por error, uno o varios a la vez desde
+    // "Alumnado disponible". Quien no tenga matrícula en ninguna clase se
+    // borra directamente; a quien SÍ le queden matrículas (en cualquier
+    // clase del curso, no solo la activa) se le pregunta aparte si también
+    // desmatricularlo de todas ellas antes de borrarlo, o dejarlo tal cual.
+    const handleDeleteStudentsPermanently = async (studentIds: string[]) => {
+        const sinMatricula = studentIds.filter(id => !(enrollmentsByStudent.get(id)?.length));
+        const conMatricula = studentIds.filter(id => (enrollmentsByStudent.get(id)?.length ?? 0) > 0);
+
+        let idsABorrar = sinMatricula;
+
+        if (conMatricula.length > 0) {
+            const detalle = conMatricula.map(id => {
+                const nombre = remoteStudentsById.has(id) ? getNombreCompleto(remoteStudentsById.get(id) as unknown as Student) : id;
+                const clases = (enrollmentsByStudent.get(id) ?? [])
+                    .map(e => academicClasses.find(c => c.id === e.classId))
+                    .filter((c): c is ClassData => !!c)
+                    .map(c => formatClassLabel(c, courses))
+                    .join(', ');
+                return `- ${nombre}: ${clases}`;
+            }).join('\n');
+            const tambienEliminar = window.confirm(
+                `${conMatricula.length} de los seleccionados siguen matriculados en otras clases:\n\n${detalle}\n\n` +
+                `Aceptar = desmatricularlos también de esas clases y borrar su ficha (se pierden sus notas en ellas).\n` +
+                `Cancelar = dejarlos sin borrar (solo se borrará el resto, si no tiene matrículas).`
+            );
+            if (tambienEliminar) {
+                idsABorrar = [...idsABorrar, ...conMatricula];
+            }
+        }
+
+        if (idsABorrar.length === 0) return;
+
+        if (!window.confirm(
+            idsABorrar.length === 1
+                ? '¿Borrar definitivamente la ficha de este/a alumn@? Esta acción no se puede deshacer.'
+                : `¿Borrar definitivamente la ficha de estos ${idsABorrar.length} alumn@s? Esta acción no se puede deshacer.`
+        )) {
             return;
         }
-        try {
-            await deleteStudentMutation.mutateAsync(studentId);
-        } catch (err) {
-            alert(err instanceof ApiError ? err.detail : 'No se pudo borrar el alumno/a.');
+
+        for (const id of idsABorrar) {
+            for (const m of enrollmentsByStudent.get(id) ?? []) {
+                await deleteEnrollmentMutation.mutateAsync({ id: m.enrollmentId, classId: m.classId });
+            }
+            try {
+                await deleteStudentMutation.mutateAsync(id);
+            } catch (err) {
+                const nombre = remoteStudentsById.has(id) ? getNombreCompleto(remoteStudentsById.get(id) as unknown as Student) : id;
+                alert(`No se pudo borrar a ${nombre}: ${err instanceof ApiError ? err.detail : 'error desconocido'}.`);
+            }
         }
     };
 
@@ -224,6 +302,37 @@ const ClassManager: React.FC<{
         await createEnrollmentMutation.mutateAsync({ classId: activeClassId, data: { studentId } });
     };
 
+    const toggleSeleccionado = (studentId: string) => {
+        setSeleccionados(prev => {
+            const next = new Set(prev);
+            if (next.has(studentId)) next.delete(studentId); else next.add(studentId);
+            return next;
+        });
+    };
+
+    const toggleSeleccionarTodos = () => {
+        if (!activeClass) return;
+        setSeleccionados(prev =>
+            prev.size === activeClass.students.length
+                ? new Set()
+                : new Set(activeClass.students.map(s => s.id))
+        );
+    };
+
+    const handleDeleteSeleccionados = async () => {
+        if (seleccionados.size === 0) return;
+        if (!window.confirm(`¿Eliminar ${seleccionados.size} alumn@s de esta clase? Se perderán todas sus calificaciones en ella.`)) {
+            return;
+        }
+        for (const studentId of seleccionados) {
+            const enrollment = activeClassStudents.find(s => s.id === studentId);
+            if (enrollment?.enrollmentId) {
+                await deleteEnrollmentMutation.mutateAsync({ id: enrollment.enrollmentId, classId: activeClassId });
+            }
+        }
+        setSeleccionados(new Set());
+    };
+
 
     return (
         <div>
@@ -249,7 +358,7 @@ const ClassManager: React.FC<{
                             currentYearId={yearId}
                             alreadyEnrolledIds={new Set(activeClassStudents.map(s => s.id))}
                             onEnroll={handleEnrollExisting}
-                            onDeleteStudent={handleDeleteStudentPermanently}
+                            onDeleteStudents={handleDeleteStudentsPermanently}
                         />
                     </div>
                 </div>
@@ -275,9 +384,29 @@ const ClassManager: React.FC<{
                     </div>
                     {activeClass ? (
                         <div className={tableWrapperClassName}>
+                            {seleccionados.size > 0 && (
+                                <div className="flex items-center justify-between gap-2 px-3 py-2 bg-red-50 border-b border-red-200">
+                                    <span className="text-xs text-red-800 font-medium">{seleccionados.size} seleccionado(s)</span>
+                                    <button
+                                        type="button"
+                                        onClick={handleDeleteSeleccionados}
+                                        className="text-xs font-semibold px-2.5 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
+                                    >
+                                        Eliminar seleccionados
+                                    </button>
+                                </div>
+                            )}
                             <table className={tableBaseClassName}>
                                 <thead>
                                     <tr className={tableHeadRowClassName}>
+                                        <th className={`${tableHeadCellClassName} text-center w-8`}>
+                                            <input
+                                                type="checkbox"
+                                                checked={activeClass.students.length > 0 && seleccionados.size === activeClass.students.length}
+                                                onChange={toggleSeleccionarTodos}
+                                                aria-label="Seleccionar todo el alumnado"
+                                            />
+                                        </th>
                                         <th className={`${tableHeadCellClassName} text-left w-8`}>#</th>
                                         <th className={`${tableHeadCellClassName} text-left`}>Nombre del/la Alumn@</th>
                                         <th className={`${tableHeadCellClassName} text-left`}>Anotaciones ACNEAE</th>
@@ -293,6 +422,8 @@ const ClassManager: React.FC<{
                                             onOpenFicha={setStudentForFicha}
                                             index={index}
                                             totalStudents={activeClass.students.length}
+                                            selected={seleccionados.has(student.id)}
+                                            onToggleSelect={toggleSeleccionado}
                                         />
                                     ))}
                                 </tbody>
