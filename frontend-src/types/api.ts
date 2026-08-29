@@ -161,6 +161,7 @@ export interface AcademicYearHoliday {
     name: string;
     startDate: string;
     endDate: string;
+    type?: 'festivo' | 'no_lectivo' | 'vacaciones';
 }
 
 export interface AcademicYear {

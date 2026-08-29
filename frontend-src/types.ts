@@ -417,6 +417,11 @@ export interface Holiday {
   name: string;
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
+  // Ausente = 'festivo' (compatibilidad con festivos ya guardados antes de
+  // este campo). No lectivo/vacaciones se pueden importar del PDF oficial
+  // del calendario escolar; festivo (nacional/autonómico/local) siempre a
+  // mano, esas fechas no vienen como texto en el PDF.
+  type?: 'festivo' | 'no_lectivo' | 'vacaciones';
 }
 
 export interface EvaluationPeriod {

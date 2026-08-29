@@ -48,6 +48,8 @@ export interface FilaFestivo {
     nombre: string;
     fechaInicio: string;
     fechaFin: string;
+    // Ausente/no reconocido = 'festivo' al parsear (ver parseCursoAcademicoSheet).
+    tipo?: 'festivo' | 'no_lectivo' | 'vacaciones';
 }
 
 export interface FilaPeriodoEvaluacion {
@@ -492,6 +494,11 @@ export interface PrefillCursoAcademico {
     label?: string;
     startDate?: string;
     endDate?: string;
+    // Festivos ya importados del PDF oficial (no lectivo/vacaciones) antes
+    // de crear el curso académico -- solo se usa cuando no hay `datosReales`
+    // (un curso nuevo nunca tiene festivos reales todavía), ver
+    // buildCursoAcademicoSheet.
+    holidays?: FilaFestivo[];
 }
 
 // `datosReales`, si se da, sustituye los ejemplos de cada hoja por lo que
@@ -564,7 +571,7 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
     sheet.getColumn(1).width = 32;
     sheet.getColumn(2).width = 20;
     sheet.getColumn(3).width = 20;
-    sheet.getColumn(4).width = 10;
+    sheet.getColumn(4).width = 13;
 
     addBanner(
         sheet, 4, 32 + 20 + 20 + 10, '🚀', 'Curso Académico',
@@ -603,24 +610,31 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
         });
     };
 
-    tituloSeccion(FESTIVOS_FILA_TITULO, 3, '🎉 Festivos y días no lectivos');
-    cabeceraTabla(FESTIVOS_FILA_CABECERA, ['Nombre', 'Fecha inicio', 'Fecha fin']);
+    tituloSeccion(FESTIVOS_FILA_TITULO, 4, '🎉 Festivos y días no lectivos');
+    cabeceraTabla(FESTIVOS_FILA_CABECERA, ['Nombre', 'Fecha inicio', 'Fecha fin', 'Tipo']);
     for (let i = 0; i < FESTIVOS_FILAS; i++) {
         const r = FESTIVOS_FILA_INICIO + i;
-        for (let c = 1; c <= 3; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
+        for (let c = 1; c <= 4; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
         prepararCeldaFecha(sheet.getCell(r, 2));
         prepararCeldaFecha(sheet.getCell(r, 3));
+        setListValidation(sheet.getCell(r, 4), '"festivo,no_lectivo,vacaciones"');
     }
     // Recorta a FESTIVOS_FILAS si hubiera más festivos reales que filas —
     // el parseo de esta tabla lee un rango fijo (a diferencia de Horario/
     // Alumnado, que leen hasta el final real de la hoja), así que más de
     // esto no se podría releer en una futura re-subida. Caso extremo, nunca
     // visto en un curso real (20 festivos ya es muchísimo).
-    (datosReales?.holidays ?? []).slice(0, FESTIVOS_FILAS).forEach((h, i) => {
+    //
+    // `datosReales` (curso ya existente) gana a `prefill` (festivos recién
+    // importados del PDF oficial antes de crear el curso) -- un curso nuevo
+    // nunca tiene datosReales todavía, así que en la práctica solo uno de
+    // los dos trae algo cada vez.
+    (datosReales?.holidays ?? prefill?.holidays ?? []).slice(0, FESTIVOS_FILAS).forEach((h, i) => {
         const r = FESTIVOS_FILA_INICIO + i;
         sheet.getCell(r, 1).value = h.nombre;
         sheet.getCell(r, 2).value = fechaISOaDate(h.fechaInicio);
         sheet.getCell(r, 3).value = fechaISOaDate(h.fechaFin);
+        sheet.getCell(r, 4).value = h.tipo ?? 'festivo';
     });
 
     tituloSeccion(EVALUACIONES_FILA_TITULO, 4, '📊 Periodos de evaluación');
@@ -968,17 +982,23 @@ function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: s
 
     if (!label || !startDate || !endDate || endDate <= startDate) return null;
 
+    const TIPOS_FESTIVO = new Set(['festivo', 'no_lectivo', 'vacaciones']);
     const holidays: FilaFestivo[] = [];
     for (let r = FESTIVOS_FILA_INICIO; r < FESTIVOS_FILA_INICIO + FESTIVOS_FILAS; r++) {
         const nombre = celdaTexto(sheet.getCell(r, 1).value);
         const { texto: inicioTexto, fecha: inicio } = leerCeldaFecha(sheet.getCell(r, 2).value);
         const { texto: finTexto, fecha: fin } = leerCeldaFecha(sheet.getCell(r, 3).value);
+        const tipoTexto = celdaTexto(sheet.getCell(r, 4).value).trim().toLowerCase();
         if (!nombre && !inicioTexto && !finTexto) continue; // fila vacía
         if (!nombre || !inicio || !fin) {
             errores.push(`Fila ${r} (${HOJA_CURSO} — Festivos): faltan datos o la fecha no tiene forma DD/MM/AAAA.`);
             continue;
         }
-        holidays.push({ nombre, fechaInicio: inicio, fechaFin: fin });
+        // Tolerante, igual que el "Peso" de Evaluaciones justo debajo: una
+        // celda vacía o con un valor no reconocido cae a 'festivo', no
+        // bloquea la fila entera.
+        const tipo = TIPOS_FESTIVO.has(tipoTexto) ? (tipoTexto as FilaFestivo['tipo']) : 'festivo';
+        holidays.push({ nombre, fechaInicio: inicio, fechaFin: fin, tipo });
     }
 
     const evaluationPeriods: FilaPeriodoEvaluacion[] = [];

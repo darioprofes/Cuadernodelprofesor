@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { AcademicConfiguration, Holiday, EvaluationPeriod, GradeScaleRule } from '../../types';
 import { TrashIcon, ChevronDownIcon, CalendarDaysIcon, ChartBarIcon } from '../Icons';
 import Input from '../Input';
+import Select from '../Select';
 import BufferedInput from '../BufferedInput';
 import { linkClassName } from '../../theme/components/Link';
 import { useCurrentAcademicYear, useUpdateAcademicYear, useEvaluationPeriods, useCreateEvaluationPeriod, useUpdateEvaluationPeriod, useDeleteEvaluationPeriod } from '../../hooks/useAcademicYears';
@@ -41,6 +42,19 @@ const SEMAFORO_COLOR_LABEL: Record<GradeScaleRule['color'], string> = {
 };
 
 const SEMAFORO_COLOR_OPTIONS = Object.keys(SEMAFORO_SWATCH_CLASS) as GradeScaleRule['color'][];
+
+// Solo 3 categorías con nombre -- un <select> nativo encaja mejor aquí que
+// el popover de ColorSwatchPicker (pensado para elegir COLOR libre entre 11
+// opciones, no para clasificar por tipo). "no_lectivo"/"vacaciones" se
+// pueden importar del PDF oficial del calendario escolar (ver
+// StartOfYearWizardModal/SyncAcademicYearModal); "festivo" (nacional,
+// autonómico o LOCAL -- cada municipio el suyo, esos no vienen en ningún
+// PDF) siempre se añade a mano, por eso es el valor por defecto.
+const TIPO_FESTIVO_LABEL: Record<NonNullable<Holiday['type']>, string> = {
+    festivo: 'Festivo',
+    no_lectivo: 'No lectivo',
+    vacaciones: 'Vacaciones',
+};
 
 // Círculo de color + flecha que abre una paleta de swatches clicables --
 // pedido explícito del usuario en vez del <select> de texto anterior (los
@@ -203,7 +217,7 @@ const AcademicConfigManager: React.FC<{
     const handleAddListItem = (type: 'holidays') => {
         setAcademicConfiguration(prev => {
             const currentList = prev[type] || [];
-            const newItem = { id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, name: 'Nuevo', startDate: '', endDate: '' };
+            const newItem = { id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, name: 'Nuevo', startDate: '', endDate: '', type: 'festivo' as const };
             return { ...prev, [type]: [...currentList, newItem] };
         });
     };
@@ -260,6 +274,11 @@ const AcademicConfigManager: React.FC<{
                                     <Input type="date" value={holiday.startDate} onChange={e => handleListItemChange('holidays', index, 'startDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
                                     <Input type="date" value={holiday.endDate} onChange={e => handleListItemChange('holidays', index, 'endDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
                                 </div>
+                                <Select value={holiday.type ?? 'festivo'} onChange={e => handleListItemChange('holidays', index, 'type', e.target.value)} className="!w-auto !py-1 text-xs">
+                                    {(Object.keys(TIPO_FESTIVO_LABEL) as (keyof typeof TIPO_FESTIVO_LABEL)[]).map(tipo => (
+                                        <option key={tipo} value={tipo}>{TIPO_FESTIVO_LABEL[tipo]}</option>
+                                    ))}
+                                </Select>
                             </div>
                         ))}
                         <button onClick={() => handleAddListItem('holidays')} className={`text-xs ${linkClassName}`}>+ Añadir Festivo</button>

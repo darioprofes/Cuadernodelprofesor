@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
+import Select from './Select';
 import ClassLabel from './ClassLabel';
 import { ArrowDownTrayIcon, ArrowUpTrayIcon } from './Icons';
 import { buildDefaultCategories } from '../utils';
@@ -16,7 +17,24 @@ import { useCreateEnrollment } from '../hooks/useEnrollments';
 import { api } from '../services/api';
 import type { EvaluationPeriod } from '../types/api';
 import { buildImportPlan, normalizarNivel } from './ImportScheduleModal';
-import { generateTemplate, parseWorkbook, type FilaAlumnado, type ParsedWorkbook } from '../services/scheduleWizard';
+import { generateTemplate, parseWorkbook, type FilaAlumnado, type FilaFestivo, type ParsedWorkbook } from '../services/scheduleWizard';
+
+// Respuesta de POST /calendario/importar-pdf -- ver
+// api/app/services/calendario_pdf.py para el porqué de esta forma (solo
+// Inicio/Fin de clases y No lectivo/Vacaciones son parseables del PDF
+// oficial; Festivos nacionales/autonómicos/locales no traen fecha en el
+// documento, se añaden a mano).
+interface OpcionFechaClases {
+    fecha: string;
+    etiqueta: string;
+}
+interface CalendarioPdfResultado {
+    inicioClases: OpcionFechaClases[];
+    finClases: OpcionFechaClases[];
+    noLectivo: FilaFestivo[];
+    vacaciones: FilaFestivo[];
+    errores: string[];
+}
 
 interface StartOfYearWizardModalProps {
     isOpen: boolean;
@@ -46,12 +64,21 @@ const downloadBlob = (blob: Blob, filename: string) => {
 
 const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen, onClose }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const calendarioFileInputRef = useRef<HTMLInputElement>(null);
     const [nombreCurso, setNombreCurso] = useState('');
     const [fechaInicioCurso, setFechaInicioCurso] = useState('');
     const [fechaFinCurso, setFechaFinCurso] = useState('');
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [parsed, setParsed] = useState<ParsedWorkbook | null>(null);
+    // Importación previa del PDF oficial del calendario escolar (antes de
+    // descargar la plantilla) -- solo web, mismo criterio que la
+    // importación de horario en PDF (depende de pdfplumber en el backend
+    // Python, sin equivalente en escritorio/Tauri).
+    const [importandoCalendario, setImportandoCalendario] = useState(false);
+    const [calendarioImportado, setCalendarioImportado] = useState<CalendarioPdfResultado | null>(null);
+    const [inicioClasesElegido, setInicioClasesElegido] = useState(0);
+    const [finClasesElegido, setFinClasesElegido] = useState(0);
     const [applied, setApplied] = useState(false);
     const [applying, setApplying] = useState(false);
     // Snapshot tomado al confirmar, no derivado de `plan` en el render de
@@ -87,15 +114,72 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
         setParsed(null);
         setErrorMsg(null);
         setApplied(false);
+        setCalendarioImportado(null);
+        setInicioClasesElegido(0);
+        setFinClasesElegido(0);
         if (fileInputRef.current) fileInputRef.current.value = '';
+        if (calendarioFileInputRef.current) calendarioFileInputRef.current.value = '';
         onClose();
     };
 
     const puedeDescargar = nombreCurso.trim() !== '' && !!fechaInicioCurso && !!fechaFinCurso;
 
+    // No lectivo/vacaciones importados del PDF, listos para prellenar la
+    // plantilla -- se excluye cualquier entrada sin fecha de fin exacta
+    // (p.ej. "vacaciones de verano hasta el inicio del curso siguiente": el
+    // PDF no la da, ver calendario_pdf.py) en vez de escribir una celda de
+    // fecha vacía en el Excel; el aviso correspondiente ya viene en
+    // `calendarioImportado.errores` y se muestra tal cual más abajo.
+    const festivosImportados: FilaFestivo[] = useMemo(() => {
+        if (!calendarioImportado) return [];
+        const noLectivo = calendarioImportado.noLectivo.map(h => ({ ...h, tipo: 'no_lectivo' as const }));
+        const vacaciones = calendarioImportado.vacaciones.filter(h => h.fechaFin).map(h => ({ ...h, tipo: 'vacaciones' as const }));
+        return [...noLectivo, ...vacaciones];
+    }, [calendarioImportado]);
+
+    const handleImportarCalendarioPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setImportandoCalendario(true);
+        setErrorMsg(null);
+
+        try {
+            const formData = new FormData();
+            formData.append('archivo', file);
+            const response = await fetch('/api/calendario/importar-pdf', { method: 'POST', body: formData });
+
+            if (!response.ok) {
+                const body = await response.json().catch(() => null);
+                throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+            }
+
+            const data: CalendarioPdfResultado = await response.json();
+            setCalendarioImportado(data);
+
+            // Preselección: la opción de Inicio/Fin de clases que aplica a
+            // ESO/Bachillerato si existe (lo más habitual para este
+            // profesorado), si no la primera -- ambas siguen siendo
+            // editables a mano con los desplegables de abajo.
+            const idxInicio = data.inicioClases.findIndex(o => o.etiqueta.toUpperCase().includes('ESO'));
+            const idxFin = data.finClases.findIndex(o => o.etiqueta.toUpperCase().includes('ESO'));
+            const inicioElegido = idxInicio >= 0 ? idxInicio : 0;
+            const finElegido = idxFin >= 0 ? idxFin : 0;
+            setInicioClasesElegido(inicioElegido);
+            setFinClasesElegido(finElegido);
+            if (data.inicioClases[inicioElegido]) setFechaInicioCurso(data.inicioClases[inicioElegido].fecha);
+            if (data.finClases[finElegido]) setFechaFinCurso(data.finClases[finElegido].fecha);
+        } catch (err) {
+            setErrorMsg(err instanceof Error ? err.message : String(err));
+        } finally {
+            setImportandoCalendario(false);
+            if (calendarioFileInputRef.current) calendarioFileInputRef.current.value = '';
+        }
+    };
+
     const handleDownloadTemplate = async () => {
         try {
-            const blob = await generateTemplate({ label: nombreCurso.trim(), startDate: fechaInicioCurso, endDate: fechaFinCurso });
+            const blob = await generateTemplate({ label: nombreCurso.trim(), startDate: fechaInicioCurso, endDate: fechaFinCurso, holidays: festivosImportados });
             const filename = 'plantilla_inicio_de_curso.xlsx';
             downloadBlob(blob, filename);
             // Sin esto, la descarga sucede sin ningún indicio visible — mismo
@@ -198,7 +282,7 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
             if (cursoAcademico.holidays.length > 0) {
                 await updateAcademicYearMutation.mutateAsync({
                     id: yearId,
-                    data: { holidays: cursoAcademico.holidays.map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin })) },
+                    data: { holidays: cursoAcademico.holidays.map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin, type: h.tipo })) },
                 });
             }
 
@@ -330,6 +414,76 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
                                 <Input type="date" value={fechaFinCurso} onChange={e => setFechaFinCurso(e.target.value)} className="w-full mt-1" disabled={!!parsed} />
                             </div>
                         </div>
+
+                        {/* Importar el PDF oficial ANTES de descargar la plantilla: si
+                            se hace, las fechas de abajo se prellenan solas y el .xlsx
+                            descargado ya trae no lectivo/vacaciones con su Tipo, en vez
+                            de tecleado todo a mano. Festivos nacionales/autonómicos/
+                            locales no vienen en el PDF (ver calendario_pdf.py) -- esos
+                            se siguen añadiendo a mano, en el Excel o en Ajustes. Solo
+                            web: depende de pdfplumber en el backend Python, sin
+                            equivalente en escritorio (mismo criterio que la
+                            importación de horario). */}
+                        {!parsed && (
+                            <div className="p-3 border rounded-lg bg-slate-50 space-y-2">
+                                <input type="file" ref={calendarioFileInputRef} onChange={handleImportarCalendarioPdf} accept=".pdf" className="hidden" />
+                                <button
+                                    onClick={() => calendarioFileInputRef.current?.click()}
+                                    disabled={importandoCalendario}
+                                    className="w-full flex items-center justify-center gap-2 bg-white border border-slate-300 text-slate-700 py-2 rounded-lg hover:bg-slate-100 font-medium shadow-sm text-sm disabled:opacity-50"
+                                >
+                                    <ArrowUpTrayIcon className="w-4 h-4" />
+                                    {importandoCalendario ? 'Leyendo el PDF…' : 'Importar calendario oficial (PDF)'}
+                                </button>
+
+                                {calendarioImportado && (
+                                    <div className="space-y-2 text-xs">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="font-medium text-slate-600">Inicio de clases</label>
+                                                <Select
+                                                    value={inicioClasesElegido}
+                                                    onChange={e => {
+                                                        const idx = Number(e.target.value);
+                                                        setInicioClasesElegido(idx);
+                                                        setFechaInicioCurso(calendarioImportado.inicioClases[idx].fecha);
+                                                    }}
+                                                    className="w-full mt-1 text-xs"
+                                                >
+                                                    {calendarioImportado.inicioClases.map((o, i) => (
+                                                        <option key={i} value={i}>{o.fecha} — {o.etiqueta}</option>
+                                                    ))}
+                                                </Select>
+                                            </div>
+                                            <div>
+                                                <label className="font-medium text-slate-600">Fin de clases</label>
+                                                <Select
+                                                    value={finClasesElegido}
+                                                    onChange={e => {
+                                                        const idx = Number(e.target.value);
+                                                        setFinClasesElegido(idx);
+                                                        setFechaFinCurso(calendarioImportado.finClases[idx].fecha);
+                                                    }}
+                                                    className="w-full mt-1 text-xs"
+                                                >
+                                                    {calendarioImportado.finClases.map((o, i) => (
+                                                        <option key={i} value={i}>{o.fecha} — {o.etiqueta}</option>
+                                                    ))}
+                                                </Select>
+                                            </div>
+                                        </div>
+                                        <p className="text-slate-500">
+                                            {festivosImportados.length} fecha(s) de no lectivo/vacaciones detectadas — se incluirán en la plantilla, columna "Tipo" ya rellena.
+                                        </p>
+                                        {calendarioImportado.errores.length > 0 && (
+                                            <ul className="list-disc list-inside text-orange-700">
+                                                {calendarioImportado.errores.map((e, i) => <li key={i}>{e}</li>)}
+                                            </ul>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <button
                             onClick={handleDownloadTemplate}

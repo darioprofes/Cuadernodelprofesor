@@ -12,9 +12,23 @@ import {
 } from '../hooks/useAcademicYears';
 import { useCreateCategory } from '../hooks/useCategories';
 import { useCreateEnrollment, useDeleteEnrollment } from '../hooks/useEnrollments';
-import { generateTemplate, parseWorkbook, buildDatosRealesTemplate, type FilaAlumnado, type ParsedWorkbook } from '../services/scheduleWizard';
+import { generateTemplate, parseWorkbook, buildDatosRealesTemplate, type FilaAlumnado, type FilaFestivo, type ParsedWorkbook } from '../services/scheduleWizard';
 import { buildImportPlan, normalizarNivel } from './ImportScheduleModal';
 import { resolverAlumno } from '../services/excelSync';
+
+// Respuesta de POST /calendario/importar-pdf -- ver
+// api/app/services/calendario_pdf.py y el mismo tipo en
+// StartOfYearWizardModal.tsx. Aquí solo interesan noLectivo/vacaciones: el
+// curso ya existe, sus fechas de inicio/fin no se tocan desde este modal
+// (no hay campo editable para ellas, a diferencia del asistente de curso
+// nuevo), así que inicioClases/finClases del PDF no tienen dónde aplicarse.
+interface CalendarioPdfResultado {
+    inicioClases: { fecha: string; etiqueta: string }[];
+    finClases: { fecha: string; etiqueta: string }[];
+    noLectivo: FilaFestivo[];
+    vacaciones: FilaFestivo[];
+    errores: string[];
+}
 
 interface SyncAcademicYearModalProps {
     isOpen: boolean;
@@ -67,6 +81,9 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
     const [applied, setApplied] = useState(false);
     const [applying, setApplying] = useState(false);
     const [descargando, setDescargando] = useState(false);
+    const calendarioFileInputRef = useRef<HTMLInputElement>(null);
+    const [importandoCalendario, setImportandoCalendario] = useState(false);
+    const [calendarioImportado, setCalendarioImportado] = useState<CalendarioPdfResultado | null>(null);
     // Ids (de plan.classes / enrollmentId real) marcados a mano para borrar
     // — todo vacío por defecto, nada se borra si el profesor no lo marca
     // explícitamente él mismo.
@@ -95,15 +112,58 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
         setApplied(false);
         setClasesABorrar(new Set());
         setEnrollmentsABorrar(new Set());
+        setCalendarioImportado(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
+        if (calendarioFileInputRef.current) calendarioFileInputRef.current.value = '';
         onClose();
+    };
+
+    // No lectivo/vacaciones importados del PDF, listos para fusionarse con
+    // los festivos ya reales del curso -- se excluye cualquier entrada sin
+    // fecha de fin exacta (p.ej. vacaciones de verano, ver
+    // calendario_pdf.py); el aviso correspondiente ya viene en
+    // `calendarioImportado.errores` y se muestra tal cual.
+    const festivosImportados: FilaFestivo[] = useMemo(() => {
+        if (!calendarioImportado) return [];
+        const noLectivo = calendarioImportado.noLectivo.map(h => ({ ...h, tipo: 'no_lectivo' as const }));
+        const vacaciones = calendarioImportado.vacaciones.filter(h => h.fechaFin).map(h => ({ ...h, tipo: 'vacaciones' as const }));
+        return [...noLectivo, ...vacaciones];
+    }, [calendarioImportado]);
+
+    const handleImportarCalendarioPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setImportandoCalendario(true);
+        setErrorMsg(null);
+
+        try {
+            const formData = new FormData();
+            formData.append('archivo', file);
+            const response = await fetch('/api/calendario/importar-pdf', { method: 'POST', body: formData });
+
+            if (!response.ok) {
+                const body = await response.json().catch(() => null);
+                throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+            }
+
+            setCalendarioImportado(await response.json());
+        } catch (err) {
+            setErrorMsg(err instanceof Error ? err.message : String(err));
+        } finally {
+            setImportandoCalendario(false);
+            if (calendarioFileInputRef.current) calendarioFileInputRef.current.value = '';
+        }
     };
 
     const handleDownloadTemplate = async () => {
         setDescargando(true);
         try {
             const datosReales = buildDatosRealesTemplate({
-                holidays: yearHolidays.map(h => ({ nombre: h.name, fechaInicio: h.startDate, fechaFin: h.endDate })),
+                holidays: [
+                    ...yearHolidays.map(h => ({ nombre: h.name, fechaInicio: h.startDate, fechaFin: h.endDate, tipo: h.type })),
+                    ...festivosImportados,
+                ],
                 evaluationPeriods: evaluationPeriods.map(p => ({ nombre: p.name, fechaInicio: p.startDate, fechaFin: p.endDate, peso: p.weight })),
                 periods: yearPeriods,
                 classes,
@@ -218,7 +278,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
                     label: cursoAcademico.label,
                     startDate: cursoAcademico.startDate,
                     endDate: cursoAcademico.endDate,
-                    holidays: cursoAcademico.holidays.map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin })),
+                    holidays: cursoAcademico.holidays.map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin, type: h.tipo })),
                 },
             });
             // Los periodos de evaluación se EMPAREJAN por nombre y solo se
@@ -387,6 +447,10 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
                         </p>
 
                         <div className="flex flex-wrap items-center gap-2">
+                            <Button type="button" variant="secondary" onClick={() => calendarioFileInputRef.current?.click()} disabled={importandoCalendario}>
+                                {importandoCalendario ? 'Leyendo el PDF…' : '📅 Importar calendario oficial (PDF)'}
+                            </Button>
+                            <input ref={calendarioFileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleImportarCalendarioPdf} />
                             <Button type="button" variant="secondary" onClick={handleDownloadTemplate} disabled={descargando}>
                                 {descargando ? 'Generando…' : '📥 Descargar configuración actual'}
                             </Button>
@@ -395,6 +459,20 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
                             </Button>
                             <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileChange} />
                         </div>
+
+                        {calendarioImportado && (
+                            <div className="p-2 bg-slate-50 border rounded-lg text-xs text-slate-600 space-y-1">
+                                <p>
+                                    {festivosImportados.length} fecha(s) de no lectivo/vacaciones detectadas en el PDF — se incluirán,
+                                    con su Tipo ya puesto, al descargar "Configuración actual".
+                                </p>
+                                {calendarioImportado.errores.length > 0 && (
+                                    <ul className="list-disc list-inside text-orange-700">
+                                        {calendarioImportado.errores.map((e, i) => <li key={i}>{e}</li>)}
+                                    </ul>
+                                )}
+                            </div>
+                        )}
 
                         {errorMsg && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{errorMsg}</div>}
 

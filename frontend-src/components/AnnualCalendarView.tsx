@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { AcademicConfiguration } from '../types';
+import type { AcademicConfiguration, Holiday } from '../types';
 import { TableCellsIcon } from './Icons';
 import { SEMANTIC, SIDEBAR_BG } from '../theme/palette';
 import { pageHeaderMinHeight } from '../theme/components/PageHeader';
@@ -20,6 +20,18 @@ const COLOR_FIN_DE_SEMANA = '#E1E1E1';
 const COLOR_FESTIVO = '#FF3399';
 const COLOR_INICIO_CURSO = '#FF6600';
 const COLOR_FIN_CURSO = '#00AFEF';
+// Elegidos a partir de la imagen de referencia de Educastur (petición
+// explícita: "elígelos tú de la imagen") -- vacaciones reutiliza el mismo
+// dorado ya medido de Educastur que usa PALETTE.sand.base en el resto de
+// la app.
+const COLOR_NO_LECTIVO = '#00A99D';
+const COLOR_VACACIONES = '#FFCC00';
+
+const COLOR_POR_TIPO_FESTIVO: Record<NonNullable<Holiday['type']>, string> = {
+    festivo: COLOR_FESTIVO,
+    no_lectivo: COLOR_NO_LECTIVO,
+    vacaciones: COLOR_VACACIONES,
+};
 
 const LegendItem: React.FC<{ color?: string; ring?: boolean; label: string }> = ({ color, ring, label }) => (
     <div className="flex items-center gap-1.5">
@@ -36,11 +48,11 @@ const LegendItem: React.FC<{ color?: string; ring?: boolean; label: string }> = 
 // Vista de "año completo" al estilo del calendario escolar oficial que
 // publica la Consejería de Educación (rejilla de 12 meses con festivos/
 // vacaciones/inicio-fin de curso coloreados) -- pedido explícito del
-// usuario, mostrando la imagen de ese calendario como referencia. Los tipos
-// de festivo (nacional/autonómico/vacaciones/no lectivo) que sí distingue
-// el original quedan fuera por ahora: Holiday es una lista plana sin campo
-// de tipo (ver types.ts) y ampliarla es una decisión aparte, todavía sin
-// resolver con el usuario -- aquí todo festivo se pinta con un único color.
+// usuario, mostrando la imagen de ese calendario como referencia. Holiday.type
+// distingue festivo/no_lectivo/vacaciones (ver types.ts); no_lectivo y
+// vacaciones se pueden importar del PDF oficial (StartOfYearWizardModal/
+// SyncAcademicYearModal), festivo (nacional/autonómico/LOCAL) siempre a
+// mano -- esas fechas no vienen como texto en ningún PDF.
 const AnnualCalendarView: React.FC<{
     academicConfiguration: AcademicConfiguration;
     onOpenDay: (dateStr: string) => void;
@@ -64,10 +76,10 @@ const AnnualCalendarView: React.FC<{
 
     const isHoliday = useMemo(() => createIsHoliday(holidays), [holidays]);
 
-    const getHolidayName = useMemo(() => {
+    const getHoliday = useMemo(() => {
         const ranges = (holidays ?? []).filter(h => h.startDate && h.endDate);
-        return (dateStr: string): string | undefined =>
-            ranges.find(h => h.startDate <= dateStr && dateStr <= h.endDate)?.name;
+        return (dateStr: string): Holiday | undefined =>
+            ranges.find(h => h.startDate <= dateStr && dateStr <= h.endDate);
     }, [holidays]);
 
     const todayStr = toYYYYMMDD_UTC(new Date());
@@ -98,7 +110,9 @@ const AnnualCalendarView: React.FC<{
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/90">
                     <LegendItem color={COLOR_INICIO_CURSO} label="Inicio de curso" />
                     <LegendItem color={COLOR_FIN_CURSO} label="Fin de curso" />
-                    <LegendItem color={COLOR_FESTIVO} label="Festivos y vacaciones" />
+                    <LegendItem color={COLOR_FESTIVO} label="Festivos" />
+                    <LegendItem color={COLOR_NO_LECTIVO} label="No lectivo" />
+                    <LegendItem color={COLOR_VACACIONES} label="Vacaciones" />
                     <LegendItem color={COLOR_FIN_DE_SEMANA} label="Fin de semana" />
                     <LegendItem ring label="Hoy" />
                 </div>
@@ -110,7 +124,7 @@ const AnnualCalendarView: React.FC<{
                         key={toYYYYMMDD_UTC(monthStart)}
                         monthStart={monthStart}
                         isHoliday={isHoliday}
-                        getHolidayName={getHolidayName}
+                        getHoliday={getHoliday}
                         academicYearStart={academicYearStart}
                         academicYearEnd={academicYearEnd}
                         todayStr={todayStr}
@@ -125,12 +139,12 @@ const AnnualCalendarView: React.FC<{
 const MiniMonth: React.FC<{
     monthStart: Date;
     isHoliday: (date: Date) => boolean;
-    getHolidayName: (dateStr: string) => string | undefined;
+    getHoliday: (dateStr: string) => Holiday | undefined;
     academicYearStart: string;
     academicYearEnd: string;
     todayStr: string;
     onOpenDay: (dateStr: string) => void;
-}> = ({ monthStart, isHoliday, getHolidayName, academicYearStart, academicYearEnd, todayStr, onOpenDay }) => {
+}> = ({ monthStart, isHoliday, getHoliday, academicYearStart, academicYearEnd, todayStr, onOpenDay }) => {
     const monthEnd = endOfMonthUTC(monthStart);
     const gridStart = startOfWeekUTC(monthStart);
     const gridEnd = addDaysUTC(startOfWeekUTC(monthEnd), 6);
@@ -177,6 +191,7 @@ const MiniMonth: React.FC<{
                                 const dow = d.getUTCDay();
                                 const isWeekend = dow === 0 || dow === 6;
                                 const isHol = isHoliday(d);
+                                const holiday = isHol ? getHoliday(dateStr) : undefined;
                                 const isStart = dateStr === academicYearStart;
                                 const isEnd = dateStr === academicYearEnd;
                                 const isToday = dateStr === todayStr;
@@ -187,14 +202,14 @@ const MiniMonth: React.FC<{
                                 let backgroundColor = '#ffffff';
                                 let color = '#334155';
                                 if (isWeekend) { backgroundColor = COLOR_FIN_DE_SEMANA; color = '#4b5563'; }
-                                if (isHol) { backgroundColor = COLOR_FESTIVO; color = '#ffffff'; }
+                                if (isHol) { backgroundColor = COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo']; color = '#ffffff'; }
                                 if (isStart) { backgroundColor = COLOR_INICIO_CURSO; color = '#ffffff'; }
                                 if (isEnd) { backgroundColor = COLOR_FIN_CURSO; color = '#ffffff'; }
 
                                 const titleParts = [
                                     isStart && 'Inicio de curso',
                                     isEnd && 'Fin de curso',
-                                    getHolidayName(dateStr),
+                                    holiday?.name,
                                 ].filter(Boolean) as string[];
 
                                 return (
