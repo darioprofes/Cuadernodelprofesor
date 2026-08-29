@@ -446,6 +446,14 @@ export interface AcademicConfiguration {
   // Rasgos de estilo docente -- se inyectan en el prompt de cada SA
   // generada con IA (ver services/prompts/situacion_aprendizaje.py).
   teacherProfile?: string[];
+  // Notas libres sobre cómo prefiere el profesor el material generado
+  // (formato, extensión, tono...) -- complementa a teacherProfile, también
+  // inyectadas en el prompt.
+  teacherNotes?: string;
+  // Datos personales del profesor -- nombre para mostrar; la foto se sirve
+  // aparte (GET /preferences/photo), teacherHasPhoto solo indica si existe.
+  teacherName?: string;
+  teacherHasPhoto?: boolean;
 }
 
 export type View =

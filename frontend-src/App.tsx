@@ -29,7 +29,7 @@ import { useJournalEntries, useSaveJournalEntry } from './hooks/useJournalEntrie
 import { useAgendaNotes, useCreateAgendaNote, useUpdateAgendaNote, useDeleteAgendaNote } from './hooks/useAgendaNotes';
 import { usePreferences, useUpdatePreferences } from './hooks/usePreferences';
 import { hydrateClassData, diffAndSyncList } from './services/apiAdapters';
-import { INITIAL_ACADEMIC_CONFIGURATION, getInitialShortcuts } from './constants';
+import { INITIAL_ACADEMIC_CONFIGURATION, getInitialShortcuts, getInitialEvaluationTools } from './constants';
 import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, OperationalDescriptor, JournalEntry, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View } from './types';
 import ShortcutsBar from './components/ShortcutsBar';
 import Select from './components/Select';
@@ -128,6 +128,7 @@ async function resetDatabase(): Promise<void> {
         await Promise.all(tools.map(t => api.delete(`/evaluation-tools/${t.id}`)));
         await Promise.all(oldShortcuts.map(s => api.delete(`/shortcuts/${s.id}`)));
         await Promise.all(getInitialShortcuts().map(({ id: _id, ...s }) => api.post('/shortcuts', s)));
+        await Promise.all(getInitialEvaluationTools().map(({ id: _id, ...t }) => api.post('/evaluation-tools', t)));
         alert("Todos los datos han sido borrados. La aplicación se recargará.");
         window.location.reload();
     } catch (e) {
@@ -344,6 +345,9 @@ const App = () => {
         gradeScale: remotePreferences.data?.gradeScale?.length ? remotePreferences.data.gradeScale : INITIAL_ACADEMIC_CONFIGURATION.gradeScale,
         defaultCalendarView: remotePreferences.data?.defaultCalendarView,
         teacherProfile: remotePreferences.data?.teacherProfile ?? [],
+        teacherNotes: remotePreferences.data?.teacherNotes ?? '',
+        teacherName: remotePreferences.data?.teacherName ?? '',
+        teacherHasPhoto: remotePreferences.data?.teacherHasPhoto ?? false,
     }), [currentYear.data, remoteEvaluationPeriods.data, remotePreferences.data]);
     const effectiveTasks: Task[] = useMemo(() => (
         remoteTasks.data ?? []
@@ -545,8 +549,10 @@ const App = () => {
         }
         if (next.gradeScale !== effectiveAcademicConfiguration.gradeScale
             || next.defaultCalendarView !== effectiveAcademicConfiguration.defaultCalendarView
-            || next.teacherProfile !== effectiveAcademicConfiguration.teacherProfile) {
-            updatePreferencesMutation.mutate({ gradeScale: next.gradeScale, defaultCalendarView: next.defaultCalendarView, teacherProfile: next.teacherProfile });
+            || next.teacherProfile !== effectiveAcademicConfiguration.teacherProfile
+            || next.teacherNotes !== effectiveAcademicConfiguration.teacherNotes
+            || next.teacherName !== effectiveAcademicConfiguration.teacherName) {
+            updatePreferencesMutation.mutate({ gradeScale: next.gradeScale, defaultCalendarView: next.defaultCalendarView, teacherProfile: next.teacherProfile, teacherNotes: next.teacherNotes, teacherName: next.teacherName });
         }
     }, [effectiveAcademicConfiguration, yearId, updateAcademicYearMutation, updatePreferencesMutation]);
     // setTasks/setMeetings/setAgendaNotes: diffAndSyncList traduce el

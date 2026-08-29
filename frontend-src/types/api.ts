@@ -568,10 +568,16 @@ export interface Preferences {
     defaultCalendarView?: 'month' | 'week' | 'day';
     gradeScale: GradeScaleRule[];
     teacherProfile: string[];
+    teacherNotes: string;
+    teacherName: string;
+    // Solo lectura, calculado por el backend -- ver PreferencesInput.
+    teacherHasPhoto: boolean;
 }
 
 export interface PreferencesInput {
     defaultCalendarView?: 'month' | 'week' | 'day';
     gradeScale?: GradeScaleRule[];
     teacherProfile?: string[];
+    teacherNotes?: string;
+    teacherName?: string;
 }

@@ -48,6 +48,21 @@ from services.preferences import get_preferences
 from services.programming_units import list_programming_units
 
 
+# Combina los rasgos de estilo (teacher_profile) con las notas libres sobre
+# el material (teacher_notes) en una única frase para inyectar en el prompt
+# -- mismo criterio en las dos funciones que abren un prompt de SA
+# (construir_prompt y _cabecera_prompt_parte), antes cada una lo montaba
+# por su cuenta con el mismo código duplicado.
+def _frase_perfil_docente():
+    prefs = get_preferences()
+    partes = []
+    if prefs.teacher_profile:
+        partes.append("tu estilo como docente: " + "; ".join(prefs.teacher_profile))
+    if prefs.teacher_notes and prefs.teacher_notes.strip():
+        partes.append("cómo prefieres el material que generas: " + prefs.teacher_notes.strip())
+    return f" -- {' -- '.join(partes)} --" if partes else ""
+
+
 def _detectar_marcador(texto):
 
     # Depende de qué extractor produjo el texto (routers/prompts.py::
@@ -470,8 +485,7 @@ def construir_prompt(
     else:
         instruccion_diagnostico = ""
 
-    perfil_docente = get_preferences().teacher_profile
-    frase_perfil = f" -- tu estilo como docente: {'; '.join(perfil_docente)} --" if perfil_docente else ""
+    frase_perfil = _frase_perfil_docente()
 
     prompt = f"""Eres un profesor de {curso.subject} de {curso.level}{frase_perfil} diseñando una situación \
 de aprendizaje a partir de {"tu propio material de clase" if modo == "documento" else "lo que quieres trabajar"}.
@@ -1041,8 +1055,7 @@ def _formatear_curriculo(saberes, criterios):
 
 
 def _cabecera_prompt_parte(curso):
-    perfil_docente = get_preferences().teacher_profile
-    frase_perfil = f" -- tu estilo como docente: {'; '.join(perfil_docente)} --" if perfil_docente else ""
+    frase_perfil = _frase_perfil_docente()
     return f"Eres un profesor de {curso.subject} de {curso.level}{frase_perfil}."
 
 

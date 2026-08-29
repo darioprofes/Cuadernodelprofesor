@@ -7,7 +7,7 @@ import Select from './Select';
 import Textarea from './Textarea';
 import { ArrowUpTrayIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, SparklesIcon } from './Icons';
 import { CARACTERISTICAS_HABITUALES } from './ClassModal';
-import { RASGOS_DOCENTE_HABITUALES } from './settings/AcademicConfigManager';
+import { RASGOS_DOCENTE_HABITUALES } from './settings/TeacherProfileManager';
 import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
 import { usePreferences, useUpdatePreferences } from '../hooks/usePreferences';
