@@ -16,6 +16,7 @@ import Select from './Select';
 import { checkboxClassName } from '../theme/components/Input';
 import { linkClassName } from '../theme/components/Link';
 import LinkedCriteriaSelector from './LinkedCriteriaSelector';
+import { IMPORTANCE_FACTORS } from '../services/gradeCalculations';
 
 interface AssignmentModalProps {
   isOpen: boolean;
@@ -178,17 +179,19 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
   const showCriteriaSection = category.type !== 'recovery' || recoversAssignmentIds.length === 0;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="3xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="4xl">
       <form onSubmit={handleSubmit} className="space-y-6">
+        <div>
+          <label htmlFor="name" className="block text-sm font-medium text-slate-700">Nombre de la Tarea</label>
+          <Input
+            type="text" id="name" value={name} onChange={(e) => setName(e.target.value)}
+            className="mt-1" required
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-slate-700">Nombre de la Tarea</label>
-            <Input
-              type="text" id="name" value={name} onChange={(e) => setName(e.target.value)}
-              className="mt-1" required
-            />
-            <label htmlFor="short-name" className="block text-xs font-medium text-slate-500 mt-2">
-              Alias corto (opcional, para la columna del cuaderno)
+            <label htmlFor="short-name" className="block text-sm font-medium text-slate-700">
+              Alias corto
             </label>
             <Input
               type="text" id="short-name" value={shortName} onChange={(e) => setShortName(e.target.value)}
@@ -212,20 +215,35 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
             </Select>
           </div>
         </div>
-        {assignmentToEdit && (
+        <div className={assignmentToEdit ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : ''}>
+          {assignmentToEdit && (
+            <div>
+              <label htmlFor="category-select" className="block text-sm font-medium text-slate-700">Categoría</label>
+              <Select
+                id="category-select" value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                className="mt-1"
+              >
+                {allCategories
+                  .filter(c => c.evaluationPeriodId === evaluationPeriodId)
+                  .map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </div>
+          )}
           <div>
-            <label htmlFor="category-select" className="block text-sm font-medium text-slate-700">Categoría</label>
+            <label htmlFor="evaluation-method" className="block text-sm font-medium text-slate-700">Método de Evaluación</label>
             <Select
-              id="category-select" value={selectedCategoryId}
-              onChange={(e) => setSelectedCategoryId(e.target.value)}
+              id="evaluation-method" value={evaluationMethod} onChange={(e) => setEvaluationMethod(e.target.value as Assignment['evaluationMethod'])}
               className="mt-1"
             >
-              {allCategories
-                .filter(c => c.evaluationPeriodId === evaluationPeriodId)
-                .map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="direct_grade">Nota numérica</option>
+              <option value="checklist">Lista de Cotejo</option>
+              <option value="rating_scale">Escala de Valoración</option>
+              <option value="rubric">Rúbrica</option>
+              <option value="criterial_exam">Examen criterial</option>
             </Select>
           </div>
-        )}
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
           <div>
@@ -247,7 +265,10 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
               </label>
               <button
                 type="button"
-                onClick={() => setImportanciaAvanzada(v => !v)}
+                onClick={() => {
+                  if (!importanciaAvanzada) setImportanciaPersonalizada(String(IMPORTANCE_FACTORS[importancia]));
+                  setImportanciaAvanzada(v => !v);
+                }}
                 className={`text-xs font-semibold ${linkClassName}`}
               >
                 {importanciaAvanzada ? 'Usar niveles' : 'Modo avanzado'}
@@ -284,20 +305,6 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
             setSelectedIds={setRecoversAssignmentIds}
           />
         )}
-
-        <div>
-            <label htmlFor="evaluation-method" className="block text-sm font-medium text-slate-700">Método de Evaluación</label>
-            <Select
-              id="evaluation-method" value={evaluationMethod} onChange={(e) => setEvaluationMethod(e.target.value as Assignment['evaluationMethod'])}
-              className="mt-1"
-            >
-              <option value="direct_grade">Nota numérica</option>
-              <option value="checklist">Lista de Cotejo</option>
-              <option value="rating_scale">Escala de Valoración</option>
-              <option value="rubric">Rúbrica</option>
-              <option value="criterial_exam">Examen criterial</option>
-            </Select>
-        </div>
 
         {evaluationMethod === 'direct_grade' && linkedCriteria.length === 0 && (
             <div>

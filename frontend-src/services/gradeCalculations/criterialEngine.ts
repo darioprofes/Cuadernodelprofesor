@@ -4,7 +4,7 @@ import { getGradeColorClass } from './shared';
 // Motor de evaluación por criterios: factor multiplicador de la importancia
 // de una actividad como evidencia (no es un reparto que deba sumar nada, ya
 // que las evidencias de un criterio se acumulan durante todo el curso).
-const IMPORTANCE_FACTORS: Record<ImportanciaActividad, number> = {
+export const IMPORTANCE_FACTORS: Record<ImportanciaActividad, number> = {
     muy_baja: 0.5,
     baja: 0.75,
     normal: 1,

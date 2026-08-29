@@ -9,6 +9,7 @@ import Select from './Select';
 import { linkClassName } from '../theme/components/Link';
 import { formatClassLabel } from '../utils';
 import LinkedCriteriaSelector from './LinkedCriteriaSelector';
+import { IMPORTANCE_FACTORS } from '../services/gradeCalculations';
 
 const IMPORTANCIA_LABEL: Record<ImportanciaActividad, string> = {
     muy_baja: 'Muy baja',
@@ -216,7 +217,10 @@ const CalendarTaskModal: React.FC<CalendarTaskModalProps> = (props) => {
                             </label>
                             <button
                                 type="button"
-                                onClick={() => setImportanciaAvanzada(v => !v)}
+                                onClick={() => {
+                                    if (!importanciaAvanzada) setImportanciaPersonalizada(String(IMPORTANCE_FACTORS[importancia]));
+                                    setImportanciaAvanzada(v => !v);
+                                }}
                                 className={`text-xs font-semibold ${linkClassName}`}
                             >
                                 {importanciaAvanzada ? 'Usar niveles' : 'Modo avanzado'}
