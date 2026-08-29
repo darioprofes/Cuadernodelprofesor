@@ -221,9 +221,10 @@ const ClassManager: React.FC<{
                 return `- ${nombre}: ${clases}`;
             }).join('\n');
             const tambienEliminar = window.confirm(
-                `${conMatricula.length} de los seleccionados siguen matriculados en otras clases:\n\n${detalle}\n\n` +
-                `Aceptar = desmatricularlos también de esas clases y borrar su ficha (se pierden sus notas en ellas).\n` +
-                `Cancelar = dejarlos sin borrar (solo se borrará el resto, si no tiene matrículas).`
+                `${conMatricula.length} de los seleccionados siguen matriculados en otras clases. ` +
+                `Aceptar = desmatricularlos también de esas clases y borrar su ficha (se pierden sus notas en ellas). ` +
+                `Cancelar = dejarlos sin borrar (solo se borrará el resto, si no tiene matrículas).\n\n` +
+                `Alumn@s afectados:\n${detalle}`
             );
             if (tambienEliminar) {
                 idsABorrar = [...idsABorrar, ...conMatricula];
