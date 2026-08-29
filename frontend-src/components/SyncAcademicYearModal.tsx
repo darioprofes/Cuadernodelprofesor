@@ -371,7 +371,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={handleClose} title="Sincronizar Curso Académico desde Excel" size="3xl">
+        <Modal isOpen={isOpen} onClose={handleClose} title="Modificar Curso Académico con Excel" size="3xl">
             <div className="space-y-4">
                 {applied ? (
                     <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
@@ -383,7 +383,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
                 ) : (
                     <>
                         <p className="text-sm text-slate-600">
-                            Sube un Excel editado (con la misma plantilla que "Descargar configuración actual") para actualizar el curso académico ACTIVO — a diferencia de "Iniciar nuevo curso académico", este no crea uno nuevo. Solo se añade o actualiza lo que aparece en el fichero: nada se borra salvo que lo marques tú mismo/a, uno a uno, antes de confirmar.
+                            Sube un Excel editado (con la misma plantilla que "Descargar configuración actual") para actualizar el curso académico ACTIVO — a diferencia de "Crear nuevo curso con Excel", este no crea uno nuevo. Solo se añade o actualiza lo que aparece en el fichero: nada se borra salvo que lo marques tú mismo/a, uno a uno, antes de confirmar.
                         </p>
 
                         <div className="flex flex-wrap items-center gap-2">
@@ -464,7 +464,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
 
                                 <div className="flex justify-end gap-2 pt-2">
                                     <Button variant="secondary" onClick={handleClose}>Cancelar</Button>
-                                    <Button variant="primary" onClick={handleConfirm} disabled={applying}>{applying ? 'Aplicando…' : 'Confirmar Sincronización'}</Button>
+                                    <Button variant="primary" onClick={handleConfirm} disabled={applying}>{applying ? 'Aplicando…' : 'Confirmar Cambios'}</Button>
                                 </div>
                             </div>
                         )}

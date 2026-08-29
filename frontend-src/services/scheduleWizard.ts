@@ -532,7 +532,7 @@ function buildInstruccionesSheet(wb: import('exceljs').Workbook) {
     const parrafos = [
         'Este libro te permite arrancar un curso académico nuevo de una sola vez: nombre y fechas del curso, festivos, periodos de evaluación, las materias que impartes, tu horario semanal y el alumnado de cada clase — todo en un único fichero.',
         'Rellena las hojas en el orden en que aparecen. Cada una trae su propia explicación arriba, en la franja de color — no hace falta volver aquí para saber qué va en cada columna.',
-        'Cuando termines, súbelo desde Ajustes → Curso Académico → "Iniciar nuevo curso académico". Verás un resumen de lo que se va a crear antes de confirmar nada, así que no hay ningún riesgo en subirlo y revisar primero.',
+        'Cuando termines, súbelo desde Ajustes → Curso Académico → "Crear nuevo curso con Excel". Verás un resumen de lo que se va a crear antes de confirmar nada, así que no hay ningún riesgo en subirlo y revisar primero.',
         'Este asistente SIEMPRE crea un curso académico nuevo y lo activa — nunca modifica el curso que tengas activo ahora mismo.',
     ];
 

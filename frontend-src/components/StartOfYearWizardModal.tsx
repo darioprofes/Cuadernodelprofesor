@@ -297,7 +297,7 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={handleClose} title="Iniciar Nuevo Curso Académico (Excel)" size="3xl">
+        <Modal isOpen={isOpen} onClose={handleClose} title="Crear Nuevo Curso con Excel" size="3xl">
             <div className="space-y-4">
                 {applied ? (
                     <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
