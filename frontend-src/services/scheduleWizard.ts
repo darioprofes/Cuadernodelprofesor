@@ -219,7 +219,14 @@ const EVALUACIONES_FILAS = 10;
 const FESTIVOS_FILA_TITULO = EVALUACIONES_FILA_INICIO + EVALUACIONES_FILAS + 1;
 const FESTIVOS_FILA_CABECERA = FESTIVOS_FILA_TITULO + 1;
 const FESTIVOS_FILA_INICIO = FESTIVOS_FILA_TITULO + 2;
-const FESTIVOS_FILAS = 20;
+// 20 se quedaba corto en la práctica: un solo "Importar del PDF" ya mete
+// ~17 (12 festivo nacional/autonómico + 5 no lectivo), y sumados a los
+// festivos locales manuales de varios años, un curso real llegó a ocupar
+// las 20 filas exactas -- cualquier fila añadida a mano por debajo caía
+// fuera del rango que lee parseCursoAcademicoSheet y se perdía en
+// silencio (bug real reportado por el usuario, 2026-08-29: solo se coló 1
+// de 2 festivos añadidos a mano tras un curso que ya iba justo de sitio).
+const FESTIVOS_FILAS = 40;
 
 const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
@@ -999,6 +1006,22 @@ function parseCursoAcademicoSheet(sheet: import('exceljs').Worksheet, errores: s
         // bloquea la fila entera.
         const tipo = TIPOS_FESTIVO.has(tipoTexto) ? (tipoTexto as FilaFestivo['tipo']) : 'festivo';
         holidays.push({ nombre, fechaInicio: inicio, fechaFin: fin, tipo });
+    }
+    // Aviso, no bloqueo: si la fila justo debajo del rango leído todavía
+    // trae algo, es que hay más festivos de los que caben en la tabla --
+    // mejor decirlo que perderlos en silencio (bug real ya visto una vez,
+    // ver comentario junto a FESTIVOS_FILAS).
+    {
+        const rFuera = FESTIVOS_FILA_INICIO + FESTIVOS_FILAS;
+        const siguienteFilaOcupada = celdaTexto(sheet.getCell(rFuera, 1).value)
+            || leerCeldaFecha(sheet.getCell(rFuera, 2).value).texto
+            || leerCeldaFecha(sheet.getCell(rFuera, 3).value).texto;
+        if (siguienteFilaOcupada) {
+            errores.push(
+                `Hoja "${HOJA_CURSO}": hay más festivos de los que caben en la tabla (máx. ${FESTIVOS_FILAS}) -- `
+                + 'los que sobran de la fila ' + rFuera + ' en adelante no se han importado.'
+            );
+        }
     }
 
     const evaluationPeriods: FilaPeriodoEvaluacion[] = [];
