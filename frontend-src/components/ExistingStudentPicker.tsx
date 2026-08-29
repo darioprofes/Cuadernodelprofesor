@@ -64,7 +64,14 @@ const ExistingStudentPicker: React.FC<{
 
     const enAmbito = useMemo(() => {
         if (verTodos || !currentYearId) return disponibles;
-        return disponibles.filter(s => s.importedAcademicYearId === currentYearId);
+        // importedAcademicYearId solo lo rellena la importación de SAUCE
+        // (ImportSauceStudentsModal.tsx) -- el alumnado añadido a mano
+        // nunca lo tiene, así que sin este `!s.importedAcademicYearId`
+        // quedaba invisible para siempre en cuanto se desmatriculaba de
+        // cualquier clase (bug real, encontrado 2026-08-29): el filtro solo
+        // debe descartar alumnado importado de OTRO curso, nunca alumnado
+        // que simplemente no viene de SAUCE.
+        return disponibles.filter(s => !s.importedAcademicYearId || s.importedAcademicYearId === currentYearId);
     }, [disponibles, verTodos, currentYearId]);
 
     // Los desplegables de Curso/Unidad solo aparecen si hay datos de SAUCE
@@ -182,9 +189,14 @@ const ExistingStudentPicker: React.FC<{
                                 checked={seleccionados.has(s.id)}
                                 onChange={() => toggleSeleccionado(s.id)}
                             />
-                            <span className="flex-1 truncate">{getNombreCompleto(s as Student)}</span>
+                            <span className="flex-1 min-w-0 truncate" title={getNombreCompleto(s as Student)}>{getNombreCompleto(s as Student)}</span>
                             {(s.ultimoCursoSauce || s.ultimaUnidadSauce) && (
-                                <span className="text-xs text-slate-400 shrink-0">{[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}</span>
+                                <span
+                                    className="text-xs text-slate-400 truncate max-w-[40%] flex-shrink"
+                                    title={[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}
+                                >
+                                    {[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}
+                                </span>
                             )}
                         </label>
                         {onDeleteStudent && (
