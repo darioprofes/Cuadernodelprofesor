@@ -5,6 +5,7 @@ import {
     HomeIcon, ClockIcon, CalendarDaysIcon, BookOpenIcon, ClipboardDocumentIcon,
     UsersIcon, ClipboardDocumentCheckIcon, ChartBarIcon, SparklesIcon,
     StarIcon, ChevronRightIcon, ChevronDownIcon, Bars3Icon, XMarkIcon, ListBulletIcon, BeakerIcon,
+    TableCellsIcon,
 } from './Icons';
 import Logo from './Logo';
 import { PALETTE, SEMANTIC, SIDEBAR_BG } from '../theme/palette';
@@ -30,6 +31,7 @@ const NAV_SECTIONS: NavSection[] = [
             { view: 'hoy', label: 'Hoy', icon: HomeIcon },
             { view: 'horario', label: 'Horario', icon: ClockIcon },
             { view: 'calendar', label: 'Agenda', icon: CalendarDaysIcon },
+            { view: 'annual-calendar', label: 'Calendario', icon: TableCellsIcon },
         ],
     },
     {

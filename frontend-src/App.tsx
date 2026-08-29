@@ -67,6 +67,7 @@ import CalendarTaskModal from './components/CalendarTaskModal';
 import CalendarMeetingModal from './components/CalendarMeetingModal';
 import QuickJournalModal from './components/QuickJournalModal';
 import CalendarView from './components/CalendarView';
+import AnnualCalendarView from './components/AnnualCalendarView';
 import Sidebar from './components/Sidebar';
 import HoyView from './components/HoyView';
 import HorarioView from './components/HorarioView';
@@ -431,6 +432,10 @@ const App = () => {
     // reunión concreta abrir en el formulario (ReunionesView limpia esto
     // sola tras abrirla, vía onOpened).
     const [meetingToOpenId, setMeetingToOpenId] = useState<string | null>(null);
+    // Al pinchar un día en el Calendario anual: navega a Agenda y le dice a
+    // CalendarView qué fecha abrir en modo Día (misma idea que
+    // meetingToOpenId de arriba, CalendarView limpia esto vía onJumpConsumed).
+    const [calendarJumpDate, setCalendarJumpDate] = useState<string | null>(null);
 
     // --- Derived State & Callbacks ---
     useEffect(() => {
@@ -953,6 +958,13 @@ const App = () => {
                     setActiveView={setActiveView}
                     setActiveClassId={setActiveClassId}
                     onOpenMeeting={setMeetingToOpenId}
+                    jumpToDate={calendarJumpDate}
+                    onJumpConsumed={() => setCalendarJumpDate(null)}
+                />;
+            case 'annual-calendar':
+                return <AnnualCalendarView
+                    academicConfiguration={effectiveAcademicConfiguration}
+                    onOpenDay={(dateStr) => { setCalendarJumpDate(dateStr); setActiveView('calendar'); }}
                 />;
             default:
                 return null;

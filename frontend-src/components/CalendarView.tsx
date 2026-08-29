@@ -13,7 +13,7 @@ import CalendarHeader from './calendar/CalendarHeader';
 import MonthView from './calendar/MonthView';
 import WeekView from './calendar/WeekView';
 import DayView from './calendar/DayView';
-import { CalendarEvent, buildCalendarEvents, addMonthsUTC, addDaysUTC, toYYYYMMDD_UTC } from './calendar/calendarEvents';
+import { CalendarEvent, buildCalendarEvents, addMonthsUTC, addDaysUTC, toYYYYMMDD_UTC, createIsHoliday } from './calendar/calendarEvents';
 
 export type { CalendarEvent };
 
@@ -34,9 +34,16 @@ interface CalendarViewProps {
     setActiveView: (view: View) => void;
     setActiveClassId: (id: string) => void;
     onOpenMeeting: (meetingId: string) => void;
+    // Salto directo a un día concreto en modo Día -- usado por
+    // AnnualCalendarView al pinchar una fecha de la rejilla anual. Se
+    // "consume" (onJumpConsumed) en cuanto se aplica, para no repetir el
+    // salto en renders posteriores ni al volver a esta vista sin venir de
+    // un pinchazo nuevo.
+    jumpToDate?: string | null;
+    onJumpConsumed?: () => void;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicConfiguration, classes, journalEntries, criteria, specificCompetences, keyCompetences, onSaveJournalEntry, agendaNotes, setAgendaNotes, meetings, setMeetings, setActiveView, setActiveClassId, onOpenMeeting }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicConfiguration, classes, journalEntries, criteria, specificCompetences, keyCompetences, onSaveJournalEntry, agendaNotes, setAgendaNotes, meetings, setMeetings, setActiveView, setActiveClassId, onOpenMeeting, jumpToDate, onJumpConsumed }) => {
     const createAssignmentMutation = useCreateAssignment();
     const updateClassMutation = useUpdateClass();
     const updateProgrammingUnitMutation = useUpdateProgrammingUnit();
@@ -56,33 +63,35 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
 
     useEffect(() => {
         if (!initialized && academicConfiguration) {
+            if (jumpToDate) return; // el efecto de salto de abajo fija la vista inicial en este caso
             const defaultView = academicConfiguration.defaultCalendarView || 'month';
             setView(defaultView);
             setInitialized(true);
         }
-    }, [academicConfiguration, initialized]);
+    }, [academicConfiguration, initialized, jumpToDate]);
 
-    const isHoliday = useMemo(() => {
-        if (!academicConfiguration || !Array.isArray(academicConfiguration.holidays)) {
-            return () => false;
+    // Salto directo a un día (jumpToDate), gana al defaultCalendarView de
+    // arriba -- se dispara solo una vez por valor recibido, y se "consume"
+    // enseguida para que un futuro re-render con el mismo jumpToDate (p.ej.
+    // si el padre no lo hubiera limpiado) no lo repita.
+    useEffect(() => {
+        if (jumpToDate) {
+            setCurrentDate(new Date(jumpToDate + 'T00:00:00Z'));
+            setView('day');
+            setInitialized(true);
+            onJumpConsumed?.();
         }
-        const holidayRanges = academicConfiguration.holidays
-            .filter(h => h.startDate && h.endDate)
-            .map(h => ({
-                start: new Date(h.startDate + 'T00:00:00Z'),
-                end: new Date(h.endDate + 'T00:00:00Z')
-            }));
-
-        return (date: Date): boolean => {
-            const dateOnly = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-            return holidayRanges.some(range => dateOnly >= range.start && dateOnly <= range.end);
-        };
-        // Narrowed on purpose to .holidays: nothing else in academicConfiguration
-        // affects this calculation, and depending on the whole object would
-        // rebuild isHoliday (and therefore the events memo below) on every
-        // unrelated settings change (grading periods, gradeScale, etc).
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [academicConfiguration.holidays]);
+    }, [jumpToDate]);
+
+    // Narrowed on purpose to .holidays: nothing else in academicConfiguration
+    // affects this calculation, and depending on the whole object would
+    // rebuild isHoliday (and therefore the events memo below) on every
+    // unrelated settings change (grading periods, gradeScale, etc).
+    const isHoliday = useMemo(
+        () => createIsHoliday(academicConfiguration.holidays),
+        [academicConfiguration.holidays]
+    );
 
     const events = useMemo<CalendarEvent[]>(() => buildCalendarEvents({
         classes, courses, units, academicConfiguration, isHoliday, journalEntries, agendaNotes, meetings,

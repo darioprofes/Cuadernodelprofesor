@@ -464,6 +464,7 @@ export type View =
   | 'meetings'
   | 'exams'
   | 'calendar'
+  | 'annual-calendar'
   | 'criteria'
   | 'competences'
   | 'key-competences'

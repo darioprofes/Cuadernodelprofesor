@@ -1,4 +1,4 @@
-import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, JournalEntry, Assignment, AgendaNote, Meeting } from '../../types';
+import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, JournalEntry, Assignment, AgendaNote, Meeting, Holiday } from '../../types';
 import { buildClassName, sessionDisplayText } from '../../utils';
 import { PALETTE } from '../../theme/palette';
 
@@ -70,6 +70,23 @@ export const toYYYYMMDD_UTC = (date: Date): string => {
     const m = date.getUTCMonth() + 1;
     const d = date.getUTCDate();
     return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+};
+
+// Extraído de CalendarView (antes duplicado ahí) para que AnnualCalendarView
+// pueda colorear los mismos festivos sin repetir la lógica de rangos.
+export const createIsHoliday = (holidays: Holiday[] | undefined): (date: Date) => boolean => {
+    if (!holidays || !Array.isArray(holidays)) return () => false;
+    const holidayRanges = holidays
+        .filter(h => h.startDate && h.endDate)
+        .map(h => ({
+            start: new Date(h.startDate + 'T00:00:00Z'),
+            end: new Date(h.endDate + 'T00:00:00Z'),
+        }));
+
+    return (date: Date): boolean => {
+        const dateOnly = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        return holidayRanges.some(range => dateOnly >= range.start && dateOnly <= range.end);
+    };
 };
 
 
