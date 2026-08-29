@@ -107,17 +107,15 @@ const AnnualCalendarView: React.FC<{
                         <p className="text-sm text-white/80">Vista de año completo — pincha un día para abrir su agenda.</p>
                     </div>
                 </div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/90">
-                    <LegendItem color={COLOR_INICIO_CURSO} label="Inicio de curso" />
-                    <LegendItem color={COLOR_FIN_CURSO} label="Fin de curso" />
-                    <LegendItem color={COLOR_FESTIVO} label="Festivos" />
-                    <LegendItem color={COLOR_NO_LECTIVO} label="No lectivo" />
-                    <LegendItem color={COLOR_VACACIONES} label="Vacaciones" />
-                    <LegendItem color={COLOR_FIN_DE_SEMANA} label="Fin de semana" />
-                    <LegendItem ring label="Hoy" />
-                </div>
             </div>
 
+            {/* Grid de 4 columnas: un curso normal (sep-jun, 10 meses) deja 2
+                huecos libres en la última fila -- la leyenda vive ahí en vez
+                de en la cabecera azul oscura, donde los colores claros
+                (dorado, blanco del anillo de "Hoy"...) se leían mal contra
+                ese fondo. `xl:col-span-2` la hace ocupar justo ese hueco en
+                escritorio; en pantallas más estrechas simplemente cae como
+                una tarjeta más. */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {months.map(monthStart => (
                     <MiniMonth
@@ -131,6 +129,15 @@ const AnnualCalendarView: React.FC<{
                         onOpenDay={onOpenDay}
                     />
                 ))}
+                <div className="xl:col-span-2 p-3 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center gap-1.5 text-xs text-slate-600">
+                    <LegendItem color={COLOR_INICIO_CURSO} label="Inicio de curso" />
+                    <LegendItem color={COLOR_FIN_CURSO} label="Fin de curso" />
+                    <LegendItem color={COLOR_FESTIVO} label="Festivos" />
+                    <LegendItem color={COLOR_NO_LECTIVO} label="No lectivo" />
+                    <LegendItem color={COLOR_VACACIONES} label="Vacaciones" />
+                    <LegendItem color={COLOR_FIN_DE_SEMANA} label="Fin de semana" />
+                    <LegendItem ring label="Hoy" />
+                </div>
             </div>
         </div>
     );

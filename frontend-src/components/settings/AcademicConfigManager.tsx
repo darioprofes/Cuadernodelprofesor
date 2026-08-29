@@ -126,6 +126,17 @@ const AcademicConfigManager: React.FC<{
     const [importandoCalendario, setImportandoCalendario] = useState(false);
     const [avisoImportacion, setAvisoImportacion] = useState<string | null>(null);
 
+    // Estado CONTROLADO (no solo el `open` inicial de <details>) -- necesario
+    // para poder desplegar a la fuerza el grupo que recibe un festivo nuevo
+    // (bug real: "+ Añadir Festivo" sí añadía el festivo, pero como el grupo
+    // "Festivo" empieza plegado por defecto, el nuevo festivo en blanco
+    // quedaba invisible dentro y parecía que el botón no hacía nada).
+    const [gruposFestivoAbiertos, setGruposFestivoAbiertos] = useState<Record<NonNullable<Holiday['type']>, boolean>>({
+        festivo: false,
+        no_lectivo: true,
+        vacaciones: false,
+    });
+
     // Fechas del curso (Fase 8 en web, Fase 7 bloque 4 en escritorio): antes
     // escribían solo en el blob (academicConfiguration.academicYearStart/
     // End), un campo huérfano y desincronizado de academic_years.startDate/
@@ -230,6 +241,10 @@ const AcademicConfigManager: React.FC<{
             const newItem = { id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, name: 'Nuevo', startDate: '', endDate: '', type: 'festivo' as const };
             return { ...prev, [type]: [...currentList, newItem] };
         });
+        // El nuevo festivo cae en el grupo "Festivo" -- lo despliega para que
+        // se vea de inmediato, en vez de quedar oculto dentro de un grupo
+        // plegado (parecía que el botón no hacía nada).
+        setGruposFestivoAbiertos(prev => ({ ...prev, festivo: true }));
     };
 
     const handleImportarFestivosPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -283,6 +298,14 @@ const AcademicConfigManager: React.FC<{
             const nuevos = [...festivos, ...noLectivo, ...vacaciones];
 
             setAcademicConfiguration(prev => ({ ...prev, holidays: [...(prev.holidays ?? []), ...nuevos] }));
+            // Despliega los grupos que reciben algo, para que se vea de
+            // inmediato lo importado (mismo motivo que en handleAddListItem).
+            setGruposFestivoAbiertos(prev => ({
+                ...prev,
+                festivo: prev.festivo || festivos.length > 0,
+                no_lectivo: prev.no_lectivo || noLectivo.length > 0,
+                vacaciones: prev.vacaciones || vacaciones.length > 0,
+            }));
             setAvisoImportacion([
                 `${nuevos.length} festivo(s) importado(s) del PDF.`,
                 ...data.errores,
@@ -343,10 +366,16 @@ const AcademicConfigManager: React.FC<{
                             docena de festivos. "No lectivo" arranca desplegado
                             (el que se revisa más a menudo), festivo/vacaciones
                             plegados siempre -- pedido explícito, ya no depende del
-                            número de entradas. El índice que necesitan
-                            handleListItemChange/handleRemoveListItem es el de
-                            `holidays` completo, no el de dentro del grupo -- se
-                            guarda junto al festivo al agrupar. */}
+                            número de entradas. `open` viene de estado CONTROLADO
+                            (gruposFestivoAbiertos), no de un valor fijo -- si no,
+                            un festivo nuevo añadido a un grupo plegado (p.ej. "+
+                            Añadir Festivo") quedaba invisible dentro y parecía que
+                            el botón no hacía nada (bug real). `onToggle` sincroniza
+                            el estado cuando el profesor pliega/despliega a mano. El
+                            índice que necesitan handleListItemChange/
+                            handleRemoveListItem es el de `holidays` completo, no
+                            el de dentro del grupo -- se guarda junto al festivo
+                            al agrupar. */}
                         {(Object.keys(TIPO_FESTIVO_LABEL) as (keyof typeof TIPO_FESTIVO_LABEL)[]).map(tipo => {
                             const items = academicConfiguration.holidays
                                 .map((holiday, index) => ({ holiday, index }))
@@ -355,7 +384,12 @@ const AcademicConfigManager: React.FC<{
                             if (items.length === 0) return null;
 
                             return (
-                                <details key={tipo} open={tipo === 'no_lectivo'} className="group">
+                                <details
+                                    key={tipo}
+                                    open={gruposFestivoAbiertos[tipo]}
+                                    onToggle={e => setGruposFestivoAbiertos(prev => ({ ...prev, [tipo]: (e.target as HTMLDetailsElement).open }))}
+                                    className="group"
+                                >
                                     <summary className="text-xs font-semibold text-slate-600 cursor-pointer select-none list-none flex items-center gap-1 py-0.5">
                                         <ChevronDownIcon className="w-3 h-3 flex-shrink-0 transition-transform group-open:rotate-0 -rotate-90" />
                                         {TIPO_FESTIVO_LABEL[tipo]} ({items.length})
