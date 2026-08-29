@@ -16,6 +16,12 @@ _TABLES_IN_DEPENDENCY_ORDER = [
     "app_preferences",
     "educastur_config",
     "shortcuts",
+    # academic_years va ANTES que students -- students.imported_academic_year_id
+    # (migración 0011) es un FK a academic_years, y sin este orden el INSERT
+    # de students fallaba con ForeignKeyViolation en cuanto ese campo no
+    # estuviera vacío (confirmado en real, restaurando una copia con
+    # alumnado ya importado de Educastur).
+    "academic_years",
     "students",
     "key_competences",
     "operational_descriptors",
@@ -26,7 +32,6 @@ _TABLES_IN_DEPENDENCY_ORDER = [
     "basic_knowledge",
     "programming_units",
     "evaluation_tools",
-    "academic_years",
     "evaluation_periods",
     "academic_year_courses",
     "classes",
