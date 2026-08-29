@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
+import { useQueryClient } from '@tanstack/react-query';
 import type { AcademicConfiguration } from '../../types';
 import { UserCircleIcon } from '../Icons';
 import Input from '../Input';
 import Button from '../Button';
 import BufferedInput from '../BufferedInput';
 import BufferedTextarea from '../BufferedTextarea';
+import { preferencesQueryKey } from '../../hooks/usePreferences';
 
 // Rasgos de estilo docente habituales -- se inyectan en el prompt de cada
 // SA generada con IA (ver services/prompts/situacion_aprendizaje.py) para que
@@ -33,7 +35,16 @@ const PersonalDataCard: React.FC<{
     const [subiendoFoto, setSubiendoFoto] = useState(false);
     const [photoVersion, setPhotoVersion] = useState(0);
     const tienefoto = academicConfiguration.teacherHasPhoto ?? false;
+    const queryClient = useQueryClient();
 
+    // teacherHasPhoto es un campo calculado por el backend (teacher_photo IS
+    // NOT NULL), no algo que setAcademicConfiguration pueda persistir -- el
+    // callback de App.tsx solo manda a /preferences los campos que conoce
+    // (gradeScale, teacherProfile...), así que un PATCH optimista con
+    // teacherHasPhoto no hacía nada y la miniatura no se actualizaba hasta
+    // que otra cosa disparaba un refetch de /preferences (p.ej. cerrar y
+    // reabrir el modal). Invalidar la query aquí es lo que de verdad refleja
+    // el cambio.
     const handleFotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         e.target.value = '';
@@ -45,7 +56,7 @@ const PersonalDataCard: React.FC<{
                 body: file,
                 headers: { 'Content-Type': file.type || 'application/octet-stream' },
             });
-            setAcademicConfiguration(prev => ({ ...prev, teacherHasPhoto: true }));
+            await queryClient.invalidateQueries({ queryKey: preferencesQueryKey });
             setPhotoVersion(v => v + 1);
         } finally {
             setSubiendoFoto(false);
@@ -54,7 +65,7 @@ const PersonalDataCard: React.FC<{
 
     const handleQuitarFoto = async () => {
         await fetch('/api/preferences/photo', { method: 'DELETE' });
-        setAcademicConfiguration(prev => ({ ...prev, teacherHasPhoto: false }));
+        await queryClient.invalidateQueries({ queryKey: preferencesQueryKey });
     };
 
     return (

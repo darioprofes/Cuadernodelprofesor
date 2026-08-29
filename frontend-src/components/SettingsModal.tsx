@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import Modal from './Modal';
-import { UserGroupIcon, UserCircleIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon, AcademicCapIcon, ListBulletIcon, InformationCircleIcon, ExclamationTriangleIcon } from './Icons';
+import { UserGroupIcon, ArrowDownTrayIcon, BookOpenIcon, ClockIcon, CalendarDaysIcon, BeakerIcon, AcademicCapIcon, ListBulletIcon, InformationCircleIcon, ExclamationTriangleIcon } from './Icons';
 import type { ClassData, Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, AcademicConfiguration, BasicKnowledge, ProgrammingUnit, EvaluationTool } from '../types';
 import EvaluationToolManager from './EvaluationToolManager';
 import CurriculumManager from './CurriculumManager';
@@ -11,7 +11,6 @@ import ScheduleManager from './settings/ScheduleManager';
 import CourseManager from './settings/CourseManager';
 import AcademicConfigManager from './settings/AcademicConfigManager';
 import AcademicYearManager from './settings/AcademicYearManager';
-import TeacherProfileManager from './settings/TeacherProfileManager';
 import BackupManager from './settings/BackupManager';
 import EducasturSyncSettings from './settings/EducasturSyncSettings';
 import Select from './Select';
@@ -51,7 +50,7 @@ export interface SettingsModalProps {
     onDeleteEvaluationTool: (id: string) => void;
 }
 
-type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'teacherProfile' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup' | 'educastur';
+type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup' | 'educastur';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const {
@@ -109,8 +108,6 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                         <AcademicConfigManager academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />
                     </div>
                 );
-            case 'teacherProfile':
-                return <TeacherProfileManager academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
             case 'curriculum':
                 return (
                     <div>
@@ -204,7 +201,6 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                     </div>
                     <div className="mt-4 pt-4 border-t">
                         <ul className="space-y-2">
-                            <SettingsNavItem icon={<UserCircleIcon />} label="Perfil Docente" view="teacherProfile" activeView={activeView} setActiveView={setActiveView} />
                             <SettingsNavItem icon={<ArrowDownTrayIcon />} label="Restablecer y Copia de Seguridad" view="backup" activeView={activeView} setActiveView={setActiveView} />
                             {/* Solo tiene sentido en escritorio -- en web la
                                 sincronización con Educastur ya funciona sin

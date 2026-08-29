@@ -56,10 +56,11 @@ const EvaluationToolManager = React.lazy(() => import('./components/EvaluationTo
 // el resto de vistas poco visitadas.
 const AiToolsView = React.lazy(() => import('./components/AiToolsView'));
 import ClassJournal from './components/ClassJournal';
-import { Cog8ToothIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon, BeakerIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from './components/Icons';
+import { Cog8ToothIcon, UserCircleIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon, BeakerIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from './components/Icons';
 import PageHeader from './components/PageHeader';
 import { PAGE_ACCENT, SIDEBAR_BG } from './theme/palette';
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
+const TeacherProfileModal = React.lazy(() => import('./components/TeacherProfileModal'));
 import ExportModal from './components/ExportModal';
 import Modal from './components/Modal';
 import CalendarTaskModal from './components/CalendarTaskModal';
@@ -403,6 +404,7 @@ const App = () => {
         mainRef.current?.scrollTo(0, 0);
     }, [activeView]);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    const [isTeacherProfileModalOpen, setIsTeacherProfileModalOpen] = useState(false);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isFavoritosOpen, setIsFavoritosOpen] = useState(false);
     // Ocultar menú lateral / barra superior, cada uno por separado (pedido
@@ -1031,6 +1033,17 @@ const App = () => {
                                 )}
                             </>
                         )}
+                        <button
+                            onClick={() => setIsTeacherProfileModalOpen(true)}
+                            title={effectiveAcademicConfiguration.teacherName || 'Perfil docente'}
+                            className="w-8 h-8 rounded-full overflow-hidden hover:ring-2 hover:ring-white/40 flex items-center justify-center bg-white/10"
+                        >
+                            {effectiveAcademicConfiguration.teacherHasPhoto ? (
+                                <img src="/api/preferences/photo" alt="" className="w-full h-full object-cover" />
+                            ) : (
+                                <UserCircleIcon className="w-6 h-6 text-white/80" />
+                            )}
+                        </button>
                         <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-white/10">
                             <Cog8ToothIcon className="w-6 h-6 text-white/80" />
                         </button>
@@ -1071,6 +1084,17 @@ const App = () => {
                         importDatabase={importDatabase}
                         exportDatabase={exportDatabase}
                         resetDatabase={resetDatabase}
+                    />
+                </React.Suspense>
+            )}
+
+            {isTeacherProfileModalOpen && (
+                <React.Suspense fallback={<ViewLoadingFallback />}>
+                    <TeacherProfileModal
+                        isOpen={isTeacherProfileModalOpen}
+                        onClose={() => setIsTeacherProfileModalOpen(false)}
+                        academicConfiguration={effectiveAcademicConfiguration}
+                        setAcademicConfiguration={setAcademicConfigurationCallback}
                     />
                 </React.Suspense>
             )}
