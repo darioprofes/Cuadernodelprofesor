@@ -422,24 +422,31 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
 
                         {/* Importar el PDF oficial ANTES de descargar la plantilla: si
                             se hace, las fechas de abajo se prellenan solas y el .xlsx
-                            descargado ya trae no lectivo/vacaciones con su Tipo, en vez
-                            de tecleado todo a mano. Festivos nacionales/autonómicos/
-                            locales no vienen en el PDF (ver calendario_pdf.py) -- esos
-                            se siguen añadiendo a mano, en el Excel o en Ajustes. Solo
-                            web: depende de pdfplumber en el backend Python, sin
-                            equivalente en escritorio (mismo criterio que la
-                            importación de horario). */}
+                            descargado ya trae festivo/no lectivo/vacaciones con su Tipo,
+                            en vez de tecleado todo a mano. Festivos locales (cada
+                            municipio el suyo) no vienen en el PDF (ver
+                            calendario_pdf.py) -- esos se siguen añadiendo a mano, en el
+                            Excel o en Ajustes. Requiere la versión APAISADA
+                            (horizontal) del calendario -- la vertical tiene otra
+                            maquetación y no se reconoce bien (probado contra el PDF
+                            vertical real de Educastur: 0 fechas de no lectivo/
+                            vacaciones/inicio-fin de clases, aunque los festivos por
+                            color sí suelen salir). Solo web: depende de pdfplumber en
+                            el backend Python, sin equivalente en escritorio (mismo
+                            criterio que la importación de horario). */}
                         {!parsed && (
                             <div className="p-3 border rounded-lg bg-slate-50 space-y-2">
                                 <input type="file" ref={calendarioFileInputRef} onChange={handleImportarCalendarioPdf} accept=".pdf" className="hidden" />
                                 <button
                                     onClick={() => calendarioFileInputRef.current?.click()}
                                     disabled={importandoCalendario}
+                                    title="Usa la versión APAISADA (horizontal) del calendario oficial de Educastur -- la vertical no se reconoce bien"
                                     className="w-full flex items-center justify-center gap-2 bg-white border border-slate-300 text-slate-700 py-2 rounded-lg hover:bg-slate-100 font-medium shadow-sm text-sm disabled:opacity-50"
                                 >
                                     <ArrowUpTrayIcon className="w-4 h-4" />
                                     {importandoCalendario ? 'Leyendo el PDF…' : 'Importar calendario oficial (PDF)'}
                                 </button>
+                                <p className="text-[11px] text-slate-400 text-center">Usa la versión apaisada (horizontal) del calendario oficial, no la vertical.</p>
 
                                 {calendarioImportado && (
                                     <div className="space-y-2 text-xs">

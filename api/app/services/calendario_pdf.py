@@ -255,6 +255,10 @@ def _cabeceras_de_mes(palabras):
 
     for i, p in enumerate(palabras):
 
+        # El mes se busca suelto (por diccionario, no como cadena fija tipo
+        # "SEPTIEMBRE 2026") -- el año que le sigue tampoco se limita a
+        # "20xx", cualquier número de 4 cifras vale, para no depender de
+        # qué siglo/año concreto traiga el PDF de turno.
         mes = _MESES_CABECERA.get(p["text"].upper())
 
         if mes is None:
@@ -263,7 +267,7 @@ def _cabeceras_de_mes(palabras):
         anio = None
 
         for p2 in palabras[i:i + 2]:
-            m = re.match(r"^(20\d\d)$", p2["text"])
+            m = re.match(r"^(\d{4})$", p2["text"])
             if m:
                 anio = int(m.group(1))
                 break
@@ -377,6 +381,15 @@ def extraer_calendario_pdf(contenido_bytes):
     }
 
     if not resultado["inicioClases"] and not resultado["finClases"]:
-        errores.append("No se han reconocido fechas de inicio/fin de clases en el PDF -- revísalas a mano.")
+        # La causa más probable, comprobada contra el PDF vertical real de
+        # Educastur: las columnas de la leyenda están calibradas para el
+        # ancho de la página apaisada (horizontal) -- en la versión
+        # vertical caen en otro sitio y no se reconoce nada de esta parte
+        # (aunque los festivos por color sí suelen seguir saliendo bien).
+        errores.append(
+            "No se han reconocido fechas de inicio/fin de clases en el PDF. "
+            "Asegúrate de usar la versión APAISADA (horizontal) del calendario oficial, no la vertical -- "
+            "si ya lo es, revisa estas fechas a mano."
+        )
 
     return resultado, errores

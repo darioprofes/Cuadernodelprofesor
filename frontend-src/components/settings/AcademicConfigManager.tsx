@@ -336,36 +336,65 @@ const AcademicConfigManager: React.FC<{
                         <h4 className="font-semibold text-slate-700">🎉 Vacaciones y Festivos</h4>
                     </div>
 
-                    <div className="space-y-1.5">
-                        {academicConfiguration.holidays.map((holiday, index) => (
-                            <div key={holiday.id} className="px-2 py-1.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
-                                <div className="flex gap-2 items-center">
-                                    <Input type="text" value={holiday.name} onChange={e => handleListItemChange('holidays', index, 'name', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs !text-amber-700 font-semibold" placeholder="Nombre festivo" title={holiday.name}/>
-                                    <button onClick={() => handleRemoveListItem('holidays', holiday.id)} className="p-1 text-red-500 hover:bg-red-50 rounded flex-shrink-0"><TrashIcon className="w-3 h-3"/></button>
-                                </div>
-                                <div className="flex gap-2 items-center">
-                                    <Input type="date" value={holiday.startDate} onChange={e => handleListItemChange('holidays', index, 'startDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
-                                    <Input type="date" value={holiday.endDate} onChange={e => handleListItemChange('holidays', index, 'endDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
-                                </div>
-                                <Select value={holiday.type ?? 'festivo'} onChange={e => handleListItemChange('holidays', index, 'type', e.target.value)} className="!w-auto !py-1 text-xs">
-                                    {(Object.keys(TIPO_FESTIVO_LABEL) as (keyof typeof TIPO_FESTIVO_LABEL)[]).map(tipo => (
-                                        <option key={tipo} value={tipo}>{TIPO_FESTIVO_LABEL[tipo]}</option>
-                                    ))}
-                                </Select>
-                            </div>
-                        ))}
+                    <div className="space-y-2">
+                        {/* Agrupado por tipo (festivo/no_lectivo/vacaciones), no en
+                            una única lista larga -- pedido explícito, sobre todo
+                            porque "Importar del PDF" puede meter de golpe una
+                            docena de festivos. Cada grupo se abre solo si tiene
+                            pocas entradas (<=4); con muchas arranca plegado. El
+                            índice que necesitan handleListItemChange/
+                            handleRemoveListItem es el de `holidays` completo, no
+                            el de dentro del grupo -- se guarda junto al festivo
+                            al agrupar. */}
+                        {(Object.keys(TIPO_FESTIVO_LABEL) as (keyof typeof TIPO_FESTIVO_LABEL)[]).map(tipo => {
+                            const items = academicConfiguration.holidays
+                                .map((holiday, index) => ({ holiday, index }))
+                                .filter(({ holiday }) => (holiday.type ?? 'festivo') === tipo);
+
+                            if (items.length === 0) return null;
+
+                            return (
+                                <details key={tipo} open={items.length <= 4} className="group">
+                                    <summary className="text-xs font-semibold text-slate-600 cursor-pointer select-none list-none flex items-center gap-1 py-0.5">
+                                        <ChevronDownIcon className="w-3 h-3 flex-shrink-0 transition-transform group-open:rotate-0 -rotate-90" />
+                                        {TIPO_FESTIVO_LABEL[tipo]} ({items.length})
+                                    </summary>
+                                    <div className="space-y-1.5 mt-1">
+                                        {items.map(({ holiday, index }) => (
+                                            <div key={holiday.id} className="px-2 py-1.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                                                <div className="flex gap-2 items-center">
+                                                    <Input type="text" value={holiday.name} onChange={e => handleListItemChange('holidays', index, 'name', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs !text-amber-700 font-semibold" placeholder="Nombre festivo" title={holiday.name}/>
+                                                    <button onClick={() => handleRemoveListItem('holidays', holiday.id)} className="p-1 text-red-500 hover:bg-red-50 rounded flex-shrink-0"><TrashIcon className="w-3 h-3"/></button>
+                                                </div>
+                                                <div className="flex gap-2 items-center">
+                                                    <Input type="date" value={holiday.startDate} onChange={e => handleListItemChange('holidays', index, 'startDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
+                                                    <Input type="date" value={holiday.endDate} onChange={e => handleListItemChange('holidays', index, 'endDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
+                                                </div>
+                                                <Select value={holiday.type ?? 'festivo'} onChange={e => handleListItemChange('holidays', index, 'type', e.target.value)} className="!w-auto !py-1 text-xs">
+                                                    {(Object.keys(TIPO_FESTIVO_LABEL) as (keyof typeof TIPO_FESTIVO_LABEL)[]).map(t => (
+                                                        <option key={t} value={t}>{TIPO_FESTIVO_LABEL[t]}</option>
+                                                    ))}
+                                                </Select>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </details>
+                            );
+                        })}
                         <div className="flex items-center gap-3 flex-wrap">
                             <button onClick={() => handleAddListItem('holidays')} className={`text-xs ${linkClassName}`}>+ Añadir Festivo</button>
                             <input type="file" ref={calendarioFileInputRef} onChange={handleImportarFestivosPdf} accept=".pdf" className="hidden" />
                             <button
                                 onClick={() => calendarioFileInputRef.current?.click()}
                                 disabled={importandoCalendario}
+                                title="Usa la versión APAISADA (horizontal) del calendario oficial de Educastur -- la vertical no se reconoce bien"
                                 className={`text-xs ${linkClassName} inline-flex items-center gap-1 disabled:opacity-50`}
                             >
                                 <ArrowUpTrayIcon className="w-3 h-3" />
                                 {importandoCalendario ? 'Leyendo el PDF…' : 'Importar del PDF'}
                             </button>
                         </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Usa la versión apaisada (horizontal) del calendario oficial, no la vertical.</p>
                         {avisoImportacion && (
                             <p className="text-xs text-slate-500 mt-1">{avisoImportacion}</p>
                         )}

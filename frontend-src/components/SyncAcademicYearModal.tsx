@@ -450,7 +450,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
                         </p>
 
                         <div className="flex flex-wrap items-center gap-2">
-                            <Button type="button" variant="secondary" onClick={() => calendarioFileInputRef.current?.click()} disabled={importandoCalendario}>
+                            <Button type="button" variant="secondary" onClick={() => calendarioFileInputRef.current?.click()} disabled={importandoCalendario} title="Usa la versión APAISADA (horizontal) del calendario oficial de Educastur -- la vertical no se reconoce bien">
                                 {importandoCalendario ? 'Leyendo el PDF…' : '📅 Importar calendario oficial (PDF)'}
                             </Button>
                             <input ref={calendarioFileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleImportarCalendarioPdf} />
@@ -462,6 +462,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
                             </Button>
                             <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleFileChange} />
                         </div>
+                        <p className="text-[11px] text-slate-400 -mt-1">Para "Importar calendario oficial": usa la versión apaisada (horizontal), no la vertical.</p>
 
                         {calendarioImportado && (
                             <div className="p-2 bg-slate-50 border rounded-lg text-xs text-slate-600 space-y-1">
