@@ -340,12 +340,13 @@ const AcademicConfigManager: React.FC<{
                         {/* Agrupado por tipo (festivo/no_lectivo/vacaciones), no en
                             una única lista larga -- pedido explícito, sobre todo
                             porque "Importar del PDF" puede meter de golpe una
-                            docena de festivos. Cada grupo se abre solo si tiene
-                            pocas entradas (<=4); con muchas arranca plegado. El
-                            índice que necesitan handleListItemChange/
-                            handleRemoveListItem es el de `holidays` completo, no
-                            el de dentro del grupo -- se guarda junto al festivo
-                            al agrupar. */}
+                            docena de festivos. "No lectivo" arranca desplegado
+                            (el que se revisa más a menudo), festivo/vacaciones
+                            plegados siempre -- pedido explícito, ya no depende del
+                            número de entradas. El índice que necesitan
+                            handleListItemChange/handleRemoveListItem es el de
+                            `holidays` completo, no el de dentro del grupo -- se
+                            guarda junto al festivo al agrupar. */}
                         {(Object.keys(TIPO_FESTIVO_LABEL) as (keyof typeof TIPO_FESTIVO_LABEL)[]).map(tipo => {
                             const items = academicConfiguration.holidays
                                 .map((holiday, index) => ({ holiday, index }))
@@ -354,7 +355,7 @@ const AcademicConfigManager: React.FC<{
                             if (items.length === 0) return null;
 
                             return (
-                                <details key={tipo} open={items.length <= 4} className="group">
+                                <details key={tipo} open={tipo === 'no_lectivo'} className="group">
                                     <summary className="text-xs font-semibold text-slate-600 cursor-pointer select-none list-none flex items-center gap-1 py-0.5">
                                         <ChevronDownIcon className="w-3 h-3 flex-shrink-0 transition-transform group-open:rotate-0 -rotate-90" />
                                         {TIPO_FESTIVO_LABEL[tipo]} ({items.length})
