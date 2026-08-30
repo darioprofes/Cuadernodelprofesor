@@ -89,6 +89,7 @@ export const joinStudentEnrollment = (student: ApiStudent, enrollment: ApiEnroll
     neae: enrollment.neae,
     neaeDetalle: enrollment.neaeDetalle,
     medidasEducativas: enrollment.medidasEducativas,
+    indicacionesPti: enrollment.indicacionesPti,
     autorizacionImagen: student.autorizacionImagen,
     autorizacionSalidas: student.autorizacionSalidas,
     observacionesTutor: enrollment.observacionesTutor,
@@ -164,6 +165,7 @@ export const splitStudentPatch = (data: Partial<Student>): { studentPatch: ApiSt
     if ('neae' in data) enrollmentPatch.neae = data.neae;
     if ('neaeDetalle' in data) enrollmentPatch.neaeDetalle = data.neaeDetalle;
     if ('medidasEducativas' in data) enrollmentPatch.medidasEducativas = data.medidasEducativas;
+    if ('indicacionesPti' in data) enrollmentPatch.indicacionesPti = data.indicacionesPti;
     if ('observacionesTutor' in data) enrollmentPatch.observacionesTutor = data.observacionesTutor;
     if ('planoX' in data) enrollmentPatch.planoX = data.planoX;
     if ('planoY' in data) enrollmentPatch.planoY = data.planoY;

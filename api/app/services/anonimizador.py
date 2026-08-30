@@ -30,6 +30,17 @@ _MATERIAS_CONOCIDAS = {
     m.lower() for m in json.loads((_BASE / "materias_oficiales.json").read_text(encoding="utf-8"))
 }
 
+# Términos NEAE/diagnósticos habituales (dislexia, TDAH...): el NER los
+# confunde a veces con nombres propios por ir capitalizados y a menudo
+# pegados a paréntesis/dos puntos en textos de atención educativa (visto en
+# real: "Necesidades NEAE: Dislexia" se comía "Dislexia" como si fuera un
+# nombre). Mismo mecanismo que _MATERIAS_CONOCIDAS -- lista curada a mano,
+# no exhaustiva; cualquier término que falte aquí sigue cubierto por la
+# revisión manual del profesor antes de mandar nada fuera.
+_TERMINOS_NEAE_CONOCIDOS = {
+    t.lower() for t in json.loads((_BASE / "neae_terminos.json").read_text(encoding="utf-8"))
+}
+
 _PATRON_DNI = re.compile(r"\b\d{8}[A-Za-z]\b")
 _PATRON_DIRECCION = re.compile(
     r"\b(?:[Cc]alle|[Aa]venida|[Aa]vda\.?|[Pp]laza|[Pp]aseo|[Cc]/)\s+[^\n,]+?\s+\d+"
@@ -158,6 +169,7 @@ def _generar_codigos(texto):
     candidatos = [
         (i, f, t) for i, f, t in candidatos
         if t.strip().lower() not in _MATERIAS_CONOCIDAS
+        and t.strip().lower() not in _TERMINOS_NEAE_CONOCIDOS
     ]
 
     candidatos = _resolver_solapamientos(candidatos)

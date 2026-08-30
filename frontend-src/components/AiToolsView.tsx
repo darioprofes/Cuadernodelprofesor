@@ -1,28 +1,13 @@
 import React, { useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import PageHeader from './PageHeader';
 import Button from './Button';
 import Textarea from './Textarea';
+import MarkdownResult from './MarkdownResult';
+import DownloadDocxButton from './DownloadDocxButton';
+import TextoResaltado, { PATRON_CODIGO } from './TextoResaltado';
 import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './Icons';
 import { useAnonimizar } from '../hooks/useAnonimizar';
 import { PAGE_ACCENT } from '../theme/palette';
-
-// La respuesta de la IA online suele venir en Markdown (negrita, títulos,
-// listas, tablas si el documento original tenía alguna). El botón "Copiar"
-// sigue copiando el texto fuente tal cual (por si se pega en un sitio que
-// también entiende Markdown); esto es solo para que no se vean asteriscos,
-// almohadillas y barras verticales sueltos en la vista previa.
-const markdownClassName =
-    '[&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1 ' +
-    '[&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-1 ' +
-    '[&_h3]:text-sm [&_h3]:font-bold [&_h3]:mt-2 [&_h3]:mb-1 ' +
-    '[&_p]:mb-2 [&_strong]:font-semibold [&_em]:italic ' +
-    '[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2 ' +
-    '[&_li]:mb-0.5 [&_hr]:my-3 [&_hr]:border-slate-200 ' +
-    '[&_table]:border-collapse [&_table]:mb-2 ' +
-    '[&_th]:border [&_th]:border-slate-300 [&_th]:bg-slate-100 [&_th]:p-1.5 [&_th]:text-left ' +
-    '[&_td]:border [&_td]:border-slate-300 [&_td]:p-1.5';
 
 type Paso = 1 | 2 | 3 | 4;
 
@@ -32,8 +17,6 @@ const PASOS: { paso: Paso; label: string }[] = [
     { paso: 3, label: 'Respuesta de la IA' },
     { paso: 4, label: 'Documento final' },
 ];
-
-const PATRON_CODIGO = /\b(?:PERS|GRUPO)_[0-9A-F]{6}\b/g;
 
 const StepBar: React.FC<{ pasoActual: Paso }> = ({ pasoActual }) => (
     <div className="flex items-center gap-2 flex-wrap">
@@ -71,24 +54,6 @@ const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
         <Button type="button" variant="secondary" onClick={copiar}>
             <ClipboardDocumentIcon className="w-4 h-4" />
             {copiado ? 'Copiado' : 'Copiar'}
-        </Button>
-    );
-};
-
-const DownloadDocxButton: React.FC<{ blob: Blob; filename?: string }> = ({ blob, filename = 'documento-final.docx' }) => {
-    const descargar = () => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-
-    return (
-        <Button type="button" onClick={descargar}>
-            <ArrowDownTrayIcon className="w-4 h-4" />
-            Descargar .docx
         </Button>
     );
 };
@@ -314,15 +279,15 @@ const AiToolsView: React.FC = () => {
                 {paso === 2 && (resultado || resultadoDocxOriginal) && (
                     <div className="flex flex-col gap-3 flex-1">
                         <p className="text-sm text-slate-600">
-                            Se han detectado y sustituido <strong>{Object.keys(mapaActivo ?? {}).length}</strong> dato(s).
-                            Revisa el documento antes de enviarlo: una combinación de datos (p.ej. curso + fecha + número
-                            de incidencias) puede seguir identificando a alguien aunque no aparezca ningún nombre.
+                            Se han detectado y sustituido <strong>{Object.keys(mapaActivo ?? {}).length}</strong> dato(s)
+                            (pasa el ratón por encima de un código para ver el dato real). Revisa el documento antes de
+                            enviarlo: una combinación de datos (p.ej. curso + fecha + número de incidencias) puede seguir
+                            identificando a alguien aunque no aparezca ningún nombre.
                         </p>
-                        <Textarea
-                            value={resultadoDocxOriginal ? resultadoDocxOriginal.texto : resultado!.anonimizado}
-                            readOnly
-                            rows={16}
-                            className="font-mono text-sm flex-1 bg-slate-50"
+                        <TextoResaltado
+                            texto={resultadoDocxOriginal ? resultadoDocxOriginal.texto : resultado!.anonimizado}
+                            mapa={mapaActivo ?? {}}
+                            className="flex-1 bg-slate-50 border rounded-lg p-3 overflow-auto"
                         />
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
@@ -411,9 +376,7 @@ const AiToolsView: React.FC = () => {
                                     Documento .docx listo, con el formato de la IA conservado.
                                 </div>
                             ) : (
-                                <div className={`flex-1 overflow-auto text-sm border rounded-lg p-4 bg-slate-50 ${markdownClassName}`}>
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentoFinal}</ReactMarkdown>
-                                </div>
+                                <MarkdownResult texto={documentoFinal} className="flex-1 overflow-auto text-sm border rounded-lg p-4 bg-slate-50" />
                             )}
                             <div className="flex justify-between">
                                 <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>

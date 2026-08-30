@@ -23,6 +23,8 @@ from services.extraccion_pdf import extraer_texto_pdf
 from services.extraccion_pptx import extraer_texto_pptx
 from services.llm_client import esta_disponible as ia_local_esta_disponible
 from services.llm_client import groq_disponible
+from services.prompts import adaptacion_material as prompt_adaptacion
+from services.prompts import deteccion_curricular as prompt_deteccion
 from services.prompts import instrumento_evaluacion as prompt_instrumento
 from services.prompts.situacion_aprendizaje import (
     SADemasiadoGrandeError,
@@ -540,6 +542,203 @@ async def validar_respuesta_instrumento(datos: ValidarInstrumentoRequest):
 
 
 # ==========================================================
+# Adaptación de material (NEAE / repetidores / programas específicos)
+# ==========================================================
+#
+# El frontend ya ha anonimizado material + notas del alumno (vía
+# /ai-tools/anonimizar) y el profesor ya lo ha revisado ANTES de llamar a
+# cualquiera de estos tres endpoints -- este router nunca ve el mapa de
+# anonimización ni datos personales en crudo, solo el texto ya limpio.
+# Mismas tres vías que el instrumento de evaluación (local con job+polling,
+# Groq síncrono, prompt para copiar/pegar online).
+
+class GenerarAdaptacionRequest(BaseModel):
+    material: str
+    notas_alumno: str
+
+
+_trabajos_adaptacion: dict[str, dict] = {}
+
+
+def _ejecutar_generacion_adaptacion(job_id: str, datos: GenerarAdaptacionRequest):
+    try:
+        resultado_texto = prompt_adaptacion.generar_adaptacion(datos.material, datos.notas_alumno)
+        resultado = {"estado": "listo", "resultado": resultado_texto}
+    except ValueError as exc:
+        resultado = {"estado": "error", "detail": str(exc)}
+    except Exception as exc:
+        resultado = {"estado": "error", "detail": f"Error inesperado adaptando el material: {exc}"}
+
+    with _trabajos_lock:
+        actual = _trabajos_adaptacion.get(job_id)
+        # Misma llamada única bloqueante que el instrumento por IA local --
+        # ver el comentario equivalente en _ejecutar_generacion_instrumento.
+        if actual is not None and actual.get("estado") != "cancelado":
+            actual.update(resultado)
+        _eventos_cancelacion.pop(job_id, None)
+
+
+@router.post("/adaptacion-material/generar", status_code=202)
+async def generar_adaptacion_material(datos: GenerarAdaptacionRequest):
+    job_id = str(uuid.uuid4())
+    with _trabajos_lock:
+        _limpiar_trabajos_viejos(_trabajos_adaptacion)
+        _trabajos_adaptacion[job_id] = {
+            "estado": "en_progreso",
+            "creado": time.monotonic(),
+            "tipo": "adaptacion",
+            "titulo": "Adaptación de material",
+            "iniciado": time.time(),
+        }
+        _eventos_cancelacion[job_id] = threading.Event()
+
+    threading.Thread(target=_ejecutar_generacion_adaptacion, args=(job_id, datos), daemon=True).start()
+    return {"jobId": job_id}
+
+
+@router.get("/adaptacion-material/generar/{job_id}")
+async def estado_adaptacion_material(job_id: str):
+    with _trabajos_lock:
+        trabajo = _trabajos_adaptacion.get(job_id)
+    if trabajo is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No se encuentra este trabajo -- puede que haya expirado (más de una hora) o que el "
+            "servidor se haya reiniciado a mitad de la generación. Inténtalo de nuevo.",
+        )
+    return trabajo
+
+
+@router.post("/adaptacion-material/generar-groq")
+async def generar_adaptacion_material_groq(datos: GenerarAdaptacionRequest):
+    try:
+        resultado_texto = prompt_adaptacion.generar_adaptacion_groq(datos.material, datos.notas_alumno)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"resultado": resultado_texto}
+
+
+@router.post("/adaptacion-material/prompt")
+async def generar_adaptacion_material_texto(datos: GenerarAdaptacionRequest):
+    prompt = prompt_adaptacion.construir_prompt(datos.material, datos.notas_alumno)
+    return {"prompt": prompt}
+
+
+# ==========================================================
+# Detección de elementos curriculares movilizados por un documento
+# ==========================================================
+#
+# Sin datos personales de por medio -- no pasa por el Anonimizador en
+# ningún punto (a diferencia de adaptacion-material). Mismas tres vías que
+# el resto de generadores nuevos de esta sesión.
+
+class DetectarElementosRequest(BaseModel):
+    course_id: str
+    documento: str
+    tipos: list[str]
+
+
+def _resultado_deteccion(documento_anotado, elementos, codigos_descartados):
+    return {
+        "documentoAnotado": documento_anotado,
+        "elementos": elementos,
+        "codigosDescartados": codigos_descartados,
+    }
+
+
+_trabajos_deteccion: dict[str, dict] = {}
+
+
+def _ejecutar_deteccion_curricular(job_id: str, datos: DetectarElementosRequest):
+    try:
+        documento_anotado, elementos, codigos_descartados = prompt_deteccion.detectar_elementos(
+            datos.course_id, datos.documento, datos.tipos,
+        )
+        resultado = {"estado": "listo", **_resultado_deteccion(documento_anotado, elementos, codigos_descartados)}
+    except ValueError as exc:
+        resultado = {"estado": "error", "detail": str(exc)}
+    except Exception as exc:
+        resultado = {"estado": "error", "detail": f"Error inesperado detectando elementos curriculares: {exc}"}
+
+    with _trabajos_lock:
+        actual = _trabajos_deteccion.get(job_id)
+        # Misma llamada única bloqueante que instrumento/adaptación -- ver
+        # el comentario equivalente en _ejecutar_generacion_instrumento.
+        if actual is not None and actual.get("estado") != "cancelado":
+            actual.update(resultado)
+        _eventos_cancelacion.pop(job_id, None)
+
+
+@router.post("/deteccion-curricular/generar", status_code=202)
+async def generar_deteccion_curricular(datos: DetectarElementosRequest):
+    job_id = str(uuid.uuid4())
+    with _trabajos_lock:
+        _limpiar_trabajos_viejos(_trabajos_deteccion)
+        _trabajos_deteccion[job_id] = {
+            "estado": "en_progreso",
+            "creado": time.monotonic(),
+            "tipo": "deteccion",
+            "titulo": f"Detección curricular · {_titulo_curso(datos.course_id)}",
+            "iniciado": time.time(),
+            "courseId": datos.course_id,
+        }
+        _eventos_cancelacion[job_id] = threading.Event()
+
+    threading.Thread(target=_ejecutar_deteccion_curricular, args=(job_id, datos), daemon=True).start()
+    return {"jobId": job_id}
+
+
+@router.get("/deteccion-curricular/generar/{job_id}")
+async def estado_deteccion_curricular(job_id: str):
+    with _trabajos_lock:
+        trabajo = _trabajos_deteccion.get(job_id)
+    if trabajo is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No se encuentra este trabajo -- puede que haya expirado (más de una hora) o que el "
+            "servidor se haya reiniciado a mitad de la generación. Inténtalo de nuevo.",
+        )
+    return trabajo
+
+
+@router.post("/deteccion-curricular/generar-groq")
+async def generar_deteccion_curricular_groq(datos: DetectarElementosRequest):
+    try:
+        documento_anotado, elementos, codigos_descartados = prompt_deteccion.detectar_elementos_groq(
+            datos.course_id, datos.documento, datos.tipos,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _resultado_deteccion(documento_anotado, elementos, codigos_descartados)
+
+
+@router.post("/deteccion-curricular/prompt")
+async def generar_deteccion_curricular_texto(datos: DetectarElementosRequest):
+    try:
+        prompt = prompt_deteccion.construir_prompt(datos.course_id, datos.documento, datos.tipos)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"prompt": prompt}
+
+
+class ValidarDeteccionRequest(BaseModel):
+    course_id: str
+    tipos: list[str]
+    respuesta: str
+
+
+@router.post("/deteccion-curricular/validar")
+async def validar_deteccion_curricular(datos: ValidarDeteccionRequest):
+    try:
+        documento_anotado, elementos, codigos_descartados = prompt_deteccion.procesar_respuesta(
+            datos.course_id, datos.tipos, datos.respuesta,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _resultado_deteccion(documento_anotado, elementos, codigos_descartados)
+
+
+# ==========================================================
 # Cola de trabajos en segundo plano (SA por partes + instrumento por IA
 # local) -- vista unificada para el chip de avisos del frontend. Solo
 # expone los campos ligeros (nunca "unidad"/"instrumento", el contenido
@@ -553,7 +752,10 @@ _CAMPOS_LISTADO_TRABAJO = ("estado", "titulo", "tipo", "iniciado", "mensaje", "d
 @router.get("/trabajos")
 async def listar_trabajos():
     with _trabajos_lock:
-        todos = list(_trabajos_sa.items()) + list(_trabajos_instrumento.items())
+        todos = (
+            list(_trabajos_sa.items()) + list(_trabajos_instrumento.items())
+            + list(_trabajos_adaptacion.items()) + list(_trabajos_deteccion.items())
+        )
         trabajos = [
             {"jobId": job_id, **{campo: t[campo] for campo in _CAMPOS_LISTADO_TRABAJO if campo in t}}
             for job_id, t in todos
@@ -565,7 +767,10 @@ async def listar_trabajos():
 @router.post("/trabajos/{job_id}/cancelar")
 async def cancelar_trabajo(job_id: str):
     with _trabajos_lock:
-        trabajo = _trabajos_sa.get(job_id) or _trabajos_instrumento.get(job_id)
+        trabajo = (
+            _trabajos_sa.get(job_id) or _trabajos_instrumento.get(job_id)
+            or _trabajos_adaptacion.get(job_id) or _trabajos_deteccion.get(job_id)
+        )
         if trabajo is None:
             raise HTTPException(status_code=404, detail="No se encuentra este trabajo.")
         if trabajo["estado"] != "en_progreso":
@@ -575,13 +780,13 @@ async def cancelar_trabajo(job_id: str):
         if evento is not None:
             evento.set()
 
-        if trabajo.get("tipo") == "instrumento":
+        if trabajo.get("tipo") in ("instrumento", "adaptacion", "deteccion"):
             # La generación con IA local es una única llamada bloqueante,
             # sin ningún paso intermedio donde comprobar el Event -- se
             # marca cancelado ya mismo en vez de esperar a que el ia-server
             # responda por su cuenta (puede tardar cerca de un minuto). El
             # hilo de fondo, al terminar, ve el estado ya en "cancelado" y
-            # no lo pisa (ver _ejecutar_generacion_instrumento).
+            # no lo pisa (ver _ejecutar_generacion_instrumento/_ejecutar_generacion_adaptacion).
             trabajo["estado"] = "cancelado"
             trabajo["detail"] = "Cancelado por el usuario."
 

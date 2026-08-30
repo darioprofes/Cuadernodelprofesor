@@ -173,7 +173,7 @@ const tieneMasDatos = (student: Student): boolean => {
     const hayDomicilio = !!(student.domicilioDireccion || student.domicilioLocalidad || student.domicilioCodigoPostal || student.domicilioTelefono);
     const hayAcademica = !!(student.centroProcedencia || student.haRepetidoCurso != null || student.materiasPendientes || student.programaEspecifico);
     const haySanitaria = !!(student.alergias || student.enfermedadesRelevantes || student.medicacionHabitual || student.intoleranciasAlimentarias || student.observacionesSanitarias);
-    const hayAtencion = !!(student.neae != null || student.neaeDetalle || student.medidasEducativas);
+    const hayAtencion = !!(student.neae != null || student.neaeDetalle || student.medidasEducativas || student.indicacionesPti);
     const hayAutorizaciones = student.autorizacionImagen != null || student.autorizacionSalidas != null;
     const hayObservaciones = !!student.observacionesTutor;
     return hayFamilia || hayDomicilio || hayAcademica || haySanitaria || hayAtencion || hayAutorizaciones || hayObservaciones;
@@ -244,7 +244,7 @@ const FullFichaScreen: React.FC<{ student: Student; classData: ClassData; course
     const hayDomicilio = student.domicilioDireccion || student.domicilioLocalidad || student.domicilioCodigoPostal || student.domicilioTelefono;
     const hayAcademica = student.centroProcedencia || student.haRepetidoCurso != null || student.materiasPendientes || student.programaEspecifico;
     const haySanitaria = student.alergias || student.enfermedadesRelevantes || student.medicacionHabitual || student.intoleranciasAlimentarias || student.observacionesSanitarias;
-    const hayAtencion = student.neae != null || student.neaeDetalle || student.medidasEducativas;
+    const hayAtencion = student.neae != null || student.neaeDetalle || student.medidasEducativas || student.indicacionesPti;
     const hayAutorizaciones = student.autorizacionImagen != null || student.autorizacionSalidas != null;
     const hayObservaciones = student.observacionesTutor;
 
@@ -327,6 +327,12 @@ const FullFichaScreen: React.FC<{ student: Student; classData: ClassData; course
                     </div>
                     {student.medidasEducativas && (
                         <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg p-3 border border-slate-100 mt-2">{student.medidasEducativas}</p>
+                    )}
+                    {student.indicacionesPti && (
+                        <div className="mt-2">
+                            <p className="text-xs font-medium text-slate-500 mb-1">Indicaciones PTI</p>
+                            <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg p-3 border border-slate-100">{student.indicacionesPti}</p>
+                        </div>
                     )}
                 </DataSection>
             )}

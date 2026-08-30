@@ -9,8 +9,8 @@ from services.students import StudentInput, create_student
 _COLUMNS = """
     id, student_id, class_id, acneae, centro_procedencia, ha_repetido_curso,
     materias_pendientes, programa_especifico, neae, neae_detalle,
-    medidas_educativas, observaciones_tutor, plano_x, plano_y, plano_color,
-    created_at, updated_at
+    medidas_educativas, indicaciones_pti, observaciones_tutor, plano_x,
+    plano_y, plano_color, created_at, updated_at
 """
 
 
@@ -25,6 +25,7 @@ class EnrollmentInput(ApiModel):
     neae: Optional[bool] = None
     neae_detalle: Optional[str] = None
     medidas_educativas: Optional[str] = None
+    indicaciones_pti: Optional[str] = None
     observaciones_tutor: Optional[str] = None
     plano_x: Optional[float] = None
     plano_y: Optional[float] = None
@@ -40,6 +41,7 @@ class EnrollmentPatch(ApiModel):
     neae: Optional[bool] = None
     neae_detalle: Optional[str] = None
     medidas_educativas: Optional[str] = None
+    indicaciones_pti: Optional[str] = None
     observaciones_tutor: Optional[str] = None
     plano_x: Optional[float] = None
     plano_y: Optional[float] = None
@@ -59,6 +61,7 @@ class Enrollment(ApiModel):
     neae: Optional[bool] = None
     neae_detalle: Optional[str] = None
     medidas_educativas: Optional[str] = None
+    indicaciones_pti: Optional[str] = None
     observaciones_tutor: Optional[str] = None
     plano_x: Optional[float] = None
     plano_y: Optional[float] = None

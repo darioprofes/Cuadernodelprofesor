@@ -65,6 +65,7 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                 neae: student.neae,
                 neaeDetalle: student.neaeDetalle || '',
                 medidasEducativas: student.medidasEducativas || '',
+                indicacionesPti: student.indicacionesPti || '',
                 autorizacionImagen: student.autorizacionImagen,
                 autorizacionSalidas: student.autorizacionSalidas,
                 observacionesTutor: student.observacionesTutor || '',
@@ -122,6 +123,7 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
             neae: form.neae,
             neaeDetalle: trimOrUndef(form.neaeDetalle),
             medidasEducativas: trimOrUndef(form.medidasEducativas),
+            indicacionesPti: trimOrUndef(form.indicacionesPti),
             autorizacionImagen: form.autorizacionImagen,
             autorizacionSalidas: form.autorizacionSalidas,
             observacionesTutor: trimOrUndef(form.observacionesTutor),
@@ -268,6 +270,9 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                         </Field>
                         <Field label="Medidas educativas aplicadas">
                             <Textarea value={form.medidasEducativas || ''} onChange={e => set({ medidasEducativas: e.target.value })} className={`${inputClass} h-16`} />
+                        </Field>
+                        <Field label="Indicaciones del PTI (Plan de Trabajo Individualizado)">
+                            <Textarea value={form.indicacionesPti || ''} onChange={e => set({ indicacionesPti: e.target.value })} className={`${inputClass} h-16`} />
                         </Field>
                     </div>
                 </FichaSection>

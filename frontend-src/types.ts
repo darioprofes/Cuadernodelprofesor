@@ -96,6 +96,7 @@ export interface Student {
   neae?: boolean; // Necesidades Específicas de Apoyo Educativo
   neaeDetalle?: string;
   medidasEducativas?: string;
+  indicacionesPti?: string; // Indicaciones del PTI (Plan de Trabajo Individualizado)
 
   autorizacionImagen?: boolean;
   autorizacionSalidas?: boolean;
@@ -477,5 +478,7 @@ export type View =
   | 'curriculum'
   | 'planner'
   | 'evaluation-tools'
-  | 'ai-tools';
+  | 'ai-tools'
+  | 'adaptar-material'
+  | 'deteccion-curricular';
 

@@ -302,6 +302,7 @@ export interface Enrollment {
     neae?: boolean;
     neaeDetalle?: string;
     medidasEducativas?: string;
+    indicacionesPti?: string;
     observacionesTutor?: string;
     planoX?: number;
     planoY?: number;
@@ -326,6 +327,7 @@ interface EnrollmentFields {
     neae?: boolean;
     neaeDetalle?: string;
     medidasEducativas?: string;
+    indicacionesPti?: string;
     observacionesTutor?: string;
     planoX?: number;
     planoY?: number;

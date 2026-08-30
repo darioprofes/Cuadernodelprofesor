@@ -55,6 +55,8 @@ const EvaluationToolManager = React.lazy(() => import('./components/EvaluationTo
 // el Sidebar en web (ver Sidebar.tsx), pero se carga bajo demanda igual que
 // el resto de vistas poco visitadas.
 const AiToolsView = React.lazy(() => import('./components/AiToolsView'));
+const AdaptarMaterialView = React.lazy(() => import('./components/AdaptarMaterialView'));
+const DeteccionCurricularView = React.lazy(() => import('./components/DeteccionCurricularView'));
 import ClassJournal from './components/ClassJournal';
 import { Cog8ToothIcon, UserCircleIcon, BookOpenIcon, UsersIcon, ClipboardDocumentIcon, ClipboardDocumentCheckIcon, ChartBarIcon, CalendarDaysIcon, BeakerIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from './components/Icons';
 import PageHeader from './components/PageHeader';
@@ -794,6 +796,33 @@ const App = () => {
             );
         }
 
+        if (activeView === 'adaptar-material') {
+            // Igual que evaluation-tools: no depende de ninguna clase/materia
+            // activa, elige su propia clase/alumnado internamente.
+            return (
+                <React.Suspense fallback={<ViewLoadingFallback />}>
+                    <AdaptarMaterialView
+                        courses={curriculumCourses}
+                        academicClasses={academicClasses}
+                        evaluationTools={evaluationTools}
+                    />
+                </React.Suspense>
+            );
+        }
+
+        if (activeView === 'deteccion-curricular') {
+            return (
+                <React.Suspense fallback={<ViewLoadingFallback />}>
+                    <DeteccionCurricularView
+                        courses={curriculumCourses}
+                        academicClasses={academicClasses}
+                        criteria={allCriteria}
+                        specificCompetences={allCompetences}
+                    />
+                </React.Suspense>
+            );
+        }
+
         if (!activeClass && activeView !== 'calendar') {
             return (
                 <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -964,6 +993,7 @@ const App = () => {
             case 'annual-calendar':
                 return <AnnualCalendarView
                     academicConfiguration={effectiveAcademicConfiguration}
+                    agendaNotes={effectiveAgendaNotes}
                     onOpenDay={(dateStr) => { setCalendarJumpDate(dateStr); setActiveView('calendar'); }}
                 />;
             default:
