@@ -17,21 +17,32 @@ interface NavItem {
     icon: React.FC<{ className?: string }>;
 }
 
-// Agrupado en secciones (con o sin etiqueta), igual que en el mockup: los
-// cuatro primeros van sueltos, luego "Enseñanza" y "Comunicación".
+// Agrupado por frecuencia de uso y contexto, no por tipo de funcionalidad
+// (petición explícita del usuario, 2026-08-30) -- p.ej. Tareas evaluables/
+// Instrumentos Evaluación pasan a vivir junto a Planificación SA en
+// "Enseñanza" en vez de en su propia sección "Evaluación", y Calendario/
+// Agenda/Horario (antes sueltos sin etiqueta) ganan su propia sección
+// "Organización".
 interface NavSection {
-    label: string | null;
+    label: string;
     items: NavItem[];
 }
 
 const NAV_SECTIONS: NavSection[] = [
     {
-        label: null,
+        label: 'Principal',
         items: [
             { view: 'hoy', label: 'Hoy', icon: HomeIcon },
-            { view: 'horario', label: 'Horario', icon: ClockIcon },
-            { view: 'calendar', label: 'Agenda', icon: CalendarDaysIcon },
+            { view: 'gradebook', label: 'Cuaderno', icon: BookOpenIcon },
+            { view: 'journal', label: 'Diario', icon: ClipboardDocumentIcon },
+        ],
+    },
+    {
+        label: 'Organización',
+        items: [
             { view: 'annual-calendar', label: 'Calendario', icon: TableCellsIcon },
+            { view: 'calendar', label: 'Agenda', icon: CalendarDaysIcon },
+            { view: 'horario', label: 'Horario', icon: ClockIcon },
         ],
     },
     {
@@ -42,13 +53,6 @@ const NAV_SECTIONS: NavSection[] = [
             // no solo al principio, así que merece acceso directo (petición
             // explícita del usuario).
             { view: 'planner', label: 'Planificación SA', icon: ListBulletIcon },
-            { view: 'gradebook', label: 'Cuaderno', icon: BookOpenIcon },
-            { view: 'journal', label: 'Diario', icon: ClipboardDocumentIcon },
-        ],
-    },
-    {
-        label: 'Evaluación',
-        items: [
             { view: 'exams', label: 'Tareas evaluables', icon: ClipboardDocumentCheckIcon },
             // Antes solo se llegaba aquí escondido dentro de Ajustes -- se
             // usan durante todo el curso al calificar, así que merece acceso
@@ -81,22 +85,24 @@ const NAV_SECTIONS: NavSection[] = [
 ];
 
 // Solo "Herramientas" arranca plegada -- pedido explícito (de momento
-// tiene un único elemento, menos prioritaria que Enseñanza/Evaluación/
-// Comunicación para tenerla siempre a la vista).
+// tiene un único elemento, menos prioritaria que el resto de secciones
+// para tenerla siempre a la vista).
 const COLLAPSED_BY_DEFAULT = new Set(['Herramientas']);
 
-// Un toque de color por sección, en la MISMA familia de tono que
-// PAGE_ACCENT usa para las cabeceras de esa sección (azul/rojo/amarillo/
-// morado) -- eso no cambia. Lo que sí cambia con el Sidebar en fondo azul
-// marino (rediseño oscuro): los tonos de PAGE_ACCENT en sí (oscurecidos a
-// propósito para leerse en blanco sobre header claro) pierden casi todo el
-// contraste aquí, así que se usa un tono más claro de la MISMA familia en
-// su lugar -- `base` de PALETTE para azul/amarillo/morado (curiosamente
-// esas 3 claves de PALETTE ya son ese color), y SEMANTIC.danger (el rojo ya
-// definido en la app) para Evaluación, que no tiene clave propia en PALETTE.
+// Un toque de color por sección -- ya no coincide 1:1 con PAGE_ACCENT
+// (esas cabeceras de página siguen agrupadas por tipo de funcionalidad,
+// p.ej. Tareas evaluables/Instrumentos Evaluación siguen en rojo aunque
+// aquí vivan dentro de "Enseñanza"; el reagrupado de 2026-08-30 solo
+// afecta a este menú). `base` de PALETTE para azul/amarillo/morado
+// (curiosamente esas 3 claves de PALETTE ya son ese color); "Evaluación"
+// quedó sin sección propia (fusionada en Enseñanza), así que su rojo
+// (SEMANTIC.danger, la única familia sin clave propia en PALETTE) pasa a
+// "Organización" -- verde (PALETTE.green) es la única familia de PALETTE
+// que quedaba libre para "Principal".
 const SECTION_COLOR: Record<string, string> = {
+    'Principal': PALETTE.green.base,
+    'Organización': SEMANTIC.danger.base,
     'Enseñanza': PALETTE.blue.base,
-    'Evaluación': SEMANTIC.danger.base,
     'Comunicación': PALETTE.sand.base,
     'Herramientas': PALETTE.teal.base,
 };
@@ -151,10 +157,8 @@ const SidebarContent: React.FC<{
             </div>
         </div>
         <nav className="flex-1 p-2 space-y-1.5">
-            {NAV_SECTIONS.map((section, i) => {
-                // Hoy/Horario/Agenda no pertenecen a ninguna sección con
-                // color propio -- acento blanco, pedido explícito.
-                const color = section.label ? SECTION_COLOR[section.label] : '#ffffff';
+            {NAV_SECTIONS.map(section => {
+                const color = SECTION_COLOR[section.label];
                 const items = section.items.map(item => {
                     const Icon = item.icon;
                     const active = isActive(item, activeView);
@@ -170,12 +174,6 @@ const SidebarContent: React.FC<{
                         </button>
                     );
                 });
-
-                // Sin etiqueta (Hoy/Horario/Agenda) no tiene sentido plegarla --
-                // es la primera sección, siempre visible, no un grupo temático.
-                if (!section.label) {
-                    return <div key={`sec-${i}`} className="space-y-1">{items}</div>;
-                }
 
                 return (
                     <details key={section.label} open={!COLLAPSED_BY_DEFAULT.has(section.label)} className="group">
