@@ -67,6 +67,11 @@ fn importar_horario_pdf(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<serde_j
   services::python_helper::importar_horario_pdf(&app, bytes)
 }
 
+#[tauri::command]
+fn importar_calendario_pdf(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<serde_json::Value, error::ApiError> {
+  services::python_helper::importar_calendario_pdf(&app, bytes)
+}
+
 // Igual criterio que backup_export/backup_import: aparte de api_request
 // porque necesita algo que el despachador genérico no recibe -- aquí, un
 // AppHandle para localizar y lanzar el sidecar Python (ver
@@ -126,6 +131,7 @@ pub fn run() {
       backup_export,
       backup_import,
       importar_horario_pdf,
+      importar_calendario_pdf,
       educastur_sincronizar
     ])
     .run(tauri::generate_context!())

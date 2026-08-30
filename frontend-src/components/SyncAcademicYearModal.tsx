@@ -15,6 +15,7 @@ import { useCreateEnrollment, useDeleteEnrollment } from '../hooks/useEnrollment
 import { generateTemplate, parseWorkbook, buildDatosRealesTemplate, type FilaAlumnado, type FilaFestivo, type ParsedWorkbook } from '../services/scheduleWizard';
 import { buildImportPlan, normalizarNivel } from './ImportScheduleModal';
 import { resolverAlumno } from '../services/excelSync';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 
 // Respuesta de POST /calendario/importar-pdf -- ver
 // api/app/services/calendario_pdf.py y el mismo tipo en
@@ -141,18 +142,34 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
         setErrorMsg(null);
 
         try {
-            const formData = new FormData();
-            formData.append('archivo', file);
-            const response = await fetch('/api/calendario/importar-pdf', { method: 'POST', body: formData });
+            let data: CalendarioPdfResultado;
+            if (isTauri()) {
+                // Mismo patrón que importar_horario_pdf: bytes crudos por
+                // un comando propio, no el despachador genérico api_request.
+                const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+                data = await invoke('importar_calendario_pdf', { bytes });
+            } else {
+                const formData = new FormData();
+                formData.append('archivo', file);
+                const response = await fetch('/api/calendario/importar-pdf', { method: 'POST', body: formData });
 
-            if (!response.ok) {
-                const body = await response.json().catch(() => null);
-                throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+                if (!response.ok) {
+                    const body = await response.json().catch(() => null);
+                    throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+                }
+
+                data = await response.json();
             }
-
-            setCalendarioImportado(await response.json());
+            setCalendarioImportado(data);
         } catch (err) {
-            setErrorMsg(err instanceof Error ? err.message : String(err));
+            // invoke() rechaza con el propio ApiError ({status, detail}) del
+            // lado Rust, no con una instancia de Error -- distinto del
+            // fetch() de arriba.
+            if (err && typeof err === 'object' && 'detail' in err) {
+                setErrorMsg(String((err as { detail: unknown }).detail));
+            } else {
+                setErrorMsg(err instanceof Error ? err.message : String(err));
+            }
         } finally {
             setImportandoCalendario(false);
             if (calendarioFileInputRef.current) calendarioFileInputRef.current.value = '';

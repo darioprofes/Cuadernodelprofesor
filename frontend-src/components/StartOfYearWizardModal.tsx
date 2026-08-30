@@ -18,6 +18,7 @@ import { api } from '../services/api';
 import type { EvaluationPeriod } from '../types/api';
 import { buildImportPlan, normalizarNivel } from './ImportScheduleModal';
 import { generateTemplate, parseWorkbook, type FilaAlumnado, type FilaFestivo, type ParsedWorkbook } from '../services/scheduleWizard';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 
 // Respuesta de POST /calendario/importar-pdf -- ver
 // api/app/services/calendario_pdf.py para el porqué de esta forma (solo
@@ -76,9 +77,9 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [parsed, setParsed] = useState<ParsedWorkbook | null>(null);
     // Importación previa del PDF oficial del calendario escolar (antes de
-    // descargar la plantilla) -- solo web, mismo criterio que la
-    // importación de horario en PDF (depende de pdfplumber en el backend
-    // Python, sin equivalente en escritorio/Tauri).
+    // descargar la plantilla) -- depende de pdfplumber, igual que la
+    // importación de horario en PDF; en escritorio va por el sidecar
+    // python-helper (importar_calendario_pdf) en vez del backend web.
     const [importandoCalendario, setImportandoCalendario] = useState(false);
     const [calendarioImportado, setCalendarioImportado] = useState<CalendarioPdfResultado | null>(null);
     const [inicioClasesElegido, setInicioClasesElegido] = useState(0);
@@ -150,16 +151,24 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
         setErrorMsg(null);
 
         try {
-            const formData = new FormData();
-            formData.append('archivo', file);
-            const response = await fetch('/api/calendario/importar-pdf', { method: 'POST', body: formData });
+            let data: CalendarioPdfResultado;
+            if (isTauri()) {
+                // Mismo patrón que importar_horario_pdf: bytes crudos por
+                // un comando propio, no el despachador genérico api_request.
+                const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+                data = await invoke('importar_calendario_pdf', { bytes });
+            } else {
+                const formData = new FormData();
+                formData.append('archivo', file);
+                const response = await fetch('/api/calendario/importar-pdf', { method: 'POST', body: formData });
 
-            if (!response.ok) {
-                const body = await response.json().catch(() => null);
-                throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+                if (!response.ok) {
+                    const body = await response.json().catch(() => null);
+                    throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+                }
+
+                data = await response.json();
             }
-
-            const data: CalendarioPdfResultado = await response.json();
             setCalendarioImportado(data);
 
             // Preselección: la opción de Inicio/Fin de clases que aplica a
@@ -175,7 +184,14 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
             if (data.inicioClases[inicioElegido]) setFechaInicioCurso(data.inicioClases[inicioElegido].fecha);
             if (data.finClases[finElegido]) setFechaFinCurso(data.finClases[finElegido].fecha);
         } catch (err) {
-            setErrorMsg(err instanceof Error ? err.message : String(err));
+            // invoke() rechaza con el propio ApiError ({status, detail}) del
+            // lado Rust, no con una instancia de Error -- distinto del
+            // fetch() de arriba.
+            if (err && typeof err === 'object' && 'detail' in err) {
+                setErrorMsg(String((err as { detail: unknown }).detail));
+            } else {
+                setErrorMsg(err instanceof Error ? err.message : String(err));
+            }
         } finally {
             setImportandoCalendario(false);
             if (calendarioFileInputRef.current) calendarioFileInputRef.current.value = '';

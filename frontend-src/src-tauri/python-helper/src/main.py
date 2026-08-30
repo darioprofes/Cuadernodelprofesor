@@ -16,6 +16,9 @@
 # fue bien. Cualquier fallo se imprime como {"error": "..."} a stderr con
 # código de salida 1 -- nunca una traza de Python cruda, que el lado Rust
 # no sabría interpretar.
+#
+# pdfplumber cubre tanto importar-horario como importar-calendario (el
+# calendario escolar oficial en PDF, ver calendario_pdf.py).
 
 import json
 import sys
@@ -38,6 +41,23 @@ def cmd_importar_horario(args):
     return {"filas": filas, "errores": errores}
 
 
+def cmd_importar_calendario(args):
+    """importar-calendario -- lee los bytes del PDF del calendario escolar
+    oficial por stdin (mismo criterio que importar-horario: bytes crudos,
+    no una ruta de fichero). Devuelve {inicioClases, finClases, noLectivo,
+    vacaciones, festivos, errores}, mismo formato que ya devuelve el
+    backend web (POST /calendario/importar-pdf, ver
+    api/app/routers/calendario.py)."""
+
+    from calendario_pdf import extraer_calendario_pdf
+
+    contenido = sys.stdin.buffer.read()
+
+    resultado, errores = extraer_calendario_pdf(contenido)
+
+    return {**resultado, "errores": errores}
+
+
 def cmd_educastur_sincronizar(args):
     """educastur-sincronizar -- lee por stdin un JSON con credenciales +
     las faltas ya resueltas por Rust (ver educastur_orchestrator.py para
@@ -54,6 +74,7 @@ def cmd_educastur_sincronizar(args):
 
 COMANDOS = {
     "importar-horario": cmd_importar_horario,
+    "importar-calendario": cmd_importar_calendario,
     "educastur-sincronizar": cmd_educastur_sincronizar,
 }
 
