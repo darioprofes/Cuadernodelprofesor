@@ -7,11 +7,12 @@ import {
 } from '../hooks/useSpecificCompetences';
 import { useEvaluationCriteria, useCreateCriterion, useUpdateCriterion, useDeleteCriterion } from '../hooks/useEvaluationCriteria';
 import { useBasicKnowledge, useCreateBasicKnowledge, useUpdateBasicKnowledge, useDeleteBasicKnowledge } from '../hooks/useBasicKnowledge';
+import { useCurriculumImport } from '../hooks/useCurriculumImport';
 
 type CurriculumItemType = 'ec' | 'sc' | 'kc' | 'sb' | 'od';
 type CurriculumItem = EvaluationCriterion | SpecificCompetence | KeyCompetence | BasicKnowledge | OperationalDescriptor;
 import { PencilIcon, TrashIcon, PlusIcon, ChevronRightIcon, ChevronDownIcon } from './Icons';
-import { CURRICULOS_OFICIALES, CURRICULOS_OFICIALES_BACHILLERATO, CURRICULOS_PROPIOS, TODOS_LOS_PRESETS } from '../curriculumPresets';
+import { CURRICULOS_OFICIALES, CURRICULOS_OFICIALES_BACHILLERATO, CURRICULOS_PROPIOS, TODOS_LOS_PRESETS, filtrarPorCurso } from '../curriculumPresets';
 import { compararCodigo } from '../utils';
 import Button from './Button';
 import IconButton from './IconButton';
@@ -27,13 +28,6 @@ import { linkClassName } from '../theme/components/Link';
 // Fuera del componente (no cierra sobre nada de React) para que los useMemo
 // que la usan puedan depender solo de cursoNumero, sin necesidad de incluir
 // la propia función como dependencia.
-// ESO y Bachillerato comparten numeración de curso (1º-2º de Bachillerato
-// solapan con 1º-2º de ESO) — filtrar solo por número mezclaría currículos
-// de las dos etapas en el mismo desplegable, así que hace falta también la
-// etapa del curso seleccionado.
-const filtrarPorCurso = (cursoNumero: number | null, etapa: 'eso' | 'bachillerato', presets: typeof TODOS_LOS_PRESETS) =>
-    presets.filter(p => p.etapa === etapa && (cursoNumero === null || p.curso === cursoNumero));
-
 const Accordion: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
     <details className="border border-slate-200 rounded-lg">
         <summary className="p-3 cursor-pointer font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-t-lg">{title}</summary>
@@ -121,6 +115,10 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     const createBasicKnowledgeMutation = useCreateBasicKnowledge();
     const updateBasicKnowledgeMutation = useUpdateBasicKnowledge();
     const deleteBasicKnowledgeMutation = useDeleteBasicKnowledge();
+
+    const curriculumImport = useCurriculumImport({
+        keyCompetences, onCreateKeyCompetence, onUpdateKeyCompetence, onCreateDescriptor, onUpdateDescriptor,
+    });
 
     // Al cambiar de materia (o la primera vez que se abre una), las tres
     // consultas tardan un momento en traer datos nuevos y, mientras tanto,
@@ -216,38 +214,6 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
     };
 
 
-    const confirmarReemplazo = (course: Course): boolean => {
-        const stage = isBachilleratoStage(course.level) ? 'Bachillerato' : 'ESO';
-        const courseName = `${course.level} - ${course.subject}`;
-
-        const confirmationMessage = `Se va a importar el currículo para el curso '${courseName}'.\n\n` +
-            `- Competencias Específicas, Criterios y Saberes de ESTE CURSO serán reemplazados.\n` +
-            `- Descriptores Operativos para la etapa '${stage}' serán FUSIONADOS inteligentemente por código (ej. CCL1) para evitar duplicados.\n` +
-            `- Los datos de otros cursos no se verán afectados.\n\n` +
-            `¿Deseas continuar?`;
-
-        return window.confirm(confirmationMessage);
-    };
-
-    // Importar currículo (desde CSV o preset) hace decenas de llamadas
-    // secuenciales (borrar lo existente, crear cada competencia/criterio/
-    // saber básico uno a uno — ver updateCurriculumState) — sin ningún
-    // indicio en pantalla mientras tanto, parecía que el botón no había
-    // hecho nada aunque sí estaba trabajando por detrás.
-    const [importandoCurriculo, setImportandoCurriculo] = useState(false);
-    const importarTexto = async (text: string) => {
-        setImportandoCurriculo(true);
-        try {
-            const parsedData = parseCurriculumCsv(text, selectedCourseId, filteredCompetences);
-            await updateCurriculumState(parsedData, selectedCourseId);
-        } catch (error) {
-            console.error('Error parsing CSV:', error);
-            alert('Error al procesar el archivo CSV. Comprueba el formato, el contenido y la codificación del archivo (UTF-8 o UTF-16).');
-        } finally {
-            setImportandoCurriculo(false);
-        }
-    };
-
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         if (!selectedCourseId) {
             alert("Por favor, selecciona un curso para el que importar el currículo.");
@@ -261,9 +227,9 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         const course = courses.find((c: Course) => c.id === selectedCourseId);
         if (!course) return;
 
-        if (!confirmarReemplazo(course)) {
-             if (event.target) event.target.value = '';
-             return;
+        if (!curriculumImport.confirmarReemplazo(course)) {
+            if (event.target) event.target.value = '';
+            return;
         }
 
         const reader = new FileReader();
@@ -290,12 +256,12 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
 
             const decoder = new TextDecoder(encoding);
             const text = decoder.decode(buffer);
-            importarTexto(text);
+            curriculumImport.cargarDesdeTexto(course, text, filteredCompetences);
         };
         reader.onerror = () => {
             alert('Error al leer el archivo.');
         };
-        
+
         reader.readAsArrayBuffer(file);
 
         if (event.target) event.target.value = '';
@@ -339,315 +305,9 @@ const CurriculumManager: React.FC<CurriculumManagerProps> = (props) => {
         const preset = TODOS_LOS_PRESETS.find(p => p.id === presetSeleccionado);
         if (!course || !preset) return;
 
-        if (!preset.oficial && !window.confirm(
-            `"${preset.etiqueta}" NO es un currículo oficial: es uno propio, no correspondiente al decreto LOMLOE. ¿Seguro que quieres importarlo?`
-        )) return;
-
-        if (!confirmarReemplazo(course)) return;
-
-        try {
-            const response = await fetch(preset.ruta);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const text = await response.text();
-            await importarTexto(text);
-        } catch (error) {
-            console.error('Error cargando currículo preseleccionado:', error);
-            alert('No se pudo cargar el currículo seleccionado.');
-        }
+        await curriculumImport.cargarDesdePreset(course, preset, filteredCompetences);
     };
 
-    const parseCurriculumCsv = (csvText: string, courseId: string, existingSpecificCompetences: SpecificCompetence[]) => {
-        const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
-        if (lines.length < 1) return { newKCs: [], newODs: [], newSCs: [], newECs: [], newSBs: [], avisos: [] };
-
-        // Antes estos avisos solo iban a la consola del navegador -- invisible
-        // para un profesor sin herramientas de desarrollador. Se recogen aquí
-        // para mostrarlos junto al resto del resultado, igual que ya hace la
-        // importación de pesos de criterios más abajo en este mismo archivo.
-        const avisos: string[] = [];
-
-        const headerLine = lines.shift()!; // Remove header line
-        // Algunos CSV propios (p.ej. los de Ámbito) añaden una columna final
-        // "origen" (documenta a qué competencias de las materias del ámbito
-        // corresponde una competencia combinada) que NO es un enlace real:
-        // se calcula cuántas columnas "linkN" declara la cabecera para no
-        // confundir esa anotación con un descriptor operativo más. Los CSV
-        // oficiales no tienen esa columna, así que no se ven afectados.
-        const numLinkColumns = headerLine.split(',').filter(h => /^link\d+$/i.test(h.trim())).length;
-
-        const newKCs: (Omit<KeyCompetence, 'descriptors'>)[] = [];
-        const newODs: (OperationalDescriptor & { parentKcId: string })[] = [];
-        const newSCs: SpecificCompetence[] = [];
-        const newECs: EvaluationCriterion[] = [];
-        const newSBs: BasicKnowledge[] = [];
-
-        const parseCsvLine = (line: string): string[] => {
-            const result: string[] = [];
-            let currentVal = "";
-            let inQuotes = false;
-            for (let i = 0; i < line.length; i++) {
-                const char = line[i];
-                if (char === '"') {
-                    if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
-                        currentVal += '"';
-                        i++; 
-                    } else {
-                        inQuotes = !inQuotes;
-                    }
-                } else if (char === ',' && !inQuotes) {
-                    result.push(currentVal.trim());
-                    currentVal = "";
-                } else {
-                    currentVal += char;
-                }
-            }
-            result.push(currentVal.trim());
-            return result;
-        };
-        
-        // Mapa de CÓDIGOS de Competencias Específicas a sus IDs, priorizando las de ESTE ARCHIVO
-        const localScCodeToIdMap = new Map<string, string>();
-        // Letra de bloque -> nombre real del bloque (fila BB, opcional — ver
-        // instrucciones de formato más abajo). Pre-escaneo igual que SC:
-        // hace falta conocido antes de procesar las filas SB, que pueden
-        // venir en cualquier orden respecto a las BB del mismo archivo.
-        const bloqueLetraToNombre = new Map<string, string>();
-
-        // Pre-escaneo para construir los mapas locales (Competencias Específicas y Bloques) del archivo
-        lines.forEach(line => {
-            const parts = parseCsvLine(line);
-            const [type, id, code, description] = parts;
-            if (type?.toUpperCase() === 'SC' && id && code) {
-                localScCodeToIdMap.set(code, id);
-            }
-            if (type?.toUpperCase() === 'BB' && code && description) {
-                bloqueLetraToNombre.set(code.toUpperCase(), description);
-            }
-        });
-
-        // Procesamiento principal del archivo
-        for (const line of lines) {
-            const parts = parseCsvLine(line);
-            const [type, id, code, description, ...rest] = parts;
-            const links = numLinkColumns > 0 ? rest.slice(0, numLinkColumns) : rest;
-            if (!type || !id || !code || !description) continue;
-            const commonData = { id, code, description };
-            
-            switch (type.toUpperCase()) {
-                case 'KC':
-                    newKCs.push({ ...commonData });
-                    break;
-                case 'OD':
-                    newODs.push({ ...commonData, parentKcId: links[0] });
-                    break;
-                case 'SC': {
-                    const scData = { ...commonData, courseId, keyCompetenceDescriptorIds: links.filter(l => l) };
-                    newSCs.push(scData);
-                    break;
-                }
-                case 'EC': {
-                    const criterionCode = commonData.code;
-                    const competenceNumberMatch = criterionCode.match(/^(\d+)\./);
-                    let competenceId = links[0] || '';
-
-                    if (competenceNumberMatch && competenceNumberMatch[1]) {
-                        const targetScCode = `CEs ${competenceNumberMatch[1].trim()}`;
-                        if (localScCodeToIdMap.has(targetScCode)) {
-                            // Prioridad 1: Usar la competencia del archivo actual
-                            competenceId = localScCodeToIdMap.get(targetScCode)!;
-                        } else {
-                             // Prioridad 2: Buscar una competencia existente con ese código (comportamiento anterior, como fallback)
-                            const existingSc = existingSpecificCompetences.find(sc => sc.code === targetScCode && sc.courseId === courseId);
-                            if (existingSc) {
-                                competenceId = existingSc.id;
-                                const aviso = `El criterio '${criterionCode}' se ha vinculado a una competencia específica existente ('${targetScCode}') porque no había una con ese código en el archivo importado.`;
-                                console.warn(aviso);
-                                avisos.push(aviso);
-                            } else {
-                                const aviso = `No se pudo vincular el criterio '${criterionCode}': no existe ninguna competencia específica con el código '${targetScCode}' ni en este curso ni en el archivo importado.`;
-                                console.error(aviso);
-                                avisos.push(aviso);
-                            }
-                        }
-                    }
-                    newECs.push({ ...commonData, courseId: courseId, competenceId: competenceId });
-                    break;
-                }
-                case 'SB': {
-                    // La letra de bloque es el prefijo del código (p.ej. "A" en
-                    // "A.1") — mismo criterio que usa el propio decreto oficial.
-                    const letraBloque = commonData.code.match(/^([A-Za-z]+)/)?.[1]?.toUpperCase();
-                    const blockName = letraBloque ? bloqueLetraToNombre.get(letraBloque) ?? null : null;
-                    newSBs.push({ ...commonData, courseId, blockName });
-                    break;
-                }
-            }
-        }
-        return { newKCs, newODs, newSCs, newECs, newSBs, avisos };
-    };
-
-    // KC/OD: fusión inteligente por código, pero contra el backend nuevo —
-    // no hay "reemplazar el array entero" en la API, así que en vez de
-    // construir el estado final de golpe (como hacía el setKeyCompetences
-    // de antes), se calcula ese mismo estado final KC a KC y se emiten solo
-    // las llamadas (crear/actualizar) necesarias para llegar a él. Devuelve
-    // el mapa de sustitución de IDs (id del CSV -> id real, ya sea uno
-    // reutilizado por coincidencia de código o uno recién creado) para que
-    // las Competencias Específicas puedan resolver sus enlaces después.
-    const syncKeyCompetencesFromImport = async (
-        newKCs: (Omit<KeyCompetence, 'descriptors'>)[],
-        augmentedODs: (OperationalDescriptor & { parentKcId: string })[],
-        stage: 'eso' | 'bachillerato',
-    ): Promise<Map<string, string>> => {
-        const odIdReplacementMap = new Map<string, string>();
-        const importKcIdToCodeMap = new Map(newKCs.map(kc => [kc.id, kc.code]));
-
-        const newODsByParentCode = new Map<string, (OperationalDescriptor & { parentKcId: string })[]>();
-        augmentedODs.forEach(od => {
-            const parentCode = importKcIdToCodeMap.get(od.parentKcId);
-            if (parentCode) {
-                if (!newODsByParentCode.has(parentCode)) newODsByParentCode.set(parentCode, []);
-                newODsByParentCode.get(parentCode)!.push(od);
-            }
-        });
-
-        const kcByCode = new Map(keyCompetences.map(kc => [kc.code, kc]));
-
-        for (const nkc of newKCs) {
-            let kc = kcByCode.get(nkc.code);
-            if (!kc) {
-                const created = await onCreateKeyCompetence({ code: nkc.code, description: nkc.description });
-                kc = { ...created, descriptors: [] };
-                kcByCode.set(nkc.code, kc);
-            } else if (kc.description !== nkc.description) {
-                await onUpdateKeyCompetence(kc.id, { description: nkc.description });
-            }
-
-            // Igual que antes: solo se tocan los descriptores de la etapa de
-            // este curso (ESO o Bachillerato) — los de la otra etapa, si los
-            // hay, se quedan intactos sin ni siquiera leerse aquí. La etapa
-            // vive en operational_descriptors.stage (columna real); el
-            // sistema anterior la codificaba en el propio id, algo que no es
-            // posible con ids reales de Postgres (ver migración 0004).
-            const currentStageDescriptors = (kc.descriptors || []).filter(d => d.stage === stage);
-            const existingByCode = new Map(currentStageDescriptors.map(d => [d.code, d]));
-            const newDescriptorsForThisKC = newODsByParentCode.get(nkc.code) || [];
-
-            for (const newDesc of newDescriptorsForThisKC) {
-                const existing = existingByCode.get(newDesc.code);
-                if (existing) {
-                    odIdReplacementMap.set(newDesc.id, existing.id);
-                    if (existing.description !== newDesc.description) {
-                        await onUpdateDescriptor(existing.id, { description: newDesc.description });
-                    }
-                } else {
-                    const createdDescriptor = await onCreateDescriptor(kc.id, { code: newDesc.code, description: newDesc.description, stage });
-                    odIdReplacementMap.set(newDesc.id, createdDescriptor.id);
-                }
-            }
-        }
-
-        return odIdReplacementMap;
-    };
-
-    // SC/EC/SB (resto del bloque 3): a diferencia de KC/OD (fusión por
-    // código), el comportamiento original aquí era un reemplazo COMPLETO del
-    // curso — se tiraba lo que hubiera y se ponía lo importado. Se replica
-    // borrando primero lo existente y creando después lo nuevo. El orden
-    // importa: evaluation_criteria.competence_id es RESTRICT, así que hay
-    // que borrar criterios antes que competencias, y crear competencias
-    // antes que criterios (para poder resolver sus ids reales). Usa `api`
-    // directamente (no los hooks de mutación) porque necesita leer el
-    // estado actual del curso de golpe, no solo mutarlo.
-    const syncCourseContentFromImport = async (
-        courseId: string,
-        newSCs: SpecificCompetence[],
-        newECs: EvaluationCriterion[],
-        newSBs: BasicKnowledge[],
-        odIdReplacementMap: Map<string, string>,
-        suffix: string,
-    ): Promise<void> => {
-        const augmentId = (id: string, suffixToAdd: string) => (id.endsWith('-eso') || id.endsWith('-bach')) ? id : id + suffixToAdd;
-
-        const [existingCriteria, existingCompetences, existingBasicKnowledge] = await Promise.all([
-            api.get<EvaluationCriterion[]>(`/courses/${courseId}/criteria`),
-            api.get<SpecificCompetence[]>(`/courses/${courseId}/competences`),
-            api.get<BasicKnowledge[]>(`/courses/${courseId}/basic-knowledge`),
-        ]);
-
-        for (const c of existingCriteria) await deleteCriterionMutation.mutateAsync({ id: c.id, courseId });
-        for (const sc of existingCompetences) await deleteCompetenceMutation.mutateAsync({ id: sc.id, courseId });
-        for (const sb of existingBasicKnowledge) await deleteBasicKnowledgeMutation.mutateAsync({ id: sb.id, courseId });
-
-        const scIdReplacementMap = new Map<string, string>();
-        for (const sc of newSCs) {
-            const created = await createCompetence.mutateAsync({ courseId, data: { code: sc.code, description: sc.description } });
-            scIdReplacementMap.set(sc.id, created.id);
-
-            const rawDescriptorIds = sc.keyCompetenceDescriptorIds.map(id => augmentId(id, suffix));
-            const resolvedDescriptorIds = Array.from(new Set(rawDescriptorIds.map(id => odIdReplacementMap.get(id) ?? id)));
-            for (const descriptorId of resolvedDescriptorIds) {
-                await linkDescriptorMutation.mutateAsync({ competenceId: created.id, courseId, descriptorId });
-            }
-        }
-
-        for (const ec of newECs) {
-            const resolvedCompetenceId = scIdReplacementMap.get(ec.competenceId) ?? ec.competenceId;
-            await createCriterionMutation.mutateAsync({
-                courseId,
-                data: { competenceId: resolvedCompetenceId, code: ec.code, description: ec.description, weight: ec.weight, excludeFromWeighting: ec.excludeFromWeighting ?? false },
-            });
-        }
-
-        for (const sb of newSBs) {
-            await createBasicKnowledgeMutation.mutateAsync({ courseId, data: { code: sb.code, description: sb.description, blockName: sb.blockName } });
-        }
-    };
-
-    const updateCurriculumState = async ({ newKCs, newODs, newSCs, newECs, newSBs, avisos }: {
-        newKCs: (Omit<KeyCompetence, 'descriptors'>)[];
-        newODs: (OperationalDescriptor & { parentKcId: string })[];
-        newSCs: SpecificCompetence[];
-        newECs: EvaluationCriterion[];
-        newSBs: BasicKnowledge[];
-        avisos: string[];
-    }, courseId: string) => {
-        if ([newKCs, newODs, newSCs, newECs, newSBs].every(arr => arr.length === 0)) {
-            alert("No se encontraron elementos curriculares válidos en el archivo.");
-            return;
-        }
-
-        const course = courses.find((c: Course) => c.id === courseId);
-        if (!course) return;
-
-        const isBachStage = isBachilleratoStage(course.level);
-        const stage = isBachStage ? 'Bachillerato' : 'ESO';
-        const suffix = isBachStage ? '-bach' : '-eso';
-        // stageValue: valor real que se guarda en operational_descriptors.stage
-        // (ver syncKeyCompetencesFromImport) — distinto de `suffix`, que solo
-        // sirve para namespacing de ids DENTRO del propio CSV importado.
-        const stageValue: 'eso' | 'bachillerato' = isBachStage ? 'bachillerato' : 'eso';
-
-        const augmentId = (id: string, suffixToAdd: string) => {
-            if (id.endsWith('-eso') || id.endsWith('-bach')) {
-                return id;
-            }
-            return id + suffixToAdd;
-        };
-
-        // Augment IDs in the new data to make them stage-specific
-        const augmentedODs = newODs.map(od => ({ ...od, id: augmentId(od.id, suffix) }));
-
-        const odIdReplacementMap = await syncKeyCompetencesFromImport(newKCs, augmentedODs, stageValue);
-        await syncCourseContentFromImport(courseId, newSCs, newECs, newSBs, odIdReplacementMap, suffix);
-
-        const courseName = `${course.level} - ${course.subject}`;
-        alert(
-            `Currículo para '${courseName}' (${stage.toUpperCase()}) importado con éxito.\n\nSe ha aplicado una fusión `
-            + 'inteligente de Descriptores Operativos para evitar duplicados entre cursos.'
-            + (avisos.length > 0 ? `\n\nAvisos (${avisos.length}):\n${avisos.join('\n')}` : '')
-        );
-    };
 
     const handleDeleteCurriculum = async () => {
         if (!selectedCourseId) {
@@ -1165,11 +825,11 @@ SB,sb-bg3-1,"A.1","La célula como unidad estructural..."`}
                         </Select>
                         <button
                             onClick={handleCargarPreset}
-                            disabled={!selectedCourseId || !presetSeleccionado || importandoCurriculo}
+                            disabled={!selectedCourseId || !presetSeleccionado || curriculumImport.importando}
                             className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed flex items-center gap-2"
                         >
-                            {importandoCurriculo && <span className="w-3.5 h-3.5 border-2 border-white/60 border-t-white rounded-full animate-spin" />}
-                            {importandoCurriculo ? 'Cargando…' : 'Cargar'}
+                            {curriculumImport.importando && <span className="w-3.5 h-3.5 border-2 border-white/60 border-t-white rounded-full animate-spin" />}
+                            {curriculumImport.importando ? 'Cargando…' : 'Cargar'}
                         </button>
                     </div>
                     <p className="text-xs text-slate-500">
@@ -1187,18 +847,18 @@ SB,sb-bg3-1,"A.1","La célula como unidad estructural..."`}
                         className="hidden"
                         accept=".csv, text/csv"
                         onChange={handleFileChange}
-                        disabled={importandoCurriculo}
+                        disabled={curriculumImport.importando}
                     />
                     <label
                         htmlFor="csv-importer"
-                        className={`cursor-pointer w-full text-center bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 ${(!selectedCourseId || importandoCurriculo) ? 'bg-blue-300 cursor-not-allowed pointer-events-none' : ''}`}
+                        className={`cursor-pointer w-full text-center bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 ${(!selectedCourseId || curriculumImport.importando) ? 'bg-blue-300 cursor-not-allowed pointer-events-none' : ''}`}
                     >
-                        {importandoCurriculo && <span className="w-3.5 h-3.5 border-2 border-white/60 border-t-white rounded-full animate-spin" />}
-                        {importandoCurriculo ? 'Cargando…' : 'O sube tu propio archivo CSV...'}
+                        {curriculumImport.importando && <span className="w-3.5 h-3.5 border-2 border-white/60 border-t-white rounded-full animate-spin" />}
+                        {curriculumImport.importando ? 'Cargando…' : 'O sube tu propio archivo CSV...'}
                     </label>
                 </div>
 
-                {importandoCurriculo && (
+                {curriculumImport.importando && (
                     <div className="flex items-center gap-2 text-sm text-slate-600 p-3 bg-blue-50 border border-blue-200 rounded-lg mt-3">
                         <span className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin flex-shrink-0" />
                         Importando el currículo… puede tardar unos segundos, no cierres esta ventana.

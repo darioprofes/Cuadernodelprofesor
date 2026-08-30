@@ -167,3 +167,30 @@ export const CURRICULOS_PROPIOS: CurriculumPreset[] = [
 ];
 
 export const TODOS_LOS_PRESETS: CurriculumPreset[] = [...CURRICULOS_OFICIALES, ...CURRICULOS_OFICIALES_BACHILLERATO, ...CURRICULOS_PROPIOS];
+
+// ESO y Bachillerato comparten numeración de curso (1º-2º de Bachillerato
+// solapan con 1º-2º de ESO) — filtrar solo por número mezclaría currículos
+// de las dos etapas en el mismo desplegable, así que hace falta también la
+// etapa del curso seleccionado. Compartido entre CurriculumManager.tsx
+// (Gestionar Currículo) y CourseManager.tsx (añadir Materia).
+export const filtrarPorCurso = (cursoNumero: number | null, etapa: 'eso' | 'bachillerato', presets: CurriculumPreset[]) =>
+    presets.filter(p => p.etapa === etapa && (cursoNumero === null || p.curso === cursoNumero));
+
+// Las 6 combinaciones reales curso+etapa que cubren los currículos
+// oficiales -- usadas por CourseManager.tsx como lista cerrada de "Nivel
+// Educativo" al añadir una Materia (más las variantes sin preset oficial,
+// como PDC, que ese componente añade aparte).
+export interface NivelOficial {
+    curso: number;
+    etapa: 'eso' | 'bachillerato';
+    etiqueta: string;
+}
+
+export const NIVELES_OFICIALES: NivelOficial[] = [
+    { curso: 1, etapa: 'eso', etiqueta: '1º ESO' },
+    { curso: 2, etapa: 'eso', etiqueta: '2º ESO' },
+    { curso: 3, etapa: 'eso', etiqueta: '3º ESO' },
+    { curso: 4, etapa: 'eso', etiqueta: '4º ESO' },
+    { curso: 1, etapa: 'bachillerato', etiqueta: '1º Bachillerato' },
+    { curso: 2, etapa: 'bachillerato', etiqueta: '2º Bachillerato' },
+];

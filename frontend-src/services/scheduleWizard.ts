@@ -25,6 +25,7 @@
 // parsear (ver nota junto a `PRIMERA_FILA_CONTENIDO` y los `estiliza*`).
 
 import type { ClassData, Course, FilaHorario, Student } from '../types';
+import { NIVELES_OFICIALES, TODOS_LOS_PRESETS, filtrarPorCurso } from '../curriculumPresets';
 
 export interface FilaAlumnado {
     nivel: string;
@@ -252,6 +253,77 @@ const CONFIG_COL_AULA = 4;
 const CONFIG_FILA_CABECERA = PRIMERA_FILA_CONTENIDO;
 const CONFIG_FILA_DATOS_INICIO = CONFIG_FILA_CABECERA + 1;
 const CONFIG_FILAS = 40; // filas de datos por lista
+
+// Hoja de referencia oculta con los niveles/materias oficiales (mismos 121
+// currículos empaquetados que ya usa CourseManager.tsx/CurriculumManager.tsx
+// al cargar un currículo con un clic) -- las celdas de Nivel/Materia de
+// Configuración pasan a poder ELEGIRSE de aquí (sugerencia, no bloqueo,
+// mismo criterio que el resto de desplegables de este fichero), en vez de
+// ser texto libre puro. Materia se filtra por el Nivel ya elegido en esa
+// misma fila (desplegable dependiente, verificado abriendo el .xlsx real
+// generado en Excel de escritorio): cada nivel tiene un rango con NOMBRE
+// (workbook.definedNames) con solo sus materias, y la validación de la
+// celda Materia usa INDIRECT(VLOOKUP(nivel_de_esa_fila, ...)) para resolver
+// a qué rango apuntar según lo que haya en la celda Nivel de al lado.
+const HOJA_DATOS_OFICIALES = 'DatosOficiales';
+const DATOS_OFICIALES_COL_NIVEL = 1;
+const DATOS_OFICIALES_COL_SLUG = 2;
+// Las columnas de materias por nivel empiezan aquí, una por cada entrada de
+// NIVELES_OFICIALES, en el mismo orden (col 3, 4, 5...).
+const DATOS_OFICIALES_COL_MATERIAS_INICIO = 3;
+const DATOS_OFICIALES_FILA_CABECERA = 1;
+const DATOS_OFICIALES_FILA_DATOS_INICIO = DATOS_OFICIALES_FILA_CABECERA + 1;
+
+// Nombre de rango válido para Excel a partir de una etiqueta de nivel libre
+// ("1º Bachillerato" -> "Mat_1_Bachillerato") -- sin "º" (no es un carácter
+// válido en un nombre definido) y con "Mat_" delante para que nunca empiece
+// por un dígito (tampoco válido).
+const slugNivel = (etiqueta: string): string => `Mat_${etiqueta.replace(/º/g, '').replace(/\s+/g, '_')}`;
+
+function buildDatosOficialesSheet(wb: import('exceljs').Workbook) {
+    const sheet = wb.addWorksheet(HOJA_DATOS_OFICIALES);
+    // Oculta a propósito: es solo la fuente de los desplegables de
+    // Configuración, no algo que el profesor tenga que ver ni editar.
+    sheet.state = 'veryHidden';
+
+    sheet.getCell(DATOS_OFICIALES_FILA_CABECERA, DATOS_OFICIALES_COL_NIVEL).value = 'Nivel';
+    sheet.getCell(DATOS_OFICIALES_FILA_CABECERA, DATOS_OFICIALES_COL_SLUG).value = 'RangoMaterias';
+    NIVELES_OFICIALES.forEach((n, i) => {
+        const fila = DATOS_OFICIALES_FILA_DATOS_INICIO + i;
+        sheet.getCell(fila, DATOS_OFICIALES_COL_NIVEL).value = n.etiqueta;
+        sheet.getCell(fila, DATOS_OFICIALES_COL_SLUG).value = slugNivel(n.etiqueta);
+    });
+
+    // Una columna de materias por nivel (deduplicadas, orden alfabético) +
+    // un rango con nombre por columna, para el desplegable dependiente.
+    NIVELES_OFICIALES.forEach((n, i) => {
+        const col = DATOS_OFICIALES_COL_MATERIAS_INICIO + i;
+        const materiasDelNivel = Array.from(new Set(
+            filtrarPorCurso(n.curso, n.etapa, TODOS_LOS_PRESETS).map(p => p.materia)
+        )).sort((a, b) => a.localeCompare(b, 'es'));
+
+        sheet.getCell(DATOS_OFICIALES_FILA_CABECERA, col).value = n.etiqueta;
+        materiasDelNivel.forEach((m, j) => {
+            sheet.getCell(DATOS_OFICIALES_FILA_DATOS_INICIO + j, col).value = m;
+        });
+
+        if (materiasDelNivel.length > 0) {
+            wb.definedNames.add(datosOficialesRange(col, materiasDelNivel.length), slugNivel(n.etiqueta));
+        }
+    });
+
+    return { numNiveles: NIVELES_OFICIALES.length };
+}
+
+// Rango de una columna de DatosOficiales, con el nº de filas real (los
+// niveles son 6 fijos, las materias por nivel varían y pueden cambiar si se
+// añaden más currículos empaquetados) -- a diferencia de configRange(), que
+// usa siempre CONFIG_FILAS fijo porque esa lista sí tiene un hueco por
+// defecto.
+const datosOficialesRange = (col: number, numFilas: number): string => {
+    const letra = String.fromCharCode(64 + col);
+    return `${HOJA_DATOS_OFICIALES}!$${letra}$${DATOS_OFICIALES_FILA_DATOS_INICIO}:$${letra}$${DATOS_OFICIALES_FILA_DATOS_INICIO + numFilas - 1}`;
+};
 
 const SUBCOLUMNAS_DIA = ['Nivel', 'Materia', 'Grupo', 'Aula'] as const;
 const COLS_POR_DIA = SUBCOLUMNAS_DIA.length;
@@ -671,11 +743,12 @@ function buildCursoAcademicoSheet(wb: import('exceljs').Workbook, prefill?: Pref
 // que ya usan `parseAlumnadoSheet`/`mapearSubcolumnas` — por eso esas se
 // quedan sin icono).
 function buildConfiguracionSheet(wb: import('exceljs').Workbook, configuracionReal?: DatosRealesTemplate['configuracion']) {
+    const { numNiveles } = buildDatosOficialesSheet(wb);
     const sheet = wb.addWorksheet(HOJA_CONFIGURACION);
 
     addBanner(
         sheet, 4, 32 * 4, '📋', 'Configuración',
-        'Declara aquí, una vez, lo que usas: niveles, materias/actividades (incluye guardias, reuniones...), grupos y aulas — un valor por fila. Estas listas alimentan los desplegables de "Horario" y "Alumnado". Son 4 listas INDEPENDIENTES entre sí: la fila 5 de una columna no tiene por qué tener nada que ver con la fila 5 de otra — cada columna es su propia lista suelta.',
+        'Declara aquí, una vez, lo que usas: niveles, materias/actividades (incluye guardias, reuniones...), grupos y aulas — un valor por fila. Estas listas alimentan los desplegables de "Horario" y "Alumnado". Son 4 listas INDEPENDIENTES entre sí: la fila 5 de una columna no tiene por qué tener nada que ver con la fila 5 de otra — cada columna es su propia lista suelta. Nivel y Materia sugieren desde el currículo oficial ya empaquetado en la app (sin bloquear: sigues pudiendo escribir uno propio, como una guardia o una materia sin decreto).',
     );
 
     const columnas: { header: string; ejemplo: string; ejemplo2?: string; reales?: string[] }[] = [
@@ -709,6 +782,18 @@ function buildConfiguracionSheet(wb: import('exceljs').Workbook, configuracionRe
     for (let i = 0; i < filas; i++) {
         const r = CONFIG_FILA_DATOS_INICIO + i;
         for (let c = 1; c <= 4; c++) estilizarCeldaDatos(sheet.getCell(r, c), i);
+        setListValidation(sheet.getCell(r, CONFIG_COL_NIVEL), datosOficialesRange(DATOS_OFICIALES_COL_NIVEL, numNiveles));
+        // Materia depende del Nivel de esta misma fila: busca en DatosOficiales
+        // el slug del rango con nombre correspondiente a ese nivel (columna
+        // RangoMaterias) y lo resuelve con INDIRECT -- si el Nivel de la fila
+        // está vacío o no es uno oficial, VLOOKUP falla e INDIRECT no ofrece
+        // sugerencias, pero la celda sigue sin bloquear texto libre.
+        const nivelCol = String.fromCharCode(64 + CONFIG_COL_NIVEL);
+        const filaFinDatosOficiales = DATOS_OFICIALES_FILA_DATOS_INICIO + numNiveles - 1;
+        setListValidation(
+            sheet.getCell(r, CONFIG_COL_MATERIA),
+            `INDIRECT(VLOOKUP($${nivelCol}${r},${HOJA_DATOS_OFICIALES}!$A$${DATOS_OFICIALES_FILA_DATOS_INICIO}:$B$${filaFinDatosOficiales},2,FALSE))`
+        );
     }
 
     sheet.getRow(CONFIG_FILA_CABECERA).height = 32;

@@ -94,7 +94,16 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
             case 'schedule':
                 return <ScheduleManager courses={curriculumCourses} academicConfiguration={academicConfiguration} setAcademicConfiguration={setAcademicConfiguration} />;
             case 'courses':
-                return <CourseManager courses={curriculumCourses} />;
+                return (
+                    <CourseManager
+                        courses={curriculumCourses}
+                        keyCompetences={keyCompetences}
+                        onCreateKeyCompetence={onCreateKeyCompetence}
+                        onUpdateKeyCompetence={onUpdateKeyCompetence}
+                        onCreateDescriptor={onCreateDescriptor}
+                        onUpdateDescriptor={onUpdateDescriptor}
+                    />
+                );
              case 'academicConfig':
                 // Fusionado en Fase 8 (bloque 5): antes "Cursos Académicos"
                 // (gestión de años) y "Configuración del Curso" (fechas/

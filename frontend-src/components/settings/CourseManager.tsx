@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import type { Course } from '../../types';
+import React, { useMemo, useState } from 'react';
+import type { Course, KeyCompetence, OperationalDescriptor } from '../../types';
 import { PencilIcon, TrashIcon, XMarkIcon } from '../Icons';
 import Input from '../Input';
 import Select from '../Select';
@@ -8,6 +8,23 @@ import { HUE_PRESETS, ACCENT_WHITE, ACCENT_BLACK } from '../../utils';
 import { useCreateCourse, useUpdateCourse, useDeleteCourse } from '../../hooks/useCourses';
 import { useCurrentAcademicYear, useAcademicYearCourses, useAddAcademicYearCourse, useRemoveAcademicYearCourse } from '../../hooks/useAcademicYears';
 import { useApiClasses, useCreateClass, useUpdateClass, useDeleteClass } from '../../hooks/useApiClasses';
+import { useCurriculumImport } from '../../hooks/useCurriculumImport';
+import { NIVELES_OFICIALES, TODOS_LOS_PRESETS, filtrarPorCurso, type CurriculumPreset } from '../../curriculumPresets';
+
+// Niveles sin preset oficial (PDC) -- no aparecen en NIVELES_OFICIALES
+// porque no tienen currículo empaquetado, pero se siguen pudiendo elegir
+// igual que antes de este cambio.
+const NIVELES_SIN_PRESET = ['3º ESO (PDC)', '4º ESO (PDC)'];
+
+// "3º ESO (PDC)" también empieza por un dígito -- el mismo regex que ya usa
+// CurriculumManager.tsx para extraer curso/etapa de un `level` libre sirve
+// igual aquí (PDC filtra por los mismos materias que su curso base, ya que
+// no tiene preset propio).
+const cursoDeNivel = (nivel: string): number | null => {
+    const match = nivel.match(/(\d)/);
+    return match ? Number(match[1]) : null;
+};
+const etapaDeNivel = (nivel: string): 'eso' | 'bachillerato' => (/bach/i.test(nivel) ? 'bachillerato' : 'eso');
 
 // Solo se usan los campos "cáscara" de una clase (id/courseId/colorAcento/
 // schedule) — nunca alumnado/categorías/tareas/notas, así que no hace falta
@@ -15,9 +32,18 @@ import { useApiClasses, useCreateClass, useUpdateClass, useDeleteClass } from '.
 // grades siguen sin migrar (bloque 5), sin tocarlos aquí.
 type ClassShell = { id: string; courseId: string; colorAcento?: number; schedule?: unknown[] };
 
-const CourseManager: React.FC<{
+interface CourseManagerProps {
     courses: Course[];
-}> = ({ courses }) => {
+    keyCompetences: KeyCompetence[];
+    onCreateKeyCompetence: (data: { code: string; description: string }) => Promise<KeyCompetence>;
+    onUpdateKeyCompetence: (id: string, data: Partial<{ code: string; description: string }>) => Promise<void>;
+    onCreateDescriptor: (keyCompetenceId: string, data: { code: string; description: string; stage?: 'eso' | 'bachillerato' }) => Promise<OperationalDescriptor>;
+    onUpdateDescriptor: (id: string, data: Partial<{ code: string; description: string; stage: 'eso' | 'bachillerato' }>) => Promise<void>;
+}
+
+const CourseManager: React.FC<CourseManagerProps> = ({
+    courses, keyCompetences, onCreateKeyCompetence, onUpdateKeyCompetence, onCreateDescriptor, onUpdateDescriptor,
+}) => {
     const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
     const remoteClasses = useApiClasses(yearId, { enabled: !!yearId });
@@ -34,9 +60,37 @@ const CourseManager: React.FC<{
 
     const effectiveClasses: ClassShell[] = remoteClasses.data ?? [];
 
+    const curriculumImport = useCurriculumImport({
+        keyCompetences, onCreateKeyCompetence, onUpdateKeyCompetence, onCreateDescriptor, onUpdateDescriptor,
+    });
+
     const [newLevel, setNewLevel] = useState('1º ESO');
     const [newSubject, setNewSubject] = useState('');
     const [newOtherName, setNewOtherName] = useState('');
+    // Materia recién creada con un preset oficial que coincide -- se ofrece
+    // "Cargar currículo oficial" justo debajo del formulario hasta que se
+    // pulse o se cree otra materia. `preset` puede ser null (materia propia,
+    // sin currículo oficial que ofrecer).
+    const [materiaRecienCreada, setMateriaRecienCreada] = useState<{ course: Course; preset: CurriculumPreset | null } | null>(null);
+
+    const materiasFiltradas = useMemo(() => {
+        const curso = cursoDeNivel(newLevel);
+        const etapa = etapaDeNivel(newLevel);
+        const presets = filtrarPorCurso(curso, etapa, TODOS_LOS_PRESETS);
+        return Array.from(new Set(presets.map(p => p.materia))).sort((a, b) => a.localeCompare(b, 'es'));
+    }, [newLevel]);
+
+    // Si lo escrito coincide EXACTAMENTE (mayúsc./tildes incluidas) con una
+    // materia oficial de este nivel, se resuelve a su preset -- si hay más
+    // de una variante (p.ej. Matemáticas 4º ESO A/B), se coge la primera; el
+    // resto de variantes se siguen pudiendo elegir a mano desde Gestionar
+    // Currículo.
+    const presetCoincidente = useMemo(() => {
+        const curso = cursoDeNivel(newLevel);
+        const etapa = etapaDeNivel(newLevel);
+        const presets = filtrarPorCurso(curso, etapa, TODOS_LOS_PRESETS);
+        return presets.find(p => p.materia === newSubject.trim()) ?? null;
+    }, [newLevel, newSubject]);
     const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
     const [editLevel, setEditLevel] = useState('');
     const [editSubject, setEditSubject] = useState('');
@@ -90,7 +144,18 @@ const CourseManager: React.FC<{
         // este curso académico" — se enlaza en el mismo paso, si no
         // quedaría creada pero invisible en la lista (filtrada por año).
         await addYearCourseMutation.mutateAsync({ yearId, data: { courseId: newCourse.id } });
+        setMateriaRecienCreada({ course: newCourse, preset: presetCoincidente });
         setNewSubject('');
+    };
+
+    // Un curso recién creado nunca tiene competencias específicas propias
+    // todavía -- a diferencia de Gestionar Currículo (que fusiona/reemplaza
+    // sobre un curso que puede llevar tiempo en uso), aquí no hace falta
+    // consultarlas, siempre se parte de cero.
+    const handleCargarCurriculoRecienCreada = async () => {
+        if (!materiaRecienCreada?.preset) return;
+        await curriculumImport.cargarDesdePreset(materiaRecienCreada.course, materiaRecienCreada.preset, []);
+        setMateriaRecienCreada(null);
     };
 
     // Enlazar una materia que ya existe globalmente (de otro curso académico,
@@ -208,18 +273,51 @@ const CourseManager: React.FC<{
                     <form onSubmit={handleAddCourse} className="flex flex-col sm:flex-row items-end gap-2 p-3 border rounded-lg">
                         <div className="w-full sm:w-auto flex-grow">
                             <label className="text-xs font-medium text-slate-600">Nivel Educativo</label>
-                            <Select value={newLevel} onChange={e => setNewLevel(e.target.value)} className="w-full mt-1">
-                                <option>1º ESO</option> <option>2º ESO</option> <option>3º ESO</option> <option>4º ESO</option>
-                                <option>3º ESO (PDC)</option> <option>4º ESO (PDC)</option>
-                                <option>1º Bachillerato</option> <option>2º Bachillerato</option>
+                            <Select value={newLevel} onChange={e => { setNewLevel(e.target.value); setNewSubject(''); }} className="w-full mt-1">
+                                {NIVELES_OFICIALES.map(n => <option key={n.etiqueta}>{n.etiqueta}</option>)}
+                                {NIVELES_SIN_PRESET.map(n => <option key={n}>{n}</option>)}
                             </Select>
                         </div>
                         <div className="w-full sm:w-auto flex-grow">
-                            <label className="text-xs font-medium text-slate-600">Nombre de la Materia (nueva)</label>
-                            <Input type="text" value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="Ej: Física y Química" className="w-full mt-1"/>
+                            <label className="text-xs font-medium text-slate-600">Materia</label>
+                            <Input
+                                type="text"
+                                list="materias-oficiales-nueva"
+                                value={newSubject}
+                                onChange={e => setNewSubject(e.target.value)}
+                                placeholder="Escribe para buscar, o el nombre de una materia propia"
+                                className="w-full mt-1"
+                            />
+                            <datalist id="materias-oficiales-nueva">
+                                {materiasFiltradas.map(m => <option key={m} value={m} />)}
+                            </datalist>
                         </div>
                         <button type="submit" className="w-full sm:w-auto bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Añadir Materia</button>
                     </form>
+
+                    {materiaRecienCreada?.preset && (
+                        <div className="flex items-center justify-between gap-2 p-3 mt-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                            <p className="text-sm text-emerald-800">
+                                '{materiaRecienCreada.course.subject}' tiene currículo oficial disponible
+                                (<span className="font-medium">{materiaRecienCreada.preset.etiqueta}</span>).
+                            </p>
+                            <button
+                                type="button"
+                                onClick={handleCargarCurriculoRecienCreada}
+                                disabled={curriculumImport.importando}
+                                className="flex-shrink-0 bg-emerald-600 text-white text-sm font-semibold py-1.5 px-3 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                                {curriculumImport.importando ? 'Cargando…' : 'Cargar currículo oficial'}
+                            </button>
+                        </div>
+                    )}
+                    {materiaRecienCreada && !materiaRecienCreada.preset && (
+                        <p className="text-xs text-slate-400 mt-2">
+                            '{materiaRecienCreada.course.subject}' no tiene currículo oficial empaquetado -- puedes
+                            añadir sus competencias/criterios/saberes a mano, o importar un CSV propio, desde
+                            Gestionar Currículo.
+                        </p>
+                    )}
                 </div>
                 <div>
                     <h4 className="text-lg font-semibold text-slate-700 mb-2">Otras Ocupaciones (Guardias, Reuniones, etc.)</h4>
