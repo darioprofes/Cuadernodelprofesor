@@ -1,7 +1,7 @@
 import type { MouseEvent } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import type { Category, ClassData, Course, EvaluationPeriod, SessionDetail, Student } from './types';
+import type { Category, ClassData, Course, EvaluationPeriod, Meeting, SessionDetail, Student } from './types';
 
 // Nombre para mostrar al usuario: orden natural "Nombre Apellido1 Apellido2"
 export const getNombreCompleto = (student: Student): string =>
@@ -85,6 +85,15 @@ export const fileToDataUrl = (file: File): Promise<string> =>
 // (si no, "1.10" quedaría antes que "1.2").
 export const compararCodigo = (a: string, b: string): number =>
     a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
+
+// Compartido entre ReunionesView.tsx (badge/filtro) y AnnualCalendarView.tsx
+// (tooltip del puntito de reunión en el calendario anual).
+export const TIPO_REUNION_LABEL: Record<Meeting['tipo'], string> = {
+    tutoria: 'Tutoría',
+    r_tutores: 'R. Tutores',
+    departamento: 'Departamento',
+    familia: 'Familia',
+};
 
 export const buildClassName = (grupo: string | undefined, materia: string): string => {
     return grupo ? `${grupo} - ${materia}` : materia;

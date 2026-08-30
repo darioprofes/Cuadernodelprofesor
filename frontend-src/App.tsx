@@ -989,6 +989,9 @@ const App = () => {
                 return <AnnualCalendarView
                     academicConfiguration={effectiveAcademicConfiguration}
                     agendaNotes={effectiveAgendaNotes}
+                    meetings={effectiveMeetings}
+                    classes={hydratedClasses}
+                    courses={curriculumCourses}
                     onOpenDay={(dateStr) => { setCalendarJumpDate(dateStr); setActiveView('calendar'); }}
                 />;
             default:

@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
-import type { AcademicConfiguration, AgendaNote, Holiday } from '../types';
+import type { AcademicConfiguration, AgendaNote, ClassData, Course, Holiday, Meeting } from '../types';
 import { TableCellsIcon } from './Icons';
-import { SEMANTIC, SIDEBAR_BG } from '../theme/palette';
+import { SEMANTIC, SIDEBAR_BG, PALETTE } from '../theme/palette';
 import { pageHeaderMinHeight } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
+import { formatClassLabel, TIPO_REUNION_LABEL } from '../utils';
 import EmptyState from './EmptyState';
 import {
     addDaysUTC, addMonthsUTC, createIsHoliday, endOfMonthUTC,
@@ -26,11 +27,16 @@ const COLOR_FIN_CURSO = '#00AFEF';
 // la app.
 const COLOR_NO_LECTIVO = '#00A99D';
 const COLOR_VACACIONES = '#FFCC00';
-// Puntito de "hay anotación en la agenda ese día" -- morado a propósito,
-// no lo usa ningún otro estado de esta vista, para que no se confunda con
-// festivo/vacaciones/etc. Con halo blanco (ver dotStyle) para que se lea
-// igual de bien sobre fondos claros y sobre los de color sólido.
-const COLOR_ANOTACION = '#7c3aed';
+// Puntitos de "hay algo anotado ese día en la agenda" -- son 3 tipos
+// distintos de anotación (nota libre, reunión, tarea calificable, ver
+// MonthView.tsx en components/calendar/), cada uno con su propio color
+// (reutilizando los mismos ya asociados a cada tipo en el resto de la
+// app) y su propio puntito, en vez de uno solo genérico. Con halo blanco
+// (ver el span de cada puntito) para que se lean igual de bien sobre
+// fondos claros y sobre los de color sólido.
+const COLOR_NOTA = '#d97706';               // mismo ámbar que "Añadir nota libre" en MonthView.tsx
+const COLOR_REUNION = PALETTE.teal.header;  // mismo morado/magenta que "Apuntar una reunión" en MonthView.tsx
+const COLOR_TAREA = PALETTE.blue.base;      // mismo azul que "Añadir tarea calificable" en MonthView.tsx
 
 const COLOR_POR_TIPO_FESTIVO: Record<NonNullable<Holiday['type']>, string> = {
     festivo: COLOR_FESTIVO,
@@ -61,21 +67,49 @@ const LegendItem: React.FC<{ color?: string; ring?: boolean; label: string }> = 
 const AnnualCalendarView: React.FC<{
     academicConfiguration: AcademicConfiguration;
     agendaNotes?: AgendaNote[];
+    meetings?: Meeting[];
+    classes?: ClassData[];
+    courses?: Course[];
     onOpenDay: (dateStr: string) => void;
-}> = ({ academicConfiguration, agendaNotes, onOpenDay }) => {
+}> = ({ academicConfiguration, agendaNotes, meetings, classes, courses, onOpenDay }) => {
     const { academicYearStart, academicYearEnd, holidays } = academicConfiguration;
 
-    // Agrupadas por fecha para que cada celda resuelva su puntito en O(1) --
-    // agendaNotes ya viene completo para todo el curso (una sola query), sin
+    // Las 3 formas de anotar algo en la Agenda para un día (ver MonthView.tsx:
+    // nota libre, reunión, tarea calificable), cada una agrupada por fecha
+    // para que cada celda resuelva sus puntitos en O(1) -- las 3 fuentes ya
+    // vienen completas para todo el curso (sin scoping por clase activa), sin
     // necesidad de pedirlas día a día.
     const notasPorFecha = useMemo(() => {
-        const map = new Map<string, AgendaNote[]>();
+        const map = new Map<string, string[]>();
         for (const nota of agendaNotes ?? []) {
             const lista = map.get(nota.fecha);
-            if (lista) lista.push(nota); else map.set(nota.fecha, [nota]);
+            if (lista) lista.push(nota.texto); else map.set(nota.fecha, [nota.texto]);
         }
         return map;
     }, [agendaNotes]);
+
+    const reunionesPorFecha = useMemo(() => {
+        const map = new Map<string, string[]>();
+        for (const m of meetings ?? []) {
+            const texto = [TIPO_REUNION_LABEL[m.tipo], m.conQuien, m.hora].filter(Boolean).join(' · ');
+            const lista = map.get(m.fecha);
+            if (lista) lista.push(texto); else map.set(m.fecha, [texto]);
+        }
+        return map;
+    }, [meetings]);
+
+    const tareasPorFecha = useMemo(() => {
+        const map = new Map<string, string[]>();
+        for (const c of classes ?? []) {
+            for (const a of c.assignments) {
+                if (!a.date) continue;
+                const texto = `${a.name} — ${formatClassLabel(c, courses ?? [])}`;
+                const lista = map.get(a.date);
+                if (lista) lista.push(texto); else map.set(a.date, [texto]);
+            }
+        }
+        return map;
+    }, [classes, courses]);
 
     const months = useMemo(() => {
         if (!academicYearStart || !academicYearEnd) return [];
@@ -142,6 +176,8 @@ const AnnualCalendarView: React.FC<{
                         isHoliday={isHoliday}
                         getHoliday={getHoliday}
                         notasPorFecha={notasPorFecha}
+                        reunionesPorFecha={reunionesPorFecha}
+                        tareasPorFecha={tareasPorFecha}
                         academicYearStart={academicYearStart}
                         academicYearEnd={academicYearEnd}
                         todayStr={todayStr}
@@ -155,7 +191,9 @@ const AnnualCalendarView: React.FC<{
                     <LegendItem color={COLOR_NO_LECTIVO} label="No lectivo" />
                     <LegendItem color={COLOR_VACACIONES} label="Vacaciones" />
                     <LegendItem color={COLOR_FIN_DE_SEMANA} label="Fin de semana" />
-                    <LegendItem color={COLOR_ANOTACION} label="Anotación en la agenda" />
+                    <LegendItem color={COLOR_NOTA} label="Nota en la agenda" />
+                    <LegendItem color={COLOR_REUNION} label="Reunión" />
+                    <LegendItem color={COLOR_TAREA} label="Tarea calificable" />
                     <LegendItem ring label="Hoy" />
                 </div>
             </div>
@@ -167,12 +205,14 @@ const MiniMonth: React.FC<{
     monthStart: Date;
     isHoliday: (date: Date) => boolean;
     getHoliday: (dateStr: string) => Holiday | undefined;
-    notasPorFecha: Map<string, AgendaNote[]>;
+    notasPorFecha: Map<string, string[]>;
+    reunionesPorFecha: Map<string, string[]>;
+    tareasPorFecha: Map<string, string[]>;
     academicYearStart: string;
     academicYearEnd: string;
     todayStr: string;
     onOpenDay: (dateStr: string) => void;
-}> = ({ monthStart, isHoliday, getHoliday, notasPorFecha, academicYearStart, academicYearEnd, todayStr, onOpenDay }) => {
+}> = ({ monthStart, isHoliday, getHoliday, notasPorFecha, reunionesPorFecha, tareasPorFecha, academicYearStart, academicYearEnd, todayStr, onOpenDay }) => {
     const monthEnd = endOfMonthUTC(monthStart);
     const gridStart = startOfWeekUTC(monthStart);
     const gridEnd = addDaysUTC(startOfWeekUTC(monthEnd), 6);
@@ -224,6 +264,8 @@ const MiniMonth: React.FC<{
                                 const isEnd = dateStr === academicYearEnd;
                                 const isToday = dateStr === todayStr;
                                 const notas = notasPorFecha.get(dateStr);
+                                const reuniones = reunionesPorFecha.get(dateStr);
+                                const tareas = tareasPorFecha.get(dateStr);
 
                                 // Bloques de color sólido (no pastel), más fiel al
                                 // aspecto del calendario de Educastur que el tono
@@ -256,12 +298,30 @@ const MiniMonth: React.FC<{
                                             }}
                                         >
                                             {d.getUTCDate()}
-                                            {notas && notas.length > 0 && (
-                                                <span
-                                                    title={notas.map(n => n.texto).join('\n')}
-                                                    className="absolute top-0 right-0 w-1.5 h-1.5 rounded-full"
-                                                    style={{ backgroundColor: COLOR_ANOTACION, boxShadow: '0 0 0 1px white' }}
-                                                />
+                                            {(notas || reuniones || tareas) && (
+                                                <span className="absolute top-0 right-0 flex gap-0.5 p-0.5">
+                                                    {notas && (
+                                                        <span
+                                                            title={notas.join('\n')}
+                                                            className="w-1.5 h-1.5 rounded-full"
+                                                            style={{ backgroundColor: COLOR_NOTA, boxShadow: '0 0 0 1px white' }}
+                                                        />
+                                                    )}
+                                                    {reuniones && (
+                                                        <span
+                                                            title={reuniones.join('\n')}
+                                                            className="w-1.5 h-1.5 rounded-full"
+                                                            style={{ backgroundColor: COLOR_REUNION, boxShadow: '0 0 0 1px white' }}
+                                                        />
+                                                    )}
+                                                    {tareas && (
+                                                        <span
+                                                            title={tareas.join('\n')}
+                                                            className="w-1.5 h-1.5 rounded-full"
+                                                            style={{ backgroundColor: COLOR_TAREA, boxShadow: '0 0 0 1px white' }}
+                                                        />
+                                                    )}
+                                                </span>
                                             )}
                                         </button>
                                     </td>

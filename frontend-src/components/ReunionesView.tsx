@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import type { Meeting } from '../types';
 import { TrashIcon, PlusIcon, UsersIcon, PencilIcon, ExclamationTriangleIcon, ClockIcon, CalendarDaysIcon } from './Icons';
-import { toYYYYMMDD, addDays, getDayOfWeek1a7, formatFechaEs } from '../utils';
+import { toYYYYMMDD, addDays, getDayOfWeek1a7, formatFechaEs, TIPO_REUNION_LABEL as TIPO_LABEL } from '../utils';
 import PageHeader from './PageHeader';
 import { PAGE_ACCENT, PALETTE, SEMANTIC } from '../theme/palette';
 import Modal from './Modal';
@@ -18,13 +18,6 @@ interface ReunionesViewProps {
     openMeetingId?: string | null;
     onOpened?: () => void;
 }
-
-const TIPO_LABEL: Record<Meeting['tipo'], string> = {
-    tutoria: 'Tutoría',
-    r_tutores: 'R. Tutores',
-    departamento: 'Departamento',
-    familia: 'Familia',
-};
 
 const TIPO_COLOR: Record<Meeting['tipo'], string> = {
     tutoria: 'bg-blue-100 text-blue-700',
