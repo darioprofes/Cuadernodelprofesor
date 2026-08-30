@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { AcademicConfiguration, Holiday } from '../types';
+import type { AcademicConfiguration, AgendaNote, Holiday } from '../types';
 import { TableCellsIcon } from './Icons';
 import { SEMANTIC, SIDEBAR_BG } from '../theme/palette';
 import { pageHeaderMinHeight } from '../theme/components/PageHeader';
@@ -26,6 +26,11 @@ const COLOR_FIN_CURSO = '#00AFEF';
 // la app.
 const COLOR_NO_LECTIVO = '#00A99D';
 const COLOR_VACACIONES = '#FFCC00';
+// Puntito de "hay anotación en la agenda ese día" -- morado a propósito,
+// no lo usa ningún otro estado de esta vista, para que no se confunda con
+// festivo/vacaciones/etc. Con halo blanco (ver dotStyle) para que se lea
+// igual de bien sobre fondos claros y sobre los de color sólido.
+const COLOR_ANOTACION = '#7c3aed';
 
 const COLOR_POR_TIPO_FESTIVO: Record<NonNullable<Holiday['type']>, string> = {
     festivo: COLOR_FESTIVO,
@@ -55,9 +60,22 @@ const LegendItem: React.FC<{ color?: string; ring?: boolean; label: string }> = 
 // mano -- esas fechas no vienen como texto en ningún PDF.
 const AnnualCalendarView: React.FC<{
     academicConfiguration: AcademicConfiguration;
+    agendaNotes?: AgendaNote[];
     onOpenDay: (dateStr: string) => void;
-}> = ({ academicConfiguration, onOpenDay }) => {
+}> = ({ academicConfiguration, agendaNotes, onOpenDay }) => {
     const { academicYearStart, academicYearEnd, holidays } = academicConfiguration;
+
+    // Agrupadas por fecha para que cada celda resuelva su puntito en O(1) --
+    // agendaNotes ya viene completo para todo el curso (una sola query), sin
+    // necesidad de pedirlas día a día.
+    const notasPorFecha = useMemo(() => {
+        const map = new Map<string, AgendaNote[]>();
+        for (const nota of agendaNotes ?? []) {
+            const lista = map.get(nota.fecha);
+            if (lista) lista.push(nota); else map.set(nota.fecha, [nota]);
+        }
+        return map;
+    }, [agendaNotes]);
 
     const months = useMemo(() => {
         if (!academicYearStart || !academicYearEnd) return [];
@@ -123,6 +141,7 @@ const AnnualCalendarView: React.FC<{
                         monthStart={monthStart}
                         isHoliday={isHoliday}
                         getHoliday={getHoliday}
+                        notasPorFecha={notasPorFecha}
                         academicYearStart={academicYearStart}
                         academicYearEnd={academicYearEnd}
                         todayStr={todayStr}
@@ -136,6 +155,7 @@ const AnnualCalendarView: React.FC<{
                     <LegendItem color={COLOR_NO_LECTIVO} label="No lectivo" />
                     <LegendItem color={COLOR_VACACIONES} label="Vacaciones" />
                     <LegendItem color={COLOR_FIN_DE_SEMANA} label="Fin de semana" />
+                    <LegendItem color={COLOR_ANOTACION} label="Anotación en la agenda" />
                     <LegendItem ring label="Hoy" />
                 </div>
             </div>
@@ -147,11 +167,12 @@ const MiniMonth: React.FC<{
     monthStart: Date;
     isHoliday: (date: Date) => boolean;
     getHoliday: (dateStr: string) => Holiday | undefined;
+    notasPorFecha: Map<string, AgendaNote[]>;
     academicYearStart: string;
     academicYearEnd: string;
     todayStr: string;
     onOpenDay: (dateStr: string) => void;
-}> = ({ monthStart, isHoliday, getHoliday, academicYearStart, academicYearEnd, todayStr, onOpenDay }) => {
+}> = ({ monthStart, isHoliday, getHoliday, notasPorFecha, academicYearStart, academicYearEnd, todayStr, onOpenDay }) => {
     const monthEnd = endOfMonthUTC(monthStart);
     const gridStart = startOfWeekUTC(monthStart);
     const gridEnd = addDaysUTC(startOfWeekUTC(monthEnd), 6);
@@ -202,6 +223,7 @@ const MiniMonth: React.FC<{
                                 const isStart = dateStr === academicYearStart;
                                 const isEnd = dateStr === academicYearEnd;
                                 const isToday = dateStr === todayStr;
+                                const notas = notasPorFecha.get(dateStr);
 
                                 // Bloques de color sólido (no pastel), más fiel al
                                 // aspecto del calendario de Educastur que el tono
@@ -225,7 +247,7 @@ const MiniMonth: React.FC<{
                                             type="button"
                                             onClick={() => onOpenDay(dateStr)}
                                             title={titleParts.length > 0 ? titleParts.join(' · ') : undefined}
-                                            className="w-full h-5 hover:brightness-95 transition-[filter]"
+                                            className="relative w-full h-5 hover:brightness-95 transition-[filter]"
                                             style={{
                                                 backgroundColor,
                                                 color,
@@ -234,6 +256,13 @@ const MiniMonth: React.FC<{
                                             }}
                                         >
                                             {d.getUTCDate()}
+                                            {notas && notas.length > 0 && (
+                                                <span
+                                                    title={notas.map(n => n.texto).join('\n')}
+                                                    className="absolute top-0 right-0 w-1.5 h-1.5 rounded-full"
+                                                    style={{ backgroundColor: COLOR_ANOTACION, boxShadow: '0 0 0 1px white' }}
+                                                />
+                                            )}
                                         </button>
                                     </td>
                                 );

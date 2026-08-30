@@ -5,7 +5,7 @@ import {
     HomeIcon, ClockIcon, CalendarDaysIcon, BookOpenIcon, ClipboardDocumentIcon,
     UsersIcon, ClipboardDocumentCheckIcon, ChartBarIcon, SparklesIcon,
     StarIcon, ChevronRightIcon, ChevronDownIcon, Bars3Icon, XMarkIcon, ListBulletIcon, BeakerIcon,
-    TableCellsIcon,
+    TableCellsIcon, AcademicCapIcon, MagnifyingGlassIcon,
 } from './Icons';
 import Logo from './Logo';
 import { PALETTE, SEMANTIC, SIDEBAR_BG } from '../theme/palette';
@@ -74,6 +74,8 @@ const NAV_SECTIONS: NavSection[] = [
         label: 'Herramientas',
         items: [
             { view: 'ai-tools' as View, label: 'Anonimizador', icon: SparklesIcon },
+            { view: 'adaptar-material' as View, label: 'Adaptar material NEAE', icon: AcademicCapIcon },
+            { view: 'deteccion-curricular' as View, label: 'Detección curricular', icon: MagnifyingGlassIcon },
         ],
     }]),
 ];
@@ -148,7 +150,7 @@ const SidebarContent: React.FC<{
                 <p className="lowercase leading-none mt-0.5" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 600, fontSize: '16px', color: PALETTE.blue.base }}>docente</p>
             </div>
         </div>
-        <nav className="flex-1 overflow-y-auto p-2 space-y-1.5">
+        <nav className="flex-1 p-2 space-y-1.5">
             {NAV_SECTIONS.map((section, i) => {
                 // Hoy/Horario/Agenda no pertenecen a ninguna sección con
                 // color propio -- acento blanco, pedido explícito.
@@ -229,7 +231,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenFavo
         <>
             {/* Escritorio: columna fija lateral */}
             {!hidden && (
-                <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r border-white/10 sticky top-0 h-screen" style={{ backgroundColor: SIDEBAR_BG }}>
+                <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r border-white/10 sticky top-0 min-h-screen" style={{ backgroundColor: SIDEBAR_BG }}>
                     <SidebarContent activeView={activeView} onNavigate={handleNavigateDesktop} onOpenFavoritos={onOpenFavoritos} />
                 </aside>
             )}
