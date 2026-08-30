@@ -713,9 +713,11 @@ const App = () => {
                 tasks={effectiveTasks}
                 setTasks={setTasksCallback}
                 meetings={effectiveMeetings}
+                agendaNotes={effectiveAgendaNotes}
                 absencesByClassId={absencesByClassId}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
+                onOpenDay={(dateStr) => { setCalendarJumpDate(dateStr); setActiveView('calendar'); }}
                 onAbrirBorradorSA={(courseId, resultado) => {
                     setPendingSAResultado({ courseId, resultado });
                     setMateriaPageCourseId(courseId);

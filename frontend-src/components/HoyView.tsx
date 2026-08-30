@@ -1,12 +1,12 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
-import type { ClassData, Course, AcademicConfiguration, Task, Meeting, View } from '../types';
+import type { ClassData, Course, AcademicConfiguration, AgendaNote, Task, Meeting, View } from '../types';
 import type { Absence } from '../types/api';
 import ClassLabel from './ClassLabel';
 import BannerCostero from './BannerCostero';
 import Input from './Input';
-import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange, formatFechaEs } from '../utils';
-import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon, ArrowUpTrayIcon, ExclamationTriangleIcon, SparklesIcon } from './Icons';
+import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange, formatFechaEs, formatClassLabel, TIPO_REUNION_LABEL } from '../utils';
+import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon, ArrowUpTrayIcon, ExclamationTriangleIcon, SparklesIcon, ListBulletIcon } from './Icons';
 import { PALETTE } from '../theme/palette';
 import DateNavButton from './DateNavButton';
 import { computeDashboardNotices, type DashboardNoticeKind } from '../services/dashboardNotices';
@@ -64,9 +64,13 @@ interface HoyViewProps {
     tasks: Task[];
     setTasks: (updater: React.SetStateAction<Task[]>) => void;
     meetings: Meeting[];
+    agendaNotes: AgendaNote[];
     absencesByClassId: Record<string, Absence[]>;
     setActiveView: (view: View) => void;
     setActiveClassId: (id: string) => void;
+    // Mismo callback que ya usa AnnualCalendarView -- salta a ese día en la
+    // Agenda (App.tsx: setCalendarJumpDate + setActiveView('calendar')).
+    onOpenDay?: (dateStr: string) => void;
     onAbrirBorradorSA: (courseId: string, resultado: ResultadoTrabajoSA) => void;
     onAbrirBorradorInstrumento: (courseId: string, resultado: ResultadoTrabajoInstrumento) => void;
 }
@@ -84,7 +88,7 @@ interface SlotHoy {
     aula?: string;
 }
 
-const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfiguration, tasks, setTasks, meetings, absencesByClassId, setActiveView, setActiveClassId, onAbrirBorradorSA, onAbrirBorradorInstrumento }) => {
+const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfiguration, tasks, setTasks, meetings, agendaNotes, absencesByClassId, setActiveView, setActiveClassId, onOpenDay, onAbrirBorradorSA, onAbrirBorradorInstrumento }) => {
     // `new Date()` solo se recalcularía en cada render: sin este tick, si no
     // hay ninguna otra interacción la vista se queda con la hora congelada
     // en el momento en que se montó (p.ej. tras cambiar la hora del sistema
@@ -163,6 +167,20 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     // pulsar el icono de borrar, y con confirmación previa.
     const tareasOrdenadas = [...tasks].sort((a, b) => Number(a.hecho) - Number(b.hecho));
     const tareasPendientes = tasks.filter(t => !t.hecho);
+
+    // "Programado para hoy" (el día navegado, no necesariamente hoy real):
+    // las 3 formas de anotar algo en la Agenda para un día (ver
+    // MonthView.tsx / AnnualCalendarView.tsx), aquí listadas de verdad en
+    // vez de solo contadas como en "Próximos eventos" de más arriba.
+    const tareasEvaluablesDelDia = useMemo(() => (
+        classes.flatMap(c => c.assignments.filter(a => a.date === fechaSeleccionada).map(a => ({ assignment: a, classData: c })))
+    ), [classes, fechaSeleccionada]);
+    const reunionesDelDia = useMemo(() => (
+        meetings.filter(m => m.fecha === fechaSeleccionada)
+    ), [meetings, fechaSeleccionada]);
+    const notasDelDia = useMemo(() => (
+        agendaNotes.filter(n => n.fecha === fechaSeleccionada)
+    ), [agendaNotes, fechaSeleccionada]);
 
     const [nuevaTareaTexto, setNuevaTareaTexto] = useState('');
 
@@ -362,7 +380,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
                 <div className="bg-white rounded-xl shadow-sm border overflow-hidden h-full flex flex-col">
                     <div className="px-4 py-2 flex items-center justify-between text-white text-sm font-semibold" style={{ backgroundColor: PALETTE.green.header }}>
-                        <span className="flex items-center gap-1.5"><CheckCircleIcon className="w-4 h-4" /> Tareas pendientes</span>
+                        <span className="flex items-center gap-1.5"><CheckCircleIcon className="w-4 h-4" /> Lista de tareas pendientes</span>
                         {tareasPendientes.length > 0 && (
                             <span className="text-[10px] font-semibold bg-white/25 rounded-full px-2 py-0.5 flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-white/90"></span>{tareasPendientes.length}
@@ -481,6 +499,65 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                         </div>
                     )}
                     </div>
+                </div>
+            </div>
+
+            {/* Debajo de los otros dos widgets, no dentro de "Todo list" -- decisión
+                estética explícita del usuario tras dudar entre las dos opciones. */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div className="px-4 py-2 flex items-center gap-1.5 text-white text-sm font-semibold" style={{ backgroundColor: PALETTE.sand.header }}>
+                    <CalendarDaysIcon className="w-4 h-4 flex-shrink-0" />
+                    <h3>{esHoy ? 'Programado para hoy' : `Programado para el ${diaSemanaLargo} ${fechaLarga}`}</h3>
+                </div>
+                <div className="p-4">
+                    {tareasEvaluablesDelDia.length === 0 && reunionesDelDia.length === 0 && notasDelDia.length === 0 ? (
+                        <p className="text-sm text-slate-400 text-center py-2">
+                            {esHoy ? 'Nada programado para hoy en la agenda.' : 'Nada programado ese día en la agenda.'}
+                        </p>
+                    ) : (
+                        <ul className="space-y-1">
+                            {tareasEvaluablesDelDia.map(({ assignment, classData: c }) => (
+                                <li key={`tarea-${assignment.id}`}>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleOpenCuaderno(c.id)}
+                                        className="w-full flex items-center gap-2 text-left p-1.5 rounded-lg hover:bg-slate-50 text-sm"
+                                    >
+                                        <span className="flex-shrink-0" style={{ color: PALETTE.green.header }}><ClipboardDocumentCheckIcon className="w-4 h-4" /></span>
+                                        <span className="truncate flex-grow text-slate-700">{assignment.name}</span>
+                                        <span className="text-xs text-slate-400 flex-shrink-0">{formatClassLabel(c, courses)}</span>
+                                    </button>
+                                </li>
+                            ))}
+                            {reunionesDelDia.map(m => (
+                                <li key={`reunion-${m.id}`}>
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenDay ? onOpenDay(fechaSeleccionada) : setActiveView('meetings')}
+                                        className="w-full flex items-center gap-2 text-left p-1.5 rounded-lg hover:bg-slate-50 text-sm"
+                                    >
+                                        <span className="flex-shrink-0" style={{ color: PALETTE.teal.header }}><UsersIcon className="w-4 h-4" /></span>
+                                        <span className="truncate flex-grow text-slate-700">
+                                            {TIPO_REUNION_LABEL[m.tipo]}{m.conQuien ? ` · ${m.conQuien}` : ''}
+                                        </span>
+                                        {m.hora && <span className="text-xs text-slate-400 flex-shrink-0">{m.hora}</span>}
+                                    </button>
+                                </li>
+                            ))}
+                            {notasDelDia.map(n => (
+                                <li key={`nota-${n.id}`}>
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenDay ? onOpenDay(fechaSeleccionada) : setActiveView('calendar')}
+                                        className="w-full flex items-center gap-2 text-left p-1.5 rounded-lg hover:bg-slate-50 text-sm"
+                                    >
+                                        <span className="flex-shrink-0" style={{ color: PALETTE.sand.header }}><ListBulletIcon className="w-4 h-4" /></span>
+                                        <span className="truncate flex-grow text-slate-700">{n.texto}</span>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
             </div>
             <TrabajosIAPanel
