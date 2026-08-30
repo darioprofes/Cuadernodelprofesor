@@ -9,7 +9,7 @@ import {
     useCreateDescriptor, useUpdateDescriptor, useDeleteDescriptor,
 } from './hooks/useKeyCompetences';
 import { useCourses, useUpdateCourse } from './hooks/useCourses';
-import { useAcademicYears, useCurrentAcademicYear, useActivateAcademicYear, useEvaluationPeriods, useAcademicYearCourses, useUpdateAcademicYear } from './hooks/useAcademicYears';
+import { useAcademicYears, useCurrentAcademicYear, useEvaluationPeriods, useAcademicYearCourses, useUpdateAcademicYear } from './hooks/useAcademicYears';
 import { useApiClasses } from './hooks/useApiClasses';
 import { useApiStudents } from './hooks/useApiStudents';
 import { useEnrollmentsForClasses } from './hooks/useEnrollments';
@@ -215,7 +215,6 @@ const App = () => {
     // desplegable (currentYear solo trae el activo) + "materias de este año"
     // para el desplegable de Materia.
     const allYears = useAcademicYears();
-    const activateYearMutation = useActivateAcademicYear();
     const yearCoursesQuery = useAcademicYearCourses(yearId, { enabled: !!yearId });
     const remoteClasses = useApiClasses(yearId, { enabled: !!yearId });
     const remoteStudents = useApiStudents();
@@ -687,10 +686,6 @@ const App = () => {
     // activa concreta (exportar CSV, comprobar integridad, vincular
     // criterios a un instrumento, ficha de alumno de cualquier clase...).
     const academicClasses = hydratedClasses.filter(c => curriculumCourses.find(course => course.id === c.courseId)?.type !== 'other');
-    const handleSelectYear = (id: string) => {
-        if (!id || activateYearMutation.isPending) return;
-        activateYearMutation.mutate(id);
-    };
 
     // Criterios/competencias reales del curso de `activeClass`, pedidos más arriba.
     const effectiveCriteria = remoteActiveCriteria.data ?? [];
@@ -1033,25 +1028,22 @@ const App = () => {
                 <header className={`${topBarHidden ? 'flex md:hidden' : 'flex'} border-b border-white/10 px-4 py-2 items-center justify-between sticky top-0 z-30`} style={{ backgroundColor: SIDEBAR_BG }}>
                     <ShortcutsBar shortcuts={shortcuts} onCreate={handleCreateShortcut} onUpdate={handleUpdateShortcut} onDelete={handleDeleteShortcut} />
                     <div className="flex items-center gap-2">
-                        {/* Informes, Cuaderno y la vista de Materia usan el contexto
-                            seleccionado aquí — igual en ambas plataformas desde que
-                            escritorio tiene academic_years real (Fase 7 bloque 4). */}
-                        {(REPORT_VIEWS.includes(activeView) || activeView === 'gradebook' || MATERIA_VIEWS.includes(activeView)) && (allYears.data?.length ?? 0) > 0 && (
+                        {/* Informes usa el contexto seleccionado aquí -- Cuaderno ya
+                            tiene su propio picker en la cabecera de la clase
+                            (GradebookTable.tsx) y Materia/Planificación SA el suyo
+                            propio (independiente de la clase activa, ver
+                            materiaPageCourseId más abajo): el desplegable de Curso
+                            Académico se quitó de aquí (redundante con "Activar" en
+                            Ajustes → Cursos Académicos, mismo useActivateAcademicYear
+                            por debajo) y el de Clase se quitó de las vistas donde no
+                            hacía nada -- petición explícita del usuario, 2026-08-30. */}
+                        {REPORT_VIEWS.includes(activeView) && (allYears.data?.length ?? 0) > 0 && (
                             <>
                                 {/* !w-auto: sin esto, width:100% (del Select compartido,
                                     pensado para formularios) les da una base de flex enorme,
                                     y bajo presión de espacio en la cabecera (accesos directos
                                     a la izquierda) el algoritmo de flexbox las encogía por
                                     debajo de su propio contenido. */}
-                                <Select value={yearId} onChange={(e) => handleSelectYear(e.target.value)} className="font-semibold !w-auto">
-                                    {(allYears.data ?? []).map(y => <option key={y.id} value={y.id}>{y.label}</option>)}
-                                </Select>
-                                {/* Un único selector Clase-Materia (no dos): elegir una clase
-                                    ya fija su materia (efecto de sincronización más arriba),
-                                    así que un desplegable de Materia aparte era redundante.
-                                    Las materias sin clases todavía (recién declaradas en
-                                    "Materias" de Ajustes) no aparecen aquí — para esas, entrar
-                                    a Ajustes → Materias. */}
                                 {academicClasses.length > 0 && (
                                     <Select value={activeClassId} onChange={(e) => setActiveClassId(e.target.value)} className="font-semibold !w-auto">
                                         <option value="">Clase…</option>

@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
 import Input from './Input';
@@ -57,6 +57,11 @@ interface GradebookTableProps {
   onCopyAssignment: (sourceAssignment: Assignment, targetClassId: string, targetPeriodId: string, targetCategoryId: string) => void;
 }
 
+// Chip de grupo (ClassLabel) más grande que su tamaño por defecto (pensado
+// para un uso decorativo en otras pantallas): aquí es parte de un control
+// real -- el botón de la cabecera y las opciones de su picker de clase.
+const CHIP_GRUPO_SELECCIONABLE = 'inline-block px-2.5 py-1 mr-1.5 rounded bg-slate-200 text-slate-700 text-sm font-mono font-semibold align-middle';
+
 const getGradeStyleClasses = (grade: number | null, config?: AcademicConfiguration) => {
     return getGradeColorClass(grade, config?.gradeScale);
 };
@@ -69,7 +74,7 @@ const toYYYYMMDD = (date: Date): string => {
 };
 
 const GradebookTable: React.FC<GradebookTableProps> = (props) => {
-  const { classData, allClasses, allCourses, criteria, specificCompetences, keyCompetences, programmingUnits, academicConfiguration, evaluationTools, onCopyAssignment } = props;
+  const { classData, allClasses, allCourses, criteria, specificCompetences, keyCompetences, programmingUnits, academicConfiguration, evaluationTools, setActiveClassId, onCopyAssignment } = props;
   const { evaluationPeriods } = academicConfiguration;
   const createCategoryMutation = useCreateCategory();
   const updateCategoryMutation = useUpdateCategory();
@@ -106,6 +111,29 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [assignmentToEdit, setAssignmentToEdit] = useState<Assignment | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [isImportarSAModalOpen, setIsImportarSAModalOpen] = useState(false);
+
+  // Cambio de clase pinchando en el propio nombre de la cabecera -- ya no
+  // vive solo en el desplegable de la barra superior (petición explícita,
+  // "estaría mejor poder escoger la clase pinchando encima del nombre de
+  // la clase en el cuaderno"). Mismo patrón de "cerrar al pinchar fuera"
+  // que el selector de curso académico en AcademicYearManager.tsx.
+  const [isClassPickerOpen, setIsClassPickerOpen] = useState(false);
+  const classPickerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isClassPickerOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (classPickerRef.current && !classPickerRef.current.contains(e.target as Node)) {
+        setIsClassPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isClassPickerOpen]);
+  // Mismo filtro que `academicClasses` en App.tsx: solo materias reales
+  // (curso 'other', p.ej. guardias, no tiene cuaderno de notas que elegir).
+  const switchableClasses = useMemo(() => (
+    allClasses.filter(c => allCourses.find(course => course.id === c.courseId)?.type !== 'other')
+  ), [allClasses, allCourses]);
 
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [categoryToEdit, setCategoryToEdit] = useState<Category | null>(null);
@@ -746,10 +774,65 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     <div className="bg-white rounded-xl shadow-sm">
       {/* HEADER: Removed sticky here to allow scrolling if needed, minimizing overlap risk */}
       <div className={`flex flex-col md:flex-row justify-between items-start md:items-center rounded-t-xl p-4 sm:p-5 ${pageHeaderMinHeight} gap-3`} style={{ backgroundColor: getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg, ...headerPatternStyle }}>
-        {/* LEFT: Título de la clase activa (el cambio de clase se hace desde el desplegable de la cabecera) */}
-        <div className="flex items-center gap-3 min-w-0">
+        {/* LEFT: Título de la clase activa -- pinchando en el propio nombre se abre el picker para cambiar de clase.
+            self-stretch en este div y en el siguiente: la cabecera centra verticalmente sus dos mitades (items-center)
+            dentro de un min-h más alto que su contenido real, así que un `top-full` normal, relativo solo al botón
+            (mucho más bajo que la cabecera), dejaba el desplegable asomando por ENCIMA de su borde inferior en vez de
+            justo debajo -- estirando esta cadena de contenedores hasta la altura real de la cabecera, top-full ya
+            calcula bien contra su borde de verdad. */}
+        <div className="flex items-center gap-3 min-w-0 self-stretch">
             <BookOpenIcon className="w-6 h-6 flex-shrink-0 text-white/90" />
-            <ClassLabel classData={classData} courses={allCourses} className="text-lg font-bold text-white truncate" />
+            <div className="relative min-w-0 self-stretch flex items-center" ref={classPickerRef}>
+                <button
+                    type="button"
+                    onClick={() => setIsClassPickerOpen(o => !o)}
+                    disabled={!setActiveClassId || switchableClasses.length <= 1}
+                    className="flex items-center gap-1.5 min-w-0 rounded-md px-1 -mx-1 hover:bg-white/10 transition-colors disabled:hover:bg-transparent"
+                    title={setActiveClassId && switchableClasses.length > 1 ? 'Cambiar de clase' : undefined}
+                >
+                    <ClassLabel
+                        classData={classData}
+                        courses={allCourses}
+                        className="text-lg font-bold text-white truncate"
+                        // Chip de grupo más grande que el tamaño por defecto (pensado
+                        // para un uso puramente decorativo en otras pantallas) -- aquí
+                        // es parte de un control real (abre el picker de clase), tiene
+                        // que leerse igual de bien que el resto del título. Mismo tamaño
+                        // en las opciones del propio picker, más abajo.
+                        grupoClassName={CHIP_GRUPO_SELECCIONABLE}
+                    />
+                    {setActiveClassId && switchableClasses.length > 1 && (
+                        <ChevronDownIcon className={`w-4 h-4 flex-shrink-0 text-white/70 transition-transform ${isClassPickerOpen ? 'rotate-180' : ''}`} />
+                    )}
+                </button>
+                {isClassPickerOpen && (
+                    // mt-6, no mt-1.5: top-full ya llega al borde real de la cabecera
+                    // (gracias al self-stretch de arriba), pero ese borde real todavía
+                    // incluye el padding inferior de la cabecera (p-4/p-5) -- un margen
+                    // pequeño se quedaba asomando dentro de ese padding, encima del
+                    // fondo de color. mt-6 lo cubre de sobra y dejaba un margen visible.
+                    // z-40, no z-20: la cabecera sticky de la tabla de abajo (el "Alumn@"
+                    // de la primera columna) va a z-30 -- con z-20 el picker se veía bien
+                    // en la parte que no llegaba a solapar con la tabla, pero la 2ª clase
+                    // en adelante quedaba tapada por esa cabecera sticky (z-30 > z-20).
+                    // w-max, no w-64 fijo: "S3AB Educación Plástica, Visual y
+                    // Audiovisual" (materias reales largas) no cabía en 256px sin
+                    // envolver la línea -- se ajusta al contenido más ancho, con un
+                    // tope razonable para no dispararse con un nombre extremo.
+                    <div className="absolute z-40 top-full left-0 mt-6 w-max max-w-sm max-h-80 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg p-1.5">
+                        {switchableClasses.map(c => (
+                            <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => { setActiveClassId?.(c.id); setIsClassPickerOpen(false); }}
+                                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-sm whitespace-nowrap hover:bg-slate-100 ${c.id === classData.id ? 'font-semibold text-slate-800' : 'text-slate-600'}`}
+                            >
+                                <ClassLabel classData={c} courses={allCourses} grupoClassName={CHIP_GRUPO_SELECCIONABLE} />
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
             <button
                 onClick={() => setIsPlanoOpen(true)}
                 className="p-1.5 rounded-md text-white/90 hover:bg-white/15 transition-all flex-shrink-0"
