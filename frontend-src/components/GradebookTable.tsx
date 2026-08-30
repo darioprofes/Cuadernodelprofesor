@@ -106,6 +106,10 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const headerPad = isCompact ? 'p-2' : 'p-3';
   const studentCellPad = isCompact ? 'px-3 py-1' : 'px-3 py-2';
   const studentHeaderPad = isCompact ? 'px-4 py-2' : 'px-4 py-3';
+  // Vista cómoda: avatar más grande que el tamaño por defecto de
+  // StudentAvatar (pensado para la vista compacta, donde está bien tal
+  // cual) -- petición explícita, "en la versión relajada debería ser mayor".
+  const avatarClassName = isCompact ? undefined : 'w-9 h-9 text-xs';
   
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
   const [assignmentToEdit, setAssignmentToEdit] = useState<Assignment | null>(null);
@@ -1025,7 +1029,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             onClick={() => { setSummaryOpensOnFullFicha(false); setSelectedStudentForSummary(student); }}
                             className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                         >
-                            <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} />
+                            <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
                             <AcneaeTag tags={student.acneae}/>
                             <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                         </button>
@@ -1221,7 +1225,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                               onClick={() => { setSummaryOpensOnFullFicha(false); setSelectedStudentForSummary(student); }}
                               className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                           >
-                              <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} />
+                              <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
                               <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                           </button>
                       </div>
