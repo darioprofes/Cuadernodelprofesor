@@ -1,5 +1,6 @@
 use rusqlite::Connection;
 use std::sync::Mutex;
+#[cfg(not(feature = "portable"))]
 use tauri::Manager;
 
 const DB_FILE_NAME: &str = "profeplanner.sqlite3";
@@ -43,13 +44,39 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0008_teacher_profile_and_sa_fields.sql",
         include_str!("migrations/0008_teacher_profile_and_sa_fields.sql"),
     ),
+    (
+        "0009_programa_bilingue.sql",
+        include_str!("migrations/0009_programa_bilingue.sql"),
+    ),
 ];
 
-pub fn open(app: &tauri::AppHandle) -> rusqlite::Result<Connection> {
-    let dir = app
-        .path()
+// Sin la feature "portable" (build normal, el que empaqueta el instalador
+// NSIS): %APPDATA%\es.lamarejada.farodocente\ -- comportamiento estándar de
+// una app instalada en Windows, sobrevive a mover/reinstalar el .exe.
+#[cfg(not(feature = "portable"))]
+fn data_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
+    app.path()
         .app_data_dir()
-        .expect("no se pudo resolver el directorio de datos de la app");
+        .expect("no se pudo resolver el directorio de datos de la app")
+}
+
+// Con la feature "portable" (el .exe que se empaqueta suelto para el
+// autoextraíble, ver desktop-dist/): junto al propio .exe, no en %APPDATA%
+// -- petición explícita del usuario, para que la copia entera quepa en un
+// USB sin dejar rastro en el sistema ni compartir datos con otra copia
+// distinta instalada aparte. current_exe() (no resource_dir(), pensado para
+// los recursos EMPAQUETADOS del bundle, no para "dónde está este .exe
+// ahora mismo") es lo que de verdad responde a esa pregunta.
+#[cfg(feature = "portable")]
+fn data_dir(_app: &tauri::AppHandle) -> std::path::PathBuf {
+    let exe = std::env::current_exe().expect("no se pudo resolver la ruta del propio ejecutable");
+    exe.parent()
+        .expect("el ejecutable no tiene carpeta contenedora")
+        .join("data")
+}
+
+pub fn open(app: &tauri::AppHandle) -> rusqlite::Result<Connection> {
+    let dir = data_dir(app);
     std::fs::create_dir_all(&dir).expect("no se pudo crear el directorio de datos de la app");
     let mut conn = Connection::open(dir.join(DB_FILE_NAME))?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
@@ -122,7 +149,7 @@ mod tests {
         let migration_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 8);
+        assert_eq!(migration_count, 9);
 
         let table_count: i64 = conn
             .query_row(

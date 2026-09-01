@@ -12,7 +12,8 @@
     "test": "vitest run",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:portable": "tauri build --no-bundle --features portable"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

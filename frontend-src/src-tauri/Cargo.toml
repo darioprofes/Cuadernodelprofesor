@@ -14,6 +14,18 @@ rust-version = "1.77.2"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Sin activar (el build por defecto, el que empaqueta el instalador NSIS):
+# los datos van en app_data_dir() (%APPDATA%\es.lamarejada.farodocente\),
+# comportamiento normal de una app instalada en Windows -- sobrevive a
+# mover/reinstalar. Con --features portable (el .exe que se empaqueta suelto
+# para el autoextraíble, ver services/db.rs::data_dir): los datos van junto
+# al propio .exe, para que la copia entera quepa en un USB sin dejar rastro
+# en el sistema ni compartir datos con otra copia distinta -- petición
+# explícita del usuario, "la idea de una app portátil es que no guarda nada
+# en sitios raros".
+[features]
+portable = []
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
