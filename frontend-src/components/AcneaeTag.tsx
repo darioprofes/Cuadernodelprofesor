@@ -1,11 +1,16 @@
 
 import React from 'react';
-import { ACNEAE_ORDER } from '../constants';
+import { ACNEAE_ORDER, ACNEAE_LABELS } from '../constants';
 import { SEMANTIC } from '../theme/palette';
 
 interface AcneaeTagProps {
   tags: string[];
 }
+
+// Familia de una categoría (p.ej. "ACNEE-TEA" -> "ACNEE") -- los códigos
+// oficiales de SAUCE siempre van PREFIJO-SUFIJO, a diferencia del listado
+// ad-hoc anterior (con variantes separadas por espacio, "PAC EP1").
+const familia = (tag: string): string => tag.split('-')[0];
 
 // Helper to get the highest priority tag
 const getPriorityTag = (tags: string[]): string | null => {
@@ -14,11 +19,9 @@ const getPriorityTag = (tags: string[]): string | null => {
   }
 
   return tags.slice().sort((a, b) => {
-    const aBase = a.split(' ')[0];
-    const bBase = b.split(' ')[0];
-    const aPriority = ACNEAE_ORDER[aBase as keyof typeof ACNEAE_ORDER] || 99;
-    const bPriority = ACNEAE_ORDER[bBase as keyof typeof ACNEAE_ORDER] || 99;
-    
+    const aPriority = ACNEAE_ORDER[familia(a)] ?? 99;
+    const bPriority = ACNEAE_ORDER[familia(b)] ?? 99;
+
     if (aPriority !== bPriority) {
       return aPriority - bPriority;
     }
@@ -26,24 +29,21 @@ const getPriorityTag = (tags: string[]): string | null => {
   })[0];
 };
 
-// Color por prioridad, de los mismos tokens semánticos que el resto de la
-// app (theme.ts) en vez de colores de Tailwind sueltos sin relación entre
-// sí (rojo/azul/verde/gris/amarillo elegidos independientemente).
+// Color por familia, de los mismos tokens semánticos que el resto de la
+// app (theme.ts): ACNEE (NEE) en rojo -- mayor necesidad de apoyo --, OTRAS
+// (resto de NEAE) en dorado, ESPEC (altas capacidades) en azul -- categoría
+// distinta, no una necesidad de apoyo en ese sentido.
 const getTagColor = (tag: string | null): string => {
     if (!tag) return 'transparent';
-    const base = tag.split(' ')[0];
-    switch (base) {
-        case 'PAC':
-        case 'PRE':
+    switch (familia(tag)) {
+        case 'ACNEE':
             return SEMANTIC.danger.base;
-        case 'RE':
-            return SEMANTIC.primary.base;
-        case 'ACS':
-            return SEMANTIC.success.base;
-        case 'ABS':
-            return SEMANTIC.neutral.base;
-        default:
+        case 'OTRAS':
             return SEMANTIC.warning.base;
+        case 'ESPEC':
+            return SEMANTIC.primary.base;
+        default:
+            return SEMANTIC.neutral.base;
     }
 }
 
@@ -53,12 +53,16 @@ const AcneaeTag: React.FC<AcneaeTagProps> = ({ tags }) => {
   if (!priorityTag) {
     return null;
   }
-  
+
+  // "ACNEE-TEA (Trastorno del espectro autista)" en vez del código a
+  // secas -- los códigos oficiales no son autoexplicativos.
+  const conGlosa = (t: string) => ACNEAE_LABELS[t] ? `${t} (${ACNEAE_LABELS[t]})` : t;
+
   return (
     <div
         className="w-4 h-4 rounded-full flex-shrink-0"
         style={{ backgroundColor: getTagColor(priorityTag) }}
-        title={`ACNEAE: ${tags.join(', ')} (Prioritario: ${priorityTag})`}
+        title={`ACNEAE: ${tags.map(conGlosa).join(', ')} (Prioritario: ${conGlosa(priorityTag)})`}
     >
     </div>
   );

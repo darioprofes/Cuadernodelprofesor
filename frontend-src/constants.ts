@@ -2,9 +2,61 @@
 import type { AcademicConfiguration, EvaluationTool, Shortcut } from './types';
 import { isTauri } from '@tauri-apps/api/core';
 
-// Constants for ACNEAE tags and their priority order
-export const ACNEAE_TAGS = ['RE ACA', 'RE EC', 'RE', 'PRE ES1', 'PRE ES2', 'PRE ES3', 'PRE ES4', 'PAC', 'PAC EP1', 'PAC EP2', 'PAC EP3', 'PAC EP4', 'PAC EP5', 'PAC EP6', 'ACS', 'FPEX', 'NN', 'ABS'];
-export const ACNEAE_ORDER = { 'PAC': 1, 'PRE': 1, 'ABS': 1, 'RE ACA': 2, 'RE EC': 2, 'RE': 3, 'ACS': 1 };
+// Categorías ACNEAE reales de SAUCE (Instrucciones de los Servicios
+// Especializados de Orientación de Educastur, ed. octubre 2025) -- antes
+// había un listado ad-hoc inventado (PAC/PRE/RE/ACS/FPEX/NN/ABS) que no se
+// correspondía con ninguna nomenclatura oficial, sustituido por petición
+// explícita del usuario tras contrastarlo con la documentación real.
+// ACNEE-* = alumnado con necesidades educativas especiales (discapacidad,
+// TEA, trastornos graves...); OTRAS-* = el resto de NEAE (TDAH, dificultades
+// de aprendizaje, incorporación tardía...); ESPEC-* = altas capacidades (no
+// es NEE, categoría aparte con sus 3 respuestas educativas posibles).
+export const ACNEAE_TAGS = [
+    // NEE
+    'ACNEE-F', 'ACNEE-FO', 'ACNEE-PL', 'ACNEE-PM', 'ACNEE-PG',
+    'ACNEE-AUD', 'ACNEE-VIS', 'ACNEE-PD', 'ACNEE-TEA', 'ACNEE-TD',
+    'ACNEE-TC', 'ACNEE-TGCL',
+    // OTRAS-NEAE
+    'OTRAS-RM', 'OTRAS-LEN', 'OTRAS-TDAH', 'OTRAS-APR', 'OTRAS-DGLA',
+    'OTRAS-SVS', 'OTRAS-TAR', 'OTRAS-CPHE',
+    // Altas capacidades
+    'ESPEC-EC', 'ESPEC-AC', 'ESPEC-FC',
+] as const;
+
+// Glosa corta de cada categoría -- los códigos oficiales no son
+// autoexplicativos (p.ej. "ACNEE-TGCL"), se muestran junto al código en el
+// selector y en el tooltip del puntito de AcneaeTag.tsx.
+export const ACNEAE_LABELS: Record<string, string> = {
+    'ACNEE-F': 'Discapacidad física',
+    'ACNEE-FO': 'Discapacidad física orgánica',
+    'ACNEE-PL': 'Discapacidad psíquica leve',
+    'ACNEE-PM': 'Discapacidad psíquica moderada',
+    'ACNEE-PG': 'Discapacidad psíquica grave',
+    'ACNEE-AUD': 'Discapacidad auditiva',
+    'ACNEE-VIS': 'Discapacidad visual',
+    'ACNEE-PD': 'Pluridiscapacidad',
+    'ACNEE-TEA': 'Trastorno del espectro autista',
+    'ACNEE-TD': 'Trastorno del desarrollo',
+    'ACNEE-TC': 'Trastornos graves de conducta',
+    'ACNEE-TGCL': 'Trastornos graves de comunicación y lenguaje',
+    'OTRAS-RM': 'Retraso madurativo',
+    'OTRAS-LEN': 'Trastorno del desarrollo del lenguaje',
+    'OTRAS-TDAH': 'TDAH',
+    'OTRAS-APR': 'Trastorno específico del aprendizaje',
+    'OTRAS-DGLA': 'Desconocimiento grave de la lengua de aprendizaje',
+    'OTRAS-SVS': 'Vulnerabilidad socioeducativa',
+    'OTRAS-TAR': 'Incorporación tardía al sistema educativo',
+    'OTRAS-CPHE': 'Condiciones personales o de historia escolar',
+    'ESPEC-EC': 'Altas capacidades: enriquecimiento curricular',
+    'ESPEC-AC': 'Altas capacidades: ampliación curricular',
+    'ESPEC-FC': 'Altas capacidades: flexibilización curricular',
+};
+
+// Prioridad por familia (para AcneaeTag.tsx, cuando un alumno tiene varias
+// anotaciones a la vez y solo se muestra un puntito): NEE primero (mayor
+// necesidad de apoyo), luego el resto de NEAE, altas capacidades al final
+// (es una categoría distinta, no una necesidad de apoyo en ese sentido).
+export const ACNEAE_ORDER: Record<string, number> = { 'ACNEE': 1, 'OTRAS': 2, 'ESPEC': 3 };
 
 // Semilla: los mismos accesos directos que ya había en la sección "Trabajo"
 // del panel (La Marejada), para no empezar desde cero. El usuario puede

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Student, Tutor } from '../types';
-import { ACNEAE_TAGS } from '../constants';
+import { ACNEAE_TAGS, ACNEAE_LABELS } from '../constants';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -216,6 +216,9 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                         <Field label="¿Ha repetido curso?">
                             <SiNoToggle value={form.haRepetidoCurso} onChange={v => set({ haRepetidoCurso: v })} />
                         </Field>
+                        <Field label="¿Programa bilingüe?">
+                            <SiNoToggle value={form.programaBilingue} onChange={v => set({ programaBilingue: v })} />
+                        </Field>
                         <Field label="Materias pendientes">
                             <Input type="text" value={form.materiasPendientes || ''} onChange={e => set({ materiasPendientes: e.target.value })} className={inputClass} />
                         </Field>
@@ -248,20 +251,31 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                             <SiNoToggle value={form.neae} onChange={v => set({ neae: v })} />
                         </Field>
                         <Field label="Anotaciones ACNEAE">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 mt-1 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                                {ACNEAE_TAGS.map(tag => (
-                                    <label key={tag} className="flex items-center gap-2 text-xs cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={(form.acneae || []).includes(tag)}
-                                            onChange={e => {
-                                                const current = form.acneae || [];
-                                                set({ acneae: e.target.checked ? [...current, tag] : current.filter(t => t !== tag) });
-                                            }}
-                                            className={checkboxClassName}
-                                        />
-                                        <span>{tag}</span>
-                                    </label>
+                            <div className="space-y-3 mt-1 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                {([
+                                    ['ACNEE', 'NEE (necesidades educativas especiales)'],
+                                    ['OTRAS', 'Otras NEAE'],
+                                    ['ESPEC', 'Altas capacidades'],
+                                ] as const).map(([prefijo, titulo]) => (
+                                    <div key={prefijo}>
+                                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">{titulo}</p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                                            {ACNEAE_TAGS.filter(tag => tag.startsWith(`${prefijo}-`)).map(tag => (
+                                                <label key={tag} className="flex items-start gap-2 text-xs cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={(form.acneae || []).includes(tag)}
+                                                        onChange={e => {
+                                                            const current = form.acneae || [];
+                                                            set({ acneae: e.target.checked ? [...current, tag] : current.filter(t => t !== tag) });
+                                                        }}
+                                                        className={`${checkboxClassName} mt-0.5 flex-shrink-0`}
+                                                    />
+                                                    <span><span className="font-mono font-semibold">{tag}</span> <span className="text-slate-500">— {ACNEAE_LABELS[tag]}</span></span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         </Field>

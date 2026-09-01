@@ -6,7 +6,7 @@ import Input from './Input';
 import Textarea from './Textarea';
 import { checkboxClassName } from '../theme/components/Input';
 import { TrashIcon } from './Icons';
-import { ACNEAE_TAGS } from '../constants';
+import { ACNEAE_TAGS, ACNEAE_LABELS } from '../constants';
 import { parsearNombre } from '../utils';
 
 interface TempStudent {
@@ -59,21 +59,30 @@ const AcneaeSelector: React.FC<{ selected: Set<string>; onChange: (newSelection:
                 ACNEAE ({selected.size})
             </button>
             {isOpen && (
-                <div className="absolute z-10 mt-1 w-64 bg-white shadow-lg border rounded-md p-2 right-0">
+                <div className="absolute z-10 mt-1 w-80 max-h-80 overflow-y-auto bg-white shadow-lg border rounded-md p-2 right-0">
                     <p className="text-xs font-bold mb-2">Seleccionar Medidas</p>
-                    <div className="grid grid-cols-2 gap-2">
-                        {ACNEAE_TAGS.map(tag => (
-                            <label key={tag} className="flex items-center space-x-2 text-xs cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={selected.has(tag)}
-                                    onChange={e => handleTagChange(tag, e.target.checked)}
-                                    className={checkboxClassName}
-                                />
-                                <span>{tag}</span>
-                            </label>
-                        ))}
-                    </div>
+                    {([
+                        ['ACNEE', 'NEE'],
+                        ['OTRAS', 'Otras NEAE'],
+                        ['ESPEC', 'Altas capacidades'],
+                    ] as const).map(([prefijo, titulo], i) => (
+                        <div key={prefijo} className={i > 0 ? 'mt-2' : undefined}>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">{titulo}</p>
+                            <div className="grid grid-cols-2 gap-1.5">
+                                {ACNEAE_TAGS.filter(tag => tag.startsWith(`${prefijo}-`)).map(tag => (
+                                    <label key={tag} className="flex items-center space-x-1.5 text-xs cursor-pointer" title={ACNEAE_LABELS[tag]}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selected.has(tag)}
+                                            onChange={e => handleTagChange(tag, e.target.checked)}
+                                            className={`${checkboxClassName} flex-shrink-0`}
+                                        />
+                                        <span className="font-mono truncate">{tag}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>
