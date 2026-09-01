@@ -42,18 +42,22 @@ const TABLES_IN_DEPENDENCY_ORDER: &[&str] = &[
 // El backend web distingue columnas JSONB con una consulta genérica a
 // information_schema (data_type = 'jsonb'). SQLite no tiene un tipo JSON
 // real que se pueda introspeccionar así -- todas las columnas JSON de
-// este baseline son TEXT igual que cualquier otra columna de texto (ver
-// migrations/0001_baseline.sql) -- así que aquí se declara la lista a
-// mano, calcada de esa misma migración. Si migrations/0001_baseline.sql
-// gana una columna JSON nueva, esta lista hay que actualizarla a la vez.
+// este esquema son TEXT igual que cualquier otra columna de texto -- así
+// que aquí se declara la lista a mano, calcada de las migraciones (ver
+// migrations/). Cualquier migración nueva que añada una columna JSON tiene
+// que actualizar esta lista a la vez, o esa columna se exportará/
+// importará como texto plano en vez de deserializarse.
 fn json_columns(table: &str) -> &'static [&'static str] {
     match table {
-        "app_preferences" => &["grade_scale"],
+        "app_preferences" => &["grade_scale", "teacher_profile"],
         "students" => &["tutor1", "tutor2"],
-        "programming_units" => &["session_details", "linked_criteria_ids", "linked_basic_knowledge_ids"],
+        "programming_units" => &[
+            "session_details", "linked_criteria_ids", "linked_basic_knowledge_ids",
+            "linked_specific_competence_ids", "final_product", "final_exam",
+        ],
         "evaluation_tools" => &["levels", "items"],
         "academic_years" => &["holidays", "periods"],
-        "classes" => &["schedule", "skipped_days"],
+        "classes" => &["schedule", "skipped_days", "caracteristicas_grupo"],
         "enrollments" => &["acneae"],
         "assignments" => &["linked_criteria", "recovers_assignment_ids"],
         "grades" => &["tool_results"],
@@ -192,6 +196,7 @@ pub fn import_all(conn: &mut Connection, dump: &Value) -> Result<(), ApiError> {
 mod tests {
     use super::*;
     use crate::db;
+
 
     #[test]
     fn export_then_import_round_trip() {

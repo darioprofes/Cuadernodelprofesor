@@ -9,7 +9,7 @@ use super::merge_object;
 const COLUMNS: &str = "id, class_id, category_id, evaluation_period_id, evaluation_tool_id, \
     programming_unit_id, name, date, evaluation_method, linked_criteria, \
     recovers_assignment_ids, peso_en_categoria, importancia, importancia_personalizada, \
-    created_at, updated_at";
+    created_at, updated_at, short_name, puntuacion_maxima";
 
 fn json_array(raw: &str) -> Value {
     serde_json::from_str::<Value>(raw).unwrap_or_else(|_| json!([]))
@@ -35,6 +35,8 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
         "importanciaPersonalizada": row.get::<_, Option<f64>>(13)?,
         "createdAt": row.get::<_, String>(14)?,
         "updatedAt": row.get::<_, String>(15)?,
+        "shortName": row.get::<_, Option<String>>(16)?,
+        "puntuacionMaxima": row.get::<_, Option<f64>>(17)?,
     }))
 }
 
@@ -73,18 +75,21 @@ pub fn create(conn: &Connection, class_id: &str, body: Value) -> Result<Value, A
     let peso_en_categoria = body.get("pesoEnCategoria").and_then(Value::as_f64);
     let importancia = body.get("importancia").and_then(Value::as_str);
     let importancia_personalizada = body.get("importanciaPersonalizada").and_then(Value::as_f64);
+    let short_name = body.get("shortName").and_then(Value::as_str);
+    let puntuacion_maxima = body.get("puntuacionMaxima").and_then(Value::as_f64);
 
     let id = db::new_uuid();
     let now = db::now_iso();
     conn.execute(
-        "INSERT INTO assignments (id, class_id, category_id, evaluation_period_id, evaluation_tool_id, programming_unit_id, name, date, evaluation_method, linked_criteria, recovers_assignment_ids, peso_en_categoria, importancia, importancia_personalizada, created_at, updated_at) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO assignments (id, class_id, category_id, evaluation_period_id, evaluation_tool_id, programming_unit_id, name, date, evaluation_method, linked_criteria, recovers_assignment_ids, peso_en_categoria, importancia, importancia_personalizada, created_at, updated_at, short_name, puntuacion_maxima) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             id, class_id, category_id, evaluation_period_id, evaluation_tool_id, programming_unit_id,
             name, date, evaluation_method,
             serde_json::to_string(&linked_criteria).map_err(ApiError::internal)?,
             serde_json::to_string(&recovers_ids).map_err(ApiError::internal)?,
             peso_en_categoria, importancia, importancia_personalizada, now.clone(), now,
+            short_name, puntuacion_maxima,
         ],
     )?;
     get_one(conn, &id)?.ok_or_else(|| ApiError::internal("no se pudo releer la tarea evaluable recién creada"))
@@ -105,14 +110,17 @@ pub fn update(conn: &Connection, id: &str, body: Value) -> Result<Value, ApiErro
     let peso_en_categoria = merged.get("pesoEnCategoria").and_then(Value::as_f64);
     let importancia = merged.get("importancia").and_then(Value::as_str);
     let importancia_personalizada = merged.get("importanciaPersonalizada").and_then(Value::as_f64);
+    let short_name = merged.get("shortName").and_then(Value::as_str);
+    let puntuacion_maxima = merged.get("puntuacionMaxima").and_then(Value::as_f64);
 
     conn.execute(
-        "UPDATE assignments SET category_id = ?, evaluation_period_id = ?, evaluation_tool_id = ?, programming_unit_id = ?, name = ?, date = ?, evaluation_method = ?, linked_criteria = ?, recovers_assignment_ids = ?, peso_en_categoria = ?, importancia = ?, importancia_personalizada = ?, updated_at = ? WHERE id = ?",
+        "UPDATE assignments SET category_id = ?, evaluation_period_id = ?, evaluation_tool_id = ?, programming_unit_id = ?, name = ?, date = ?, evaluation_method = ?, linked_criteria = ?, recovers_assignment_ids = ?, peso_en_categoria = ?, importancia = ?, importancia_personalizada = ?, updated_at = ?, short_name = ?, puntuacion_maxima = ? WHERE id = ?",
         params![
             category_id, evaluation_period_id, evaluation_tool_id, programming_unit_id, name, date, evaluation_method,
             serde_json::to_string(&linked_criteria).map_err(ApiError::internal)?,
             serde_json::to_string(&recovers_ids).map_err(ApiError::internal)?,
-            peso_en_categoria, importancia, importancia_personalizada, db::now_iso(), id,
+            peso_en_categoria, importancia, importancia_personalizada, db::now_iso(),
+            short_name, puntuacion_maxima, id,
         ],
     )?;
     get_one(conn, id)?.ok_or_else(|| ApiError::internal("no se pudo releer la tarea evaluable tras actualizar"))

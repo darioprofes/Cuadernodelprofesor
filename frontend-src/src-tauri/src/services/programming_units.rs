@@ -7,7 +7,8 @@ use crate::error::ApiError;
 use super::merge_object;
 
 const COLUMNS: &str = "id, course_id, name, sessions, start_date, session_details, \
-    linked_criteria_ids, linked_basic_knowledge_ids, created_at, updated_at";
+    linked_criteria_ids, linked_basic_knowledge_ids, created_at, updated_at, \
+    linked_specific_competence_ids, context, final_product, final_exam";
 
 fn id_array_to_json(raw: &str) -> Value {
     serde_json::from_str::<Value>(raw).unwrap_or_else(|_| json!([]))
@@ -17,6 +18,9 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
     let session_details: String = row.get(5)?;
     let linked_criteria_ids: String = row.get(6)?;
     let linked_basic_knowledge_ids: String = row.get(7)?;
+    let linked_specific_competence_ids: String = row.get(10)?;
+    let final_product: String = row.get(12)?;
+    let final_exam: String = row.get(13)?;
     Ok(json!({
         "id": row.get::<_, String>(0)?,
         "courseId": row.get::<_, String>(1)?,
@@ -28,6 +32,10 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
         "linkedBasicKnowledgeIds": id_array_to_json(&linked_basic_knowledge_ids),
         "createdAt": row.get::<_, String>(8)?,
         "updatedAt": row.get::<_, String>(9)?,
+        "linkedSpecificCompetenceIds": id_array_to_json(&linked_specific_competence_ids),
+        "context": row.get::<_, Option<String>>(11)?,
+        "finalProduct": serde_json::from_str::<Value>(&final_product).unwrap_or_else(|_| json!({"incluido": false})),
+        "finalExam": serde_json::from_str::<Value>(&final_exam).unwrap_or_else(|_| json!({"incluido": false})),
     }))
 }
 
@@ -57,18 +65,26 @@ pub fn create(conn: &Connection, course_id: &str, body: Value) -> Result<Value, 
     let session_details = body.get("sessionDetails").cloned().unwrap_or_else(|| json!([]));
     let linked_criteria = body.get("linkedCriteriaIds").cloned().unwrap_or_else(|| json!([]));
     let linked_knowledge = body.get("linkedBasicKnowledgeIds").cloned().unwrap_or_else(|| json!([]));
+    let linked_specific_competences = body.get("linkedSpecificCompetenceIds").cloned().unwrap_or_else(|| json!([]));
+    let context = body.get("context").and_then(Value::as_str);
+    let final_product = body.get("finalProduct").cloned().unwrap_or_else(|| json!({"incluido": false}));
+    let final_exam = body.get("finalExam").cloned().unwrap_or_else(|| json!({"incluido": false}));
 
     let id = db::new_uuid();
     let now = db::now_iso();
     conn.execute(
-        "INSERT INTO programming_units (id, course_id, name, sessions, start_date, session_details, linked_criteria_ids, linked_basic_knowledge_ids, created_at, updated_at) \
-         VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO programming_units (id, course_id, name, sessions, start_date, session_details, linked_criteria_ids, linked_basic_knowledge_ids, created_at, updated_at, linked_specific_competence_ids, context, final_product, final_exam) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             id, course_id, name, sessions, start_date,
             serde_json::to_string(&session_details).map_err(ApiError::internal)?,
             serde_json::to_string(&linked_criteria).map_err(ApiError::internal)?,
             serde_json::to_string(&linked_knowledge).map_err(ApiError::internal)?,
             now.clone(), now,
+            serde_json::to_string(&linked_specific_competences).map_err(ApiError::internal)?,
+            context,
+            serde_json::to_string(&final_product).map_err(ApiError::internal)?,
+            serde_json::to_string(&final_exam).map_err(ApiError::internal)?,
         ],
     )?;
     get_one(conn, &id)?.ok_or_else(|| ApiError::internal("no se pudo releer la unidad de programación recién creada"))
@@ -83,15 +99,24 @@ pub fn update(conn: &Connection, id: &str, body: Value) -> Result<Value, ApiErro
     let session_details = merged.get("sessionDetails").cloned().unwrap_or_else(|| json!([]));
     let linked_criteria = merged.get("linkedCriteriaIds").cloned().unwrap_or_else(|| json!([]));
     let linked_knowledge = merged.get("linkedBasicKnowledgeIds").cloned().unwrap_or_else(|| json!([]));
+    let linked_specific_competences = merged.get("linkedSpecificCompetenceIds").cloned().unwrap_or_else(|| json!([]));
+    let context = merged.get("context").and_then(Value::as_str);
+    let final_product = merged.get("finalProduct").cloned().unwrap_or_else(|| json!({"incluido": false}));
+    let final_exam = merged.get("finalExam").cloned().unwrap_or_else(|| json!({"incluido": false}));
 
     conn.execute(
-        "UPDATE programming_units SET name = ?, sessions = ?, start_date = ?, session_details = ?, linked_criteria_ids = ?, linked_basic_knowledge_ids = ?, updated_at = ? WHERE id = ?",
+        "UPDATE programming_units SET name = ?, sessions = ?, start_date = ?, session_details = ?, linked_criteria_ids = ?, linked_basic_knowledge_ids = ?, updated_at = ?, linked_specific_competence_ids = ?, context = ?, final_product = ?, final_exam = ? WHERE id = ?",
         params![
             name, sessions, start_date,
             serde_json::to_string(&session_details).map_err(ApiError::internal)?,
             serde_json::to_string(&linked_criteria).map_err(ApiError::internal)?,
             serde_json::to_string(&linked_knowledge).map_err(ApiError::internal)?,
-            db::now_iso(), id,
+            db::now_iso(),
+            serde_json::to_string(&linked_specific_competences).map_err(ApiError::internal)?,
+            context,
+            serde_json::to_string(&final_product).map_err(ApiError::internal)?,
+            serde_json::to_string(&final_exam).map_err(ApiError::internal)?,
+            id,
         ],
     )?;
     get_one(conn, id)?.ok_or_else(|| ApiError::internal("no se pudo releer la unidad de programación tras actualizar"))

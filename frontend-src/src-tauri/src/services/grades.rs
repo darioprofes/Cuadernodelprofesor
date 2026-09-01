@@ -13,6 +13,7 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
         "recoveryScore": row.get::<_, Option<f64>>(3)?,
         "toolResults": tool_results.and_then(|s| serde_json::from_str::<Value>(&s).ok()),
         "updatedAt": row.get::<_, String>(5)?,
+        "directScoreRaw": row.get::<_, Option<f64>>(6)?,
     }))
 }
 
@@ -21,7 +22,7 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
 // llega a través de su tarea), mismo criterio que el backend web.
 pub fn list_for_class(conn: &Connection, class_id: &str) -> Result<Value, ApiError> {
     let mut stmt = conn.prepare(
-        "SELECT g.enrollment_id, g.assignment_id, g.direct_score, g.recovery_score, g.tool_results, g.updated_at \
+        "SELECT g.enrollment_id, g.assignment_id, g.direct_score, g.recovery_score, g.tool_results, g.updated_at, g.direct_score_raw \
          FROM grades g JOIN assignments a ON a.id = g.assignment_id WHERE a.class_id = ?",
     )?;
     let rows = stmt.query_map(params![class_id], row_to_json)?;
@@ -39,16 +40,18 @@ pub fn put(conn: &Connection, assignment_id: &str, enrollment_id: &str, body: Va
         .map(serde_json::to_string)
         .transpose()
         .map_err(ApiError::internal)?;
+    let direct_score_raw = body.get("directScoreRaw").and_then(Value::as_f64);
 
     conn.execute(
-        "INSERT INTO grades (enrollment_id, assignment_id, direct_score, recovery_score, tool_results, updated_at) \
-         VALUES (?,?,?,?,?,?) \
+        "INSERT INTO grades (enrollment_id, assignment_id, direct_score, recovery_score, tool_results, updated_at, direct_score_raw) \
+         VALUES (?,?,?,?,?,?,?) \
          ON CONFLICT (enrollment_id, assignment_id) DO UPDATE SET \
             direct_score = excluded.direct_score, \
             recovery_score = excluded.recovery_score, \
             tool_results = excluded.tool_results, \
-            updated_at = excluded.updated_at",
-        params![enrollment_id, assignment_id, direct_score, recovery_score, tool_results_str, db::now_iso()],
+            updated_at = excluded.updated_at, \
+            direct_score_raw = excluded.direct_score_raw",
+        params![enrollment_id, assignment_id, direct_score, recovery_score, tool_results_str, db::now_iso(), direct_score_raw],
     ).map_err(|e| {
         // FOREIGN KEY: la tarea o la matrícula no existen -- mismo criterio
         // que ForeignKeyViolation -> 404 en el backend web.
@@ -61,7 +64,7 @@ pub fn put(conn: &Connection, assignment_id: &str, enrollment_id: &str, body: Va
     })?;
 
     let mut stmt = conn.prepare(
-        "SELECT enrollment_id, assignment_id, direct_score, recovery_score, tool_results, updated_at FROM grades WHERE enrollment_id = ? AND assignment_id = ?",
+        "SELECT enrollment_id, assignment_id, direct_score, recovery_score, tool_results, updated_at, direct_score_raw FROM grades WHERE enrollment_id = ? AND assignment_id = ?",
     )?;
     let mut rows = stmt.query_map(params![enrollment_id, assignment_id], row_to_json)?;
     match rows.next() {

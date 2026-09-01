@@ -35,6 +35,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0006_evaluation_tools_course.sql",
         include_str!("migrations/0006_evaluation_tools_course.sql"),
     ),
+    (
+        "0007_enrollment_pti.sql",
+        include_str!("migrations/0007_enrollment_pti.sql"),
+    ),
+    (
+        "0008_teacher_profile_and_sa_fields.sql",
+        include_str!("migrations/0008_teacher_profile_and_sa_fields.sql"),
+    ),
 ];
 
 pub fn open(app: &tauri::AppHandle) -> rusqlite::Result<Connection> {
@@ -114,7 +122,7 @@ mod tests {
         let migration_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 6);
+        assert_eq!(migration_count, 8);
 
         let table_count: i64 = conn
             .query_row(

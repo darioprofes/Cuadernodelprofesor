@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
+import { isTauri, invoke } from '@tauri-apps/api/core';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AcademicConfiguration } from '../../types';
 import { UserCircleIcon } from '../Icons';
@@ -22,12 +22,14 @@ export const RASGOS_DOCENTE_HABITUALES = [
     'Flexible, se adapta sobre la marcha',
 ];
 
-// Foto de perfil del profesor: endpoint binario dedicado (GET/PUT/DELETE
-// /preferences/photo), mismo patrón que las fotos de alumnado
+// Foto de perfil del profesor: en web, endpoint binario dedicado (GET/PUT/
+// DELETE /preferences/photo), mismo patrón que las fotos de alumnado
 // (routers/photos.py) pero sobre la fila única de preferencias -- fuera de
-// api.ts (que es JSON puro) igual que syncStudentPhoto en apiAdapters.ts.
-// Solo web por ahora: no hay protocolo/comando equivalente en Tauri todavía
-// (mismo criterio que otras funciones sin paridad de escritorio esta sesión).
+// api.ts (que es JSON puro) igual que syncStudentPhoto en apiAdapters.ts. En
+// Tauri, mismo criterio que StudentPhotoAvatar.tsx: comandos dedicados
+// (set_teacher_photo/delete_teacher_photo) para subir/borrar y el protocolo
+// teacherphoto:// (ver lib.rs) para servirla a un <img>, sin id porque solo
+// hay una.
 const PersonalDataCard: React.FC<{
     academicConfiguration: AcademicConfiguration;
     setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
@@ -51,11 +53,16 @@ const PersonalDataCard: React.FC<{
         if (!file) return;
         setSubiendoFoto(true);
         try {
-            await fetch('/api/preferences/photo', {
-                method: 'PUT',
-                body: file,
-                headers: { 'Content-Type': file.type || 'application/octet-stream' },
-            });
+            if (isTauri()) {
+                const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+                await invoke('set_teacher_photo', { bytes, contentType: file.type || 'application/octet-stream' });
+            } else {
+                await fetch('/api/preferences/photo', {
+                    method: 'PUT',
+                    body: file,
+                    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                });
+            }
             await queryClient.invalidateQueries({ queryKey: preferencesQueryKey });
             setPhotoVersion(v => v + 1);
         } finally {
@@ -64,8 +71,13 @@ const PersonalDataCard: React.FC<{
     };
 
     const handleQuitarFoto = async () => {
-        await fetch('/api/preferences/photo', { method: 'DELETE' });
+        if (isTauri()) {
+            await invoke('delete_teacher_photo');
+        } else {
+            await fetch('/api/preferences/photo', { method: 'DELETE' });
+        }
         await queryClient.invalidateQueries({ queryKey: preferencesQueryKey });
+        setPhotoVersion(v => v + 1);
     };
 
     return (
@@ -77,7 +89,10 @@ const PersonalDataCard: React.FC<{
             <div className="flex items-center gap-4">
                 {tienefoto ? (
                     <img
-                        src={`/api/preferences/photo?v=${photoVersion}`}
+                        // http://teacherphoto.localhost/... , no teacherphoto://... : WebView2
+                        // (Windows) exige esa forma para que un protocolo custom funcione como
+                        // src de un <img> -- mismo criterio que studentPhotoUrl en apiAdapters.ts.
+                        src={isTauri() ? `http://teacherphoto.localhost/1?v=${photoVersion}` : `/api/preferences/photo?v=${photoVersion}`}
                         alt=""
                         className="w-16 h-16 rounded-full object-cover border border-slate-200 flex-shrink-0"
                     />

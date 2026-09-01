@@ -41,6 +41,25 @@ fn delete_student_photo(state: tauri::State<db::DbState>, student_id: String) ->
   services::photos::delete(&conn, &student_id)
 }
 
+// Foto de perfil del profesor: mismo criterio que las de alumnado (comandos
+// dedicados para subir/borrar, protocolo custom para servirla), pero sobre
+// la fila única de preferencias -- sin id, solo hay una.
+#[tauri::command]
+fn set_teacher_photo(
+  state: tauri::State<db::DbState>,
+  bytes: Vec<u8>,
+  content_type: String,
+) -> Result<(), error::ApiError> {
+  let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::preferences::set_photo(&conn, bytes, &content_type)
+}
+
+#[tauri::command]
+fn delete_teacher_photo(state: tauri::State<db::DbState>) -> Result<(), error::ApiError> {
+  let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::preferences::delete_photo(&conn)
+}
+
 // Copia de seguridad (bloque 8): mismo formato JSON genérico que
 // /backup/export|import en el backend web, sobre las 24 tablas del
 // baseline en vez de sobre Postgres. Comandos aparte (no en api_request)
@@ -124,10 +143,30 @@ pub fn run() {
           .unwrap(),
       }
     })
+    // Misma idea que studentphoto:// de arriba, pero sin id -- solo hay una
+    // foto de profesor. <img src="teacherphoto://x"> tal cual en
+    // TeacherProfileManager.tsx (el path se ignora, siempre es la única fila).
+    .register_uri_scheme_protocol("teacherphoto", |ctx, _request| {
+      let state = ctx.app_handle().state::<db::DbState>();
+      let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+      match services::preferences::get_photo(&conn) {
+        Ok(Some((bytes, content_type))) => tauri::http::Response::builder()
+          .status(200)
+          .header("Content-Type", content_type)
+          .body(bytes)
+          .unwrap(),
+        _ => tauri::http::Response::builder()
+          .status(404)
+          .body(Vec::new())
+          .unwrap(),
+      }
+    })
     .invoke_handler(tauri::generate_handler![
       api_request,
       set_student_photo,
       delete_student_photo,
+      set_teacher_photo,
+      delete_teacher_photo,
       backup_export,
       backup_import,
       importar_horario_pdf,

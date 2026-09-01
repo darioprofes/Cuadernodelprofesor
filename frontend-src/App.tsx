@@ -1,6 +1,7 @@
 
 // FIX: Corrected the React import statement.
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import { api } from './services/api';
 import { useShortcuts, useCreateShortcut, useUpdateShortcut, useDeleteShortcut } from './hooks/useShortcuts';
 import { useEvaluationTools, useCreateEvaluationTool, useUpdateEvaluationTool, useDeleteEvaluationTool } from './hooks/useEvaluationTools';
@@ -175,6 +176,29 @@ const App = () => {
     const createEvaluationTool = useCreateEvaluationTool();
     const updateEvaluationTool = useUpdateEvaluationTool();
     const deleteEvaluationTool = useDeleteEvaluationTool();
+
+    // Accesos directos e instrumentos de ejemplo: antes solo se creaban al
+    // pulsar "Restablecer Aplicación" (ver resetDatabase arriba) -- en una
+    // instalación de verdad nueva nunca se llegaba a ejecutar ese código, así
+    // que arrancaba sin nada de esto (petición explícita del usuario: deben
+    // aparecer ya la primera vez, sin tener que restablecer para conseguirlo).
+    // Guardado en localStorage (no solo "shortcuts/tools están vacíos", que
+    // también sería cierto si el profesor los ha borrado todos a propósito
+    // después) para que ese borrado deliberado no los resucite en cada
+    // recarga -- mismo patrón que DESCARTADOS_KEY en HoyView.tsx.
+    const seedIntentado = useRef(false);
+    useEffect(() => {
+        if (seedIntentado.current) return;
+        if (!remoteShortcuts.isSuccess || !remoteEvaluationTools.isSuccess) return;
+        seedIntentado.current = true;
+        if (localStorage.getItem('contenidoInicialSembrado') === 'true') return;
+        localStorage.setItem('contenidoInicialSembrado', 'true');
+        if ((remoteShortcuts.data ?? []).length === 0 && (remoteEvaluationTools.data ?? []).length === 0) {
+            getInitialShortcuts().forEach(({ id: _id, ...s }) => createShortcut.mutate(s));
+            getInitialEvaluationTools().forEach(({ id: _id, ...t }) => createEvaluationTool.mutate(t));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [remoteShortcuts.isSuccess, remoteEvaluationTools.isSuccess, remoteShortcuts.data, remoteEvaluationTools.data]);
     const remoteKeyCompetences = useKeyCompetences();
     const createKeyCompetence = useCreateKeyCompetence();
     const updateKeyCompetence = useUpdateKeyCompetence();
@@ -1078,7 +1102,7 @@ const App = () => {
                             className="w-8 h-8 rounded-full overflow-hidden hover:ring-2 hover:ring-white/40 flex items-center justify-center bg-white/10"
                         >
                             {effectiveAcademicConfiguration.teacherHasPhoto ? (
-                                <img src="/api/preferences/photo" alt="" className="w-full h-full object-cover" />
+                                <img src={isTauri() ? 'http://teacherphoto.localhost/1' : '/api/preferences/photo'} alt="" className="w-full h-full object-cover" />
                             ) : (
                                 <UserCircleIcon className="w-6 h-6 text-white/80" />
                             )}

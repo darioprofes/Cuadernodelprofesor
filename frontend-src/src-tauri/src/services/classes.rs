@@ -7,11 +7,12 @@ use crate::error::ApiError;
 use super::merge_object;
 
 const COLUMNS: &str = "id, academic_year_id, course_id, grupo, schedule, skipped_days, icono, \
-    color_acento, mesa_profesor_x, mesa_profesor_y, created_at, updated_at";
+    color_acento, mesa_profesor_x, mesa_profesor_y, created_at, updated_at, caracteristicas_grupo";
 
 fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
     let schedule: String = row.get(4)?;
     let skipped_days: String = row.get(5)?;
+    let caracteristicas_grupo: String = row.get(12)?;
     Ok(json!({
         "id": row.get::<_, String>(0)?,
         "academicYearId": row.get::<_, String>(1)?,
@@ -25,6 +26,7 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
         "mesaProfesorY": row.get::<_, Option<f64>>(9)?,
         "createdAt": row.get::<_, String>(10)?,
         "updatedAt": row.get::<_, String>(11)?,
+        "caracteristicasGrupo": serde_json::from_str::<Value>(&caracteristicas_grupo).unwrap_or_else(|_| json!([])),
     }))
 }
 
@@ -54,17 +56,19 @@ pub fn create(conn: &Connection, year_id: &str, body: Value) -> Result<Value, Ap
     let color_acento = body.get("colorAcento").and_then(Value::as_i64);
     let mesa_x = body.get("mesaProfesorX").and_then(Value::as_f64);
     let mesa_y = body.get("mesaProfesorY").and_then(Value::as_f64);
+    let caracteristicas_grupo = body.get("caracteristicasGrupo").cloned().unwrap_or_else(|| json!([]));
 
     let id = db::new_uuid();
     let now = db::now_iso();
     conn.execute(
-        "INSERT INTO classes (id, academic_year_id, course_id, grupo, schedule, skipped_days, icono, color_acento, mesa_profesor_x, mesa_profesor_y, created_at, updated_at) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO classes (id, academic_year_id, course_id, grupo, schedule, skipped_days, icono, color_acento, mesa_profesor_x, mesa_profesor_y, created_at, updated_at, caracteristicas_grupo) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             id, year_id, course_id, grupo,
             serde_json::to_string(&schedule).map_err(ApiError::internal)?,
             serde_json::to_string(&skipped_days).map_err(ApiError::internal)?,
             icono, color_acento, mesa_x, mesa_y, now.clone(), now,
+            serde_json::to_string(&caracteristicas_grupo).map_err(ApiError::internal)?,
         ],
     )?;
     get_one(conn, &id)?.ok_or_else(|| ApiError::internal("no se pudo releer la clase recién creada"))
@@ -81,14 +85,17 @@ pub fn update(conn: &Connection, id: &str, body: Value) -> Result<Value, ApiErro
     let color_acento = merged.get("colorAcento").and_then(Value::as_i64);
     let mesa_x = merged.get("mesaProfesorX").and_then(Value::as_f64);
     let mesa_y = merged.get("mesaProfesorY").and_then(Value::as_f64);
+    let caracteristicas_grupo = merged.get("caracteristicasGrupo").cloned().unwrap_or_else(|| json!([]));
 
     conn.execute(
-        "UPDATE classes SET course_id = ?, grupo = ?, schedule = ?, skipped_days = ?, icono = ?, color_acento = ?, mesa_profesor_x = ?, mesa_profesor_y = ?, updated_at = ? WHERE id = ?",
+        "UPDATE classes SET course_id = ?, grupo = ?, schedule = ?, skipped_days = ?, icono = ?, color_acento = ?, mesa_profesor_x = ?, mesa_profesor_y = ?, updated_at = ?, caracteristicas_grupo = ? WHERE id = ?",
         params![
             course_id, grupo,
             serde_json::to_string(&schedule).map_err(ApiError::internal)?,
             serde_json::to_string(&skipped_days).map_err(ApiError::internal)?,
-            icono, color_acento, mesa_x, mesa_y, db::now_iso(), id,
+            icono, color_acento, mesa_x, mesa_y, db::now_iso(),
+            serde_json::to_string(&caracteristicas_grupo).map_err(ApiError::internal)?,
+            id,
         ],
     )?;
     get_one(conn, id)?.ok_or_else(|| ApiError::internal("no se pudo releer la clase tras actualizar"))
