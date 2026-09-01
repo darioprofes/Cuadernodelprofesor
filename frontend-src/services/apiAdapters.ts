@@ -79,6 +79,7 @@ export const joinStudentEnrollment = (student: ApiStudent, enrollment: ApiEnroll
     domicilioTelefono: student.domicilioTelefono,
     centroProcedencia: enrollment.centroProcedencia,
     haRepetidoCurso: enrollment.haRepetidoCurso,
+    programaBilingue: enrollment.programaBilingue,
     materiasPendientes: enrollment.materiasPendientes,
     programaEspecifico: enrollment.programaEspecifico,
     alergias: student.alergias,
@@ -160,6 +161,7 @@ export const splitStudentPatch = (data: Partial<Student>): { studentPatch: ApiSt
     if ('acneae' in data) enrollmentPatch.acneae = data.acneae;
     if ('centroProcedencia' in data) enrollmentPatch.centroProcedencia = data.centroProcedencia;
     if ('haRepetidoCurso' in data) enrollmentPatch.haRepetidoCurso = data.haRepetidoCurso;
+    if ('programaBilingue' in data) enrollmentPatch.programaBilingue = data.programaBilingue;
     if ('materiasPendientes' in data) enrollmentPatch.materiasPendientes = data.materiasPendientes;
     if ('programaEspecifico' in data) enrollmentPatch.programaEspecifico = data.programaEspecifico;
     if ('neae' in data) enrollmentPatch.neae = data.neae;

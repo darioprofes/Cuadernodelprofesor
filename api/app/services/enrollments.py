@@ -8,7 +8,7 @@ from services.students import StudentInput, create_student
 
 _COLUMNS = """
     id, student_id, class_id, acneae, centro_procedencia, ha_repetido_curso,
-    materias_pendientes, programa_especifico, neae, neae_detalle,
+    programa_bilingue, materias_pendientes, programa_especifico, neae, neae_detalle,
     medidas_educativas, indicaciones_pti, observaciones_tutor, plano_x,
     plano_y, plano_color, created_at, updated_at
 """
@@ -20,6 +20,7 @@ class EnrollmentInput(ApiModel):
     acneae: list[str] = []
     centro_procedencia: Optional[str] = None
     ha_repetido_curso: Optional[bool] = None
+    programa_bilingue: Optional[bool] = None
     materias_pendientes: Optional[str] = None
     programa_especifico: Optional[str] = None
     neae: Optional[bool] = None
@@ -36,6 +37,7 @@ class EnrollmentPatch(ApiModel):
     acneae: Optional[list[str]] = None
     centro_procedencia: Optional[str] = None
     ha_repetido_curso: Optional[bool] = None
+    programa_bilingue: Optional[bool] = None
     materias_pendientes: Optional[str] = None
     programa_especifico: Optional[str] = None
     neae: Optional[bool] = None
@@ -56,6 +58,7 @@ class Enrollment(ApiModel):
     acneae: list[str] = []
     centro_procedencia: Optional[str] = None
     ha_repetido_curso: Optional[bool] = None
+    programa_bilingue: Optional[bool] = None
     materias_pendientes: Optional[str] = None
     programa_especifico: Optional[str] = None
     neae: Optional[bool] = None

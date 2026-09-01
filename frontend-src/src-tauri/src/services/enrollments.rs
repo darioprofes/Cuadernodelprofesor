@@ -7,7 +7,7 @@ use crate::error::ApiError;
 use super::merge_object;
 
 const COLUMNS: &str = "id, student_id, class_id, acneae, centro_procedencia, ha_repetido_curso, \
-    materias_pendientes, programa_especifico, neae, neae_detalle, medidas_educativas, \
+    programa_bilingue, materias_pendientes, programa_especifico, neae, neae_detalle, medidas_educativas, \
     indicaciones_pti, observaciones_tutor, plano_x, plano_y, plano_color, created_at, updated_at";
 
 fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
@@ -19,18 +19,19 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
         "acneae": serde_json::from_str::<Value>(&acneae).unwrap_or_else(|_| json!([])),
         "centroProcedencia": row.get::<_, Option<String>>(4)?,
         "haRepetidoCurso": row.get::<_, Option<bool>>(5)?,
-        "materiasPendientes": row.get::<_, Option<String>>(6)?,
-        "programaEspecifico": row.get::<_, Option<String>>(7)?,
-        "neae": row.get::<_, Option<bool>>(8)?,
-        "neaeDetalle": row.get::<_, Option<String>>(9)?,
-        "medidasEducativas": row.get::<_, Option<String>>(10)?,
-        "indicacionesPti": row.get::<_, Option<String>>(11)?,
-        "observacionesTutor": row.get::<_, Option<String>>(12)?,
-        "planoX": row.get::<_, Option<f64>>(13)?,
-        "planoY": row.get::<_, Option<f64>>(14)?,
-        "planoColor": row.get::<_, Option<String>>(15)?,
-        "createdAt": row.get::<_, String>(16)?,
-        "updatedAt": row.get::<_, String>(17)?,
+        "programaBilingue": row.get::<_, Option<bool>>(6)?,
+        "materiasPendientes": row.get::<_, Option<String>>(7)?,
+        "programaEspecifico": row.get::<_, Option<String>>(8)?,
+        "neae": row.get::<_, Option<bool>>(9)?,
+        "neaeDetalle": row.get::<_, Option<String>>(10)?,
+        "medidasEducativas": row.get::<_, Option<String>>(11)?,
+        "indicacionesPti": row.get::<_, Option<String>>(12)?,
+        "observacionesTutor": row.get::<_, Option<String>>(13)?,
+        "planoX": row.get::<_, Option<f64>>(14)?,
+        "planoY": row.get::<_, Option<f64>>(15)?,
+        "planoColor": row.get::<_, Option<String>>(16)?,
+        "createdAt": row.get::<_, String>(17)?,
+        "updatedAt": row.get::<_, String>(18)?,
     }))
 }
 
@@ -64,12 +65,12 @@ pub fn create(conn: &Connection, class_id: &str, student_id: &str, body: &Value)
     let id = db::new_uuid();
     let now = db::now_iso();
     conn.execute(
-        "INSERT INTO enrollments (id, student_id, class_id, acneae, centro_procedencia, ha_repetido_curso, materias_pendientes, programa_especifico, neae, neae_detalle, medidas_educativas, indicaciones_pti, observaciones_tutor, plano_x, plano_y, plano_color, created_at, updated_at) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO enrollments (id, student_id, class_id, acneae, centro_procedencia, ha_repetido_curso, programa_bilingue, materias_pendientes, programa_especifico, neae, neae_detalle, medidas_educativas, indicaciones_pti, observaciones_tutor, plano_x, plano_y, plano_color, created_at, updated_at) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             id, student_id, class_id,
             serde_json::to_string(&acneae).map_err(ApiError::internal)?,
-            s("centroProcedencia"), b("haRepetidoCurso"), s("materiasPendientes"), s("programaEspecifico"),
+            s("centroProcedencia"), b("haRepetidoCurso"), b("programaBilingue"), s("materiasPendientes"), s("programaEspecifico"),
             b("neae"), s("neaeDetalle"), s("medidasEducativas"), s("indicacionesPti"), s("observacionesTutor"),
             f("planoX"), f("planoY"), s("planoColor"), now.clone(), now,
         ],
@@ -86,10 +87,10 @@ pub fn update(conn: &Connection, id: &str, body: Value) -> Result<Value, ApiErro
     let f = |k: &str| merged.get(k).and_then(Value::as_f64);
 
     conn.execute(
-        "UPDATE enrollments SET acneae = ?, centro_procedencia = ?, ha_repetido_curso = ?, materias_pendientes = ?, programa_especifico = ?, neae = ?, neae_detalle = ?, medidas_educativas = ?, indicaciones_pti = ?, observaciones_tutor = ?, plano_x = ?, plano_y = ?, plano_color = ?, updated_at = ? WHERE id = ?",
+        "UPDATE enrollments SET acneae = ?, centro_procedencia = ?, ha_repetido_curso = ?, programa_bilingue = ?, materias_pendientes = ?, programa_especifico = ?, neae = ?, neae_detalle = ?, medidas_educativas = ?, indicaciones_pti = ?, observaciones_tutor = ?, plano_x = ?, plano_y = ?, plano_color = ?, updated_at = ? WHERE id = ?",
         params![
             serde_json::to_string(&acneae).map_err(ApiError::internal)?,
-            s("centroProcedencia"), b("haRepetidoCurso"), s("materiasPendientes"), s("programaEspecifico"),
+            s("centroProcedencia"), b("haRepetidoCurso"), b("programaBilingue"), s("materiasPendientes"), s("programaEspecifico"),
             b("neae"), s("neaeDetalle"), s("medidasEducativas"), s("indicacionesPti"), s("observacionesTutor"),
             f("planoX"), f("planoY"), s("planoColor"), db::now_iso(), id,
         ],

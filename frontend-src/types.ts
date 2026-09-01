@@ -84,6 +84,7 @@ export interface Student {
 
   centroProcedencia?: string;
   haRepetidoCurso?: boolean;
+  programaBilingue?: boolean;
   materiasPendientes?: string;
   programaEspecifico?: string; // p.ej. "Diversificación"
 

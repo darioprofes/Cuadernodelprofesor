@@ -297,6 +297,7 @@ export interface Enrollment {
     acneae: string[];
     centroProcedencia?: string;
     haRepetidoCurso?: boolean;
+    programaBilingue?: boolean;
     materiasPendientes?: string;
     programaEspecifico?: string;
     neae?: boolean;
@@ -322,6 +323,7 @@ interface EnrollmentFields {
     acneae?: string[];
     centroProcedencia?: string;
     haRepetidoCurso?: boolean;
+    programaBilingue?: boolean;
     materiasPendientes?: string;
     programaEspecifico?: string;
     neae?: boolean;
