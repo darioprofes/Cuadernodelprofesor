@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClassData, Course, AcademicConfiguration, JournalEntry } from '../types';
 import Modal from './Modal';
 import Button from './Button';
@@ -57,6 +57,21 @@ const QuickJournalModal: React.FC<QuickJournalModalProps> = ({ isOpen, onClose, 
 
     const [selectedIdx, setSelectedIdx] = useState(0);
     const [notas, setNotas] = useState('');
+    // Este modal SÍ se desmonta al cerrarse (App.tsx lo renderiza
+    // condicionalmente, a diferencia de SessionActionModal.tsx) -- el flush
+    // del autoguardado pendiente puede colgarse de un cleanup de useEffect.
+    const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; run: () => void } | null>(null);
+
+    const saveNota = (sesion: SesionHoy, text: string) => {
+        const existente = entries.find(en => en.classId === sesion.classData.id && en.date === hoyStr && en.periodIndex === sesion.periodIndex);
+        onSave({
+            id: existente?.id || `j-${Date.now()}-${sesion.classData.id}-${sesion.periodIndex}-${Math.random().toString(36).substring(2, 5)}`,
+            date: hoyStr,
+            classId: sesion.classData.id,
+            periodIndex: sesion.periodIndex,
+            notes: text,
+        });
+    };
 
     useEffect(() => {
         if (isOpen) {
@@ -66,6 +81,13 @@ const QuickJournalModal: React.FC<QuickJournalModalProps> = ({ isOpen, onClose, 
     }, [isOpen]);
 
     useEffect(() => {
+        // Cambiar de sesión en el desplegable descartaría silenciosamente
+        // un autoguardado pendiente de la anterior -- se lanza antes.
+        if (pendingSaveRef.current) {
+            clearTimeout(pendingSaveRef.current.timer);
+            pendingSaveRef.current.run();
+            pendingSaveRef.current = null;
+        }
         const sesion = sesionesHoy[selectedIdx];
         if (!sesion) {
             setNotas('');
@@ -73,20 +95,34 @@ const QuickJournalModal: React.FC<QuickJournalModalProps> = ({ isOpen, onClose, 
         }
         const existente = entries.find(e => e.classId === sesion.classData.id && e.date === hoyStr && e.periodIndex === sesion.periodIndex);
         setNotas(existente?.notes || '');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedIdx, sesionesHoy, entries, hoyStr]);
+
+    // Al desmontar (se cierra el modal, App.tsx deja de renderizarlo),
+    // lanza cualquier autoguardado todavía pendiente.
+    useEffect(() => () => {
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current.run(); }
+    }, []);
+
+    const handleNotasChange = (text: string) => {
+        setNotas(text);
+        const sesion = sesionesHoy[selectedIdx];
+        if (!sesion) return;
+
+        // Autoguardado: 1.5s tras la última pulsación (mismo criterio e
+        // intervalo que ClassJournal.tsx/SessionActionModal.tsx).
+        if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current.timer);
+        const run = () => { pendingSaveRef.current = null; saveNota(sesion, text); };
+        pendingSaveRef.current = { timer: setTimeout(run, 1500), run };
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        // Cancela el temporizador sin lanzarlo -- ya vamos a guardar ahora.
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current = null; }
         const sesion = sesionesHoy[selectedIdx];
         if (!sesion) return;
-        const existente = entries.find(en => en.classId === sesion.classData.id && en.date === hoyStr && en.periodIndex === sesion.periodIndex);
-        onSave({
-            id: existente?.id || `j-${Date.now()}-${sesion.classData.id}-${sesion.periodIndex}-${Math.random().toString(36).substring(2, 5)}`,
-            date: hoyStr,
-            classId: sesion.classData.id,
-            periodIndex: sesion.periodIndex,
-            notes: notas,
-        });
+        saveNota(sesion, notas);
         onClose();
     };
 
@@ -116,7 +152,7 @@ const QuickJournalModal: React.FC<QuickJournalModalProps> = ({ isOpen, onClose, 
                         <Textarea
                             id="quick-journal-notes"
                             value={notas}
-                            onChange={e => setNotas(e.target.value)}
+                            onChange={e => handleNotasChange(e.target.value)}
                             placeholder="Incidencias, tareas mandadas, lo que realmente se ha hecho en clase..."
                             className="mt-1 h-32 resize-y"
                             autoFocus

@@ -137,16 +137,31 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
         }
     };
 
+    // criterionScores de una nota basada en instrumento se deriva siempre
+    // en caliente a partir de toolResults + la definición VIGENTE del
+    // instrumento (ver services/apiAdapters.ts, decodeGrade), así que no
+    // hay nada que recalcular ni reguardar aquí en ninguna plataforma: el
+    // siguiente GET ya usa la definición nueva. Update simple e
+    // idempotente -- reutilizada tal cual por el autoguardado (ver
+    // handleAutosave), que necesita la MISMA escritura pero SIN los cierres
+    // de handleSave (cerrar el modal a cada tick sería... no, exactamente
+    // eso: no cerrar nada).
+    const guardarEdicionExistente = (tool: EvaluationTool) => {
+        const { id, ...data } = tool;
+        onUpdate(id, data);
+    };
+
+    // Autoguardado: SOLO se pasa (ver `autosave` más abajo) cuando ya se
+    // está editando un instrumento existente, así que reutiliza
+    // directamente guardarEdicionExistente -- nunca cierra el modal (a
+    // diferencia de handleSave, pensado para el botón "Guardar" explícito).
+    const handleAutosave = (tool: EvaluationTool) => {
+        guardarEdicionExistente(tool);
+    };
+
     const handleSave = async (tool: EvaluationTool) => {
         if (toolToEdit && !instrumentoGeneradoPendiente) {
-            // criterionScores de una nota basada en instrumento se deriva
-            // siempre en caliente a partir de toolResults + la definición
-            // VIGENTE del instrumento (ver services/apiAdapters.ts,
-            // decodeGrade), así que no hay nada que recalcular ni
-            // reguardar aquí en ninguna plataforma: el siguiente GET ya usa
-            // la definición nueva.
-            const { id, ...data } = tool;
-            onUpdate(id, data);
+            guardarEdicionExistente(tool);
         } else if (origenSA) {
             // Generado a partir de un elemento de una SA: se crea aparte
             // (no con el onCreate genérico) para tener el id real y poder
@@ -423,6 +438,8 @@ const EvaluationToolManager: React.FC<EvaluationToolManagerProps> = ({ evaluatio
                     criteria={criteria}
                     courses={courses}
                     defaultCourseId={filtroMateriaId && filtroMateriaId !== 'sin-materia' ? filtroMateriaId : undefined}
+                    autosave={!!toolToEdit && !instrumentoGeneradoPendiente}
+                    onAutosave={handleAutosave}
                 />
             )}
             {showOrigenGenerarIA && (
@@ -612,15 +629,57 @@ interface EditorModalProps {
     // en la lista, o (desde InstrumentoSelectConIA) la única materia de la
     // SA en curso. Ignorado si toolToEdit ya trae la suya.
     defaultCourseId?: string;
+    // Autoguardado SOLO cuando de verdad se está editando un instrumento ya
+    // persistido (nunca en los otros dos usos de este mismo modal: crear
+    // uno nuevo, o revisar un borrador de IA todavía sin guardar -- ahí
+    // guardar CREA una fila nueva cada vez, y en el caso "origen SA"
+    // además enlaza esa fila recién creada con la actividad de la SA --
+    // autoguardar ahí duplicaría instrumentos y enlaces a cada tick). Por
+    // eso lo decide el LLAMANTE (que conoce ese contexto), no este
+    // componente por su cuenta. `onAutosave`, DISTINTO de `onSave`: onSave
+    // (el botón "Guardar" explícito) cierra el modal al terminar -- si el
+    // autoguardado lo reutilizara, el modal se cerraría solo a cada tick
+    // mientras el profesor sigue escribiendo. Obligatorio cuando
+    // autosave=true.
+    autosave?: boolean;
+    onAutosave?: (tool: EvaluationTool) => void;
 }
 
 // Exportado -- reutilizado tal cual por InstrumentoSelectConIA
 // (ProgrammingManager.tsx) para revisar/editar un instrumento recién
 // generado con IA antes de guardarlo, sin duplicar este formulario.
-export const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, onClose, onSave, toolToEdit, criteria, courses, defaultCourseId }) => {
+export const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, onClose, onSave, toolToEdit, criteria, courses, defaultCourseId, autosave, onAutosave }) => {
     const [tool, setTool] = useState<ToolDraft>(() =>
         toolToEdit || { name: '', type: 'checklist', courseId: defaultCourseId, items: [] }
     );
+
+    // Autoguardado: 1.5s tras el último cambio de `tool` (mismo intervalo
+    // que el resto de la sesión). Basado en un efecto que compara contra el
+    // último valor de `tool` ya visto, no en un flag "primera vez" -- un
+    // simple booleano se desincroniza con StrictMode (el efecto de montaje
+    // se invoca dos veces en desarrollo) y dispararía un guardado fantasma
+    // nada más abrir el modal. `ToolEditorFields` llama a setTool
+    // directamente (recibe el dispatcher tal cual, ver más abajo), así que
+    // este efecto -- no cada onChange suelto -- es el único sitio que puede
+    // engancharse a CUALQUIER cambio de `tool`, venga de donde venga.
+    const lastHandledToolRef = useRef(tool);
+    const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; run: () => void } | null>(null);
+    useEffect(() => {
+        if (tool === lastHandledToolRef.current) return;
+        lastHandledToolRef.current = tool;
+        if (!autosave || !onAutosave) return;
+        if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current.timer);
+        const run = () => { pendingSaveRef.current = null; onAutosave(tool as EvaluationTool); };
+        pendingSaveRef.current = { timer: setTimeout(run, 1500), run };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tool]);
+
+    // Al desmontar (se cierra el modal -- los 3 sitios que lo abren lo
+    // renderizan condicionalmente, nunca con isOpen a secas) lanza
+    // cualquier autoguardado pendiente.
+    useEffect(() => () => {
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current.run(); }
+    }, []);
 
     const handleFieldChange = <K extends keyof ToolDraft>(field: K, value: ToolDraft[K]) => {
         setTool(prev => ({ ...prev, [field]: value }));
@@ -656,6 +715,8 @@ export const EvaluationToolEditorModal: React.FC<EditorModalProps> = ({ isOpen, 
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        // Cancela el temporizador sin lanzarlo -- ya vamos a guardar ahora.
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current = null; }
         // Única conversión de "borrador en edición" a tipo de dominio: el
         // formulario ya garantiza que levels/levelDescriptions están
         // presentes cuando el tipo los necesita (ver handleTypeChange). El

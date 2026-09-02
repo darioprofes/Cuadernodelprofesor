@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { Student, Tutor } from '../types';
 import { ACNEAE_TAGS, ACNEAE_LABELS } from '../constants';
 import Modal from './Modal';
@@ -33,9 +33,33 @@ const emptyTutor: Tutor = { nombre: '', relacion: '', telefono: '', email: '' };
 // no convertir esto en un formulario interminable de un solo vistazo.
 const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isOpen, onClose, student, onSave }) => {
     const [form, setForm] = useState<FormState>({ nombre: '', primerApellido: '', segundoApellido: '', acneae: [] });
+    // Este modal NUNCA se desmonta (GradebookTable.tsx solo cambia `isOpen`/
+    // `student`) -- el flush del autoguardado pendiente se cuelga del
+    // cierre (ver el useEffect de isOpen más abajo), no de un unmount, igual
+    // que SessionActionModal.tsx.
+    const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; run: () => void } | null>(null);
+
+    const flushPendingSave = () => {
+        if (pendingSaveRef.current) {
+            clearTimeout(pendingSaveRef.current.timer);
+            pendingSaveRef.current.run();
+            pendingSaveRef.current = null;
+        }
+    };
+
+    // Al cerrar el modal (Guardar, la X, el fondo, Esc), lanza de inmediato
+    // cualquier autoguardado pendiente.
+    useEffect(() => {
+        if (!isOpen) flushPendingSave();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     useEffect(() => {
         if (isOpen && student) {
+            // Por si hubiera algo pendiente de la ficha anterior (no debería
+            // llegar a pasar, el modal se cierra entre una y otra, pero no
+            // cuesta nada cubrirlo).
+            flushPendingSave();
             setForm({
                 nombre: student.nombre || '',
                 primerApellido: student.primerApellido || '',
@@ -45,6 +69,8 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                 dni: student.dni || '',
                 nie: student.nie || '',
                 nacionalidad: student.nacionalidad || '',
+                ultimoCursoSauce: student.ultimoCursoSauce || '',
+                ultimaUnidadSauce: student.ultimaUnidadSauce || '',
                 telefonoUrgencias: student.telefonoUrgencias || '',
                 tutor1: student.tutor1 || { ...emptyTutor },
                 tutor2: student.tutor2 || { ...emptyTutor },
@@ -75,16 +101,6 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
 
     if (!student) return null;
 
-    const set = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }));
-    const setTutor = (which: 'tutor1' | 'tutor2', patch: Partial<Tutor>) =>
-        setForm(prev => ({ ...prev, [which]: { ...prev[which], ...patch } }));
-
-    const handleFotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        set({ foto: await fileToDataUrl(file) });
-    };
-
     const trimOrUndef = (v?: string) => v?.trim() || undefined;
     const trimTutor = (t?: Tutor): Tutor | undefined => {
         if (!t) return undefined;
@@ -92,42 +108,80 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
         return Object.values(cleaned).some(Boolean) ? cleaned : undefined;
     };
 
+    // Misma forma que espera onSave, extraída de handleSubmit para
+    // reutilizarla también desde el autoguardado (ver scheduleAutosave).
+    const buildPayload = (f: FormState): Partial<Student> => ({
+        nombre: trimOrUndef(f.nombre),
+        primerApellido: trimOrUndef(f.primerApellido),
+        segundoApellido: trimOrUndef(f.segundoApellido),
+        foto: f.foto,
+        fechaNacimiento: trimOrUndef(f.fechaNacimiento),
+        dni: trimOrUndef(f.dni),
+        nie: trimOrUndef(f.nie),
+        nacionalidad: trimOrUndef(f.nacionalidad),
+        ultimoCursoSauce: trimOrUndef(f.ultimoCursoSauce),
+        ultimaUnidadSauce: trimOrUndef(f.ultimaUnidadSauce),
+        telefonoUrgencias: trimOrUndef(f.telefonoUrgencias),
+        tutor1: trimTutor(f.tutor1),
+        tutor2: trimTutor(f.tutor2),
+        domicilioDireccion: trimOrUndef(f.domicilioDireccion),
+        domicilioLocalidad: trimOrUndef(f.domicilioLocalidad),
+        domicilioCodigoPostal: trimOrUndef(f.domicilioCodigoPostal),
+        domicilioTelefono: trimOrUndef(f.domicilioTelefono),
+        centroProcedencia: trimOrUndef(f.centroProcedencia),
+        haRepetidoCurso: f.haRepetidoCurso,
+        materiasPendientes: trimOrUndef(f.materiasPendientes),
+        programaEspecifico: trimOrUndef(f.programaEspecifico),
+        alergias: trimOrUndef(f.alergias),
+        enfermedadesRelevantes: trimOrUndef(f.enfermedadesRelevantes),
+        medicacionHabitual: trimOrUndef(f.medicacionHabitual),
+        intoleranciasAlimentarias: trimOrUndef(f.intoleranciasAlimentarias),
+        observacionesSanitarias: trimOrUndef(f.observacionesSanitarias),
+        acneae: f.acneae || [],
+        neae: f.neae,
+        neaeDetalle: trimOrUndef(f.neaeDetalle),
+        medidasEducativas: trimOrUndef(f.medidasEducativas),
+        indicacionesPti: trimOrUndef(f.indicacionesPti),
+        autorizacionImagen: f.autorizacionImagen,
+        autorizacionSalidas: f.autorizacionSalidas,
+        observacionesTutor: trimOrUndef(f.observacionesTutor),
+    });
+
+    // Autoguardado: 1.5s tras el último cambio en CUALQUIER campo (mismo
+    // criterio que ReunionesView.tsx) -- un único temporizador compartido
+    // para los ~30 campos, ya que todos pasan por `set`/`setTutor`. `next`
+    // se computa aquí mismo (no dentro de un `setForm(prev => ...)`, que
+    // React invoca dos veces en StrictMode y duplicaría el guardado si
+    // llevara el efecto secundario dentro -- ver el mismo bug ya
+    // encontrado y corregido en AcademicConfigManager.tsx).
+    const scheduleAutosave = (next: FormState) => {
+        if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current.timer);
+        const run = () => { pendingSaveRef.current = null; onSave(student.id, buildPayload(next)); };
+        pendingSaveRef.current = { timer: setTimeout(run, 1500), run };
+    };
+
+    const set = (patch: Partial<FormState>) => {
+        const next = { ...form, ...patch };
+        setForm(next);
+        scheduleAutosave(next);
+    };
+    const setTutor = (which: 'tutor1' | 'tutor2', patch: Partial<Tutor>) => {
+        const next = { ...form, [which]: { ...form[which], ...patch } };
+        setForm(next);
+        scheduleAutosave(next);
+    };
+
+    const handleFotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        set({ foto: await fileToDataUrl(file) });
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave(student.id, {
-            nombre: trimOrUndef(form.nombre),
-            primerApellido: trimOrUndef(form.primerApellido),
-            segundoApellido: trimOrUndef(form.segundoApellido),
-            foto: form.foto,
-            fechaNacimiento: trimOrUndef(form.fechaNacimiento),
-            dni: trimOrUndef(form.dni),
-            nie: trimOrUndef(form.nie),
-            nacionalidad: trimOrUndef(form.nacionalidad),
-            telefonoUrgencias: trimOrUndef(form.telefonoUrgencias),
-            tutor1: trimTutor(form.tutor1),
-            tutor2: trimTutor(form.tutor2),
-            domicilioDireccion: trimOrUndef(form.domicilioDireccion),
-            domicilioLocalidad: trimOrUndef(form.domicilioLocalidad),
-            domicilioCodigoPostal: trimOrUndef(form.domicilioCodigoPostal),
-            domicilioTelefono: trimOrUndef(form.domicilioTelefono),
-            centroProcedencia: trimOrUndef(form.centroProcedencia),
-            haRepetidoCurso: form.haRepetidoCurso,
-            materiasPendientes: trimOrUndef(form.materiasPendientes),
-            programaEspecifico: trimOrUndef(form.programaEspecifico),
-            alergias: trimOrUndef(form.alergias),
-            enfermedadesRelevantes: trimOrUndef(form.enfermedadesRelevantes),
-            medicacionHabitual: trimOrUndef(form.medicacionHabitual),
-            intoleranciasAlimentarias: trimOrUndef(form.intoleranciasAlimentarias),
-            observacionesSanitarias: trimOrUndef(form.observacionesSanitarias),
-            acneae: form.acneae || [],
-            neae: form.neae,
-            neaeDetalle: trimOrUndef(form.neaeDetalle),
-            medidasEducativas: trimOrUndef(form.medidasEducativas),
-            indicacionesPti: trimOrUndef(form.indicacionesPti),
-            autorizacionImagen: form.autorizacionImagen,
-            autorizacionSalidas: form.autorizacionSalidas,
-            observacionesTutor: trimOrUndef(form.observacionesTutor),
-        });
+        // Cancela el temporizador sin lanzarlo -- ya vamos a guardar ahora.
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current = null; }
+        onSave(student.id, buildPayload(form));
         onClose();
     };
 
@@ -209,6 +263,16 @@ const StudentPersonalDataModal: React.FC<StudentPersonalDataModalProps> = ({ isO
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <Field label="Centro de procedencia">
                             <Input type="text" value={form.centroProcedencia || ''} onChange={e => set({ centroProcedencia: e.target.value })} className={inputClass} />
+                        </Field>
+                        <Field label="Nivel de referencia">
+                            <Input type="text" value={form.ultimoCursoSauce || ''} onChange={e => set({ ultimoCursoSauce: e.target.value })} placeholder="Ej: 1º ESO" className={inputClass} />
+                            <p className="mt-1 text-xs text-slate-400">
+                                Nivel/grupo administrativo real del alumno/a, independiente de en qué clase-materia esté matriculado/a
+                                (útil sobre todo para optativas con alumnado mezclado de varios grupos) — SAUCE lo actualiza solo al reimportar.
+                            </p>
+                        </Field>
+                        <Field label="Grupo de referencia">
+                            <Input type="text" value={form.ultimaUnidadSauce || ''} onChange={e => set({ ultimaUnidadSauce: e.target.value })} placeholder="Ej: A" className={inputClass} />
                         </Field>
                         <Field label="Programa específico (Diversificación, etc.)">
                             <Input type="text" value={form.programaEspecifico || ''} onChange={e => set({ programaEspecifico: e.target.value })} className={inputClass} />

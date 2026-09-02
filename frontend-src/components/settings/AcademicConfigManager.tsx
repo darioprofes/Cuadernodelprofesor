@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { isTauri, invoke } from '@tauri-apps/api/core';
 import type { AcademicConfiguration, Holiday, EvaluationPeriod, GradeScaleRule } from '../../types';
 import { TrashIcon, ChevronDownIcon, CalendarDaysIcon, ChartBarIcon, ArrowUpTrayIcon } from '../Icons';
 import Input from '../Input';
@@ -126,6 +127,60 @@ const AcademicConfigManager: React.FC<{
     const [importandoCalendario, setImportandoCalendario] = useState(false);
     const [avisoImportacion, setAvisoImportacion] = useState<string | null>(null);
 
+    // Buffer local de festivos: DISTINTO de academicConfiguration.holidays
+    // (que llega vía react-query, con retraso real tras cada guardado).
+    // Antes, cada tecla en un campo de festivo llamaba a
+    // setAcademicConfiguration(prev => ...) directamente, que en App.tsx
+    // reconstruye el array ENTERO a partir de effectiveAcademicConfiguration
+    // -- si el usuario tecleaba en dos campos seguidos (o en dos festivos
+    // distintos) antes de que el PATCH anterior hubiera vuelto a través de
+    // react-query, el segundo cálculo partía de una instantánea que
+    // TODAVÍA NO incluía el primer cambio, y lo pisaba al guardar. Bug
+    // real reportado por el usuario ("la introducción de fechas de
+    // festivos a mano está mal"). Con este buffer, cada edición parte
+    // siempre de su propio último valor local (nunca del servidor a
+    // medias) y el guardado real se manda debounced (1.5s, igual que el
+    // resto de autoguardados de esta sesión) o de inmediato para acciones
+    // discretas (añadir/borrar/importar). lastPersistedHolidaysRef evita
+    // que el eco de nuestro propio guardado (el prop volviendo a bajar tras
+    // el refetch) resincronice el buffer y pise una edición más reciente
+    // que ya iba de camino -- solo resincroniza si el prop cambió por un
+    // motivo EXTERNO de verdad (cambio de curso académico...).
+    const [holidaysDraft, setHolidaysDraft] = useState<Holiday[]>(academicConfiguration.holidays);
+    // {timer, run}, no solo el id del timer -- así el flush al desmontar
+    // (ver más abajo) puede lanzar el guardado pendiente con su propio
+    // closure (que ya lleva el `next` correcto atado), sin depender de
+    // releer `holidaysDraft` desde un closure de cleanup potencialmente
+    // obsoleto (los efectos con deps [] solo capturan el valor del
+    // primer render).
+    const pendingHolidaysSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; run: () => void } | null>(null);
+    const lastPersistedHolidaysRef = useRef<Holiday[]>(academicConfiguration.holidays);
+
+    useEffect(() => {
+        if (academicConfiguration.holidays !== lastPersistedHolidaysRef.current) {
+            setHolidaysDraft(academicConfiguration.holidays);
+            lastPersistedHolidaysRef.current = academicConfiguration.holidays;
+        }
+    }, [academicConfiguration.holidays]);
+
+    // Al desmontar (se cierra Ajustes, se cambia de pestaña dentro del
+    // modal...) con una edición todavía sin guardar, la lanza de inmediato.
+    useEffect(() => () => {
+        if (pendingHolidaysSaveRef.current) { clearTimeout(pendingHolidaysSaveRef.current.timer); pendingHolidaysSaveRef.current.run(); }
+    }, []);
+
+    const flushHolidaysSave = (next: Holiday[]) => {
+        if (pendingHolidaysSaveRef.current) { clearTimeout(pendingHolidaysSaveRef.current.timer); pendingHolidaysSaveRef.current = null; }
+        lastPersistedHolidaysRef.current = next;
+        setAcademicConfiguration(prev => ({ ...prev, holidays: next }));
+    };
+
+    const scheduleHolidaysSave = (next: Holiday[]) => {
+        if (pendingHolidaysSaveRef.current) clearTimeout(pendingHolidaysSaveRef.current.timer);
+        const run = () => { pendingHolidaysSaveRef.current = null; flushHolidaysSave(next); };
+        pendingHolidaysSaveRef.current = { timer: setTimeout(run, 1500), run };
+    };
+
     // Estado CONTROLADO (no solo el `open` inicial de <details>) -- necesario
     // para poder desplegar a la fuerza el grupo que recibe un festivo nuevo
     // (bug real: "+ Añadir Festivo" sí añadía el festivo, pero como el grupo
@@ -223,24 +278,36 @@ const AcademicConfigManager: React.FC<{
         if (typeof w === 'number') totalWeight += w;
     }
 
-    // Solo 'holidays' — 'periods' (franjas horarias) se gestiona ahora en
-    // Horario Semanal (ScheduleManager.tsx), 'evaluationPeriods' ya se
-    // gestionaba aparte (handlePeriodFieldChange/handleAddPeriod/
-    // handleRemovePeriod, contra el backend real).
-    const handleListItemChange = (type: 'holidays', index: number, field: string, value: string) => {
-        setAcademicConfiguration(prev => {
-            const newList = [...(prev[type] || [])] as Holiday[];
-            newList[index] = { ...newList[index], [field]: value };
-            return { ...prev, [type]: newList };
-        });
+    // 'periods' (franjas horarias) se gestiona ahora en Horario Semanal
+    // (ScheduleManager.tsx), 'evaluationPeriods' ya se gestionaba aparte
+    // (handlePeriodFieldChange/handleAddPeriod/handleRemovePeriod, contra
+    // el backend real). Estos 3 solo tocan holidaysDraft (buffer local, ver
+    // más arriba) -- handleListItemChange lo guarda debounced (edición de
+    // texto/fecha en curso), añadir/borrar lo guardan de inmediato (una
+    // acción discreta, no tiene sentido esperar 1.5s a que se refleje).
+    //
+    // El cálculo de newList y el guardado (schedule/flush) van FUERA del
+    // updater de setHolidaysDraft, no anidados dentro de un
+    // `setHolidaysDraft(prev => { ...; scheduleHolidaysSave(newList);
+    // return newList })` -- ese updater lo invoca React DOS VECES en
+    // StrictMode (para detectar updaters impuros) y, al llevar un efecto
+    // secundario dentro, disparaba el guardado por duplicado (bug real,
+    // visto en la red al probar este mismo cambio: dos PATCH idénticos por
+    // cada tecla). `holidaysDraft` ya está fresco en cada render porque
+    // estas funciones se recrean en cada uno -- no hace falta la forma
+    // funcional aquí.
+    const handleListItemChange = (index: number, field: string, value: string) => {
+        const newList = [...holidaysDraft];
+        newList[index] = { ...newList[index], [field]: value };
+        setHolidaysDraft(newList);
+        scheduleHolidaysSave(newList);
     };
 
-    const handleAddListItem = (type: 'holidays') => {
-        setAcademicConfiguration(prev => {
-            const currentList = prev[type] || [];
-            const newItem = { id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, name: 'Nuevo', startDate: '', endDate: '', type: 'festivo' as const };
-            return { ...prev, [type]: [...currentList, newItem] };
-        });
+    const handleAddListItem = () => {
+        const newItem = { id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, name: 'Nuevo', startDate: '', endDate: '', type: 'festivo' as const };
+        const newList = [...holidaysDraft, newItem];
+        setHolidaysDraft(newList);
+        flushHolidaysSave(newList);
         // El nuevo festivo cae en el grupo "Festivo" -- lo despliega para que
         // se vea de inmediato, en vez de quedar oculto dentro de un grupo
         // plegado (parecía que el botón no hacía nada).
@@ -267,21 +334,29 @@ const AcademicConfigManager: React.FC<{
         setAvisoImportacion(null);
 
         try {
-            const formData = new FormData();
-            formData.append('archivo', file);
-            const response = await fetch('/api/calendario/importar-pdf', { method: 'POST', body: formData });
-
-            if (!response.ok) {
-                const body = await response.json().catch(() => null);
-                throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
-            }
-
-            const data: {
+            let data: {
                 noLectivo: { nombre: string; fechaInicio: string; fechaFin: string }[];
                 vacaciones: { nombre: string; fechaInicio: string; fechaFin: string | null }[];
                 festivos: { nombre: string; fechaInicio: string; fechaFin: string }[];
                 errores: string[];
-            } = await response.json();
+            };
+            if (isTauri()) {
+                // Mismo patrón que importar_horario_pdf: bytes crudos por un
+                // comando propio, no el despachador genérico api_request.
+                const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+                data = await invoke('importar_calendario_pdf', { bytes });
+            } else {
+                const formData = new FormData();
+                formData.append('archivo', file);
+                const response = await fetch('/api/calendario/importar-pdf', { method: 'POST', body: formData });
+
+                if (!response.ok) {
+                    const body = await response.json().catch(() => null);
+                    throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+                }
+
+                data = await response.json();
+            }
 
             const noLectivo: Holiday[] = data.noLectivo.map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin, type: 'no_lectivo' }));
             // Excluye entradas sin fecha de fin exacta (p.ej. vacaciones de
@@ -297,7 +372,9 @@ const AcademicConfigManager: React.FC<{
             const festivos: Holiday[] = data.festivos.map(h => ({ id: crypto.randomUUID(), name: h.nombre, startDate: h.fechaInicio, endDate: h.fechaFin, type: 'festivo' }));
             const nuevos = [...festivos, ...noLectivo, ...vacaciones];
 
-            setAcademicConfiguration(prev => ({ ...prev, holidays: [...(prev.holidays ?? []), ...nuevos] }));
+            const newList = [...holidaysDraft, ...nuevos];
+            setHolidaysDraft(newList);
+            flushHolidaysSave(newList);
             // Despliega los grupos que reciben algo, para que se vea de
             // inmediato lo importado (mismo motivo que en handleAddListItem).
             setGruposFestivoAbiertos(prev => ({
@@ -311,19 +388,23 @@ const AcademicConfigManager: React.FC<{
                 ...data.errores,
             ].join(' '));
         } catch (err) {
-            setAvisoImportacion(`Error al importar el PDF: ${err instanceof Error ? err.message : String(err)}`);
+            // invoke() rechaza con el propio ApiError ({status, detail}) del
+            // lado Rust, no con una instancia de Error -- distinto del
+            // fetch() de arriba.
+            const mensaje = (err && typeof err === 'object' && 'detail' in err)
+                ? String((err as { detail: unknown }).detail)
+                : (err instanceof Error ? err.message : String(err));
+            setAvisoImportacion(`Error al importar el PDF: ${mensaje}`);
         } finally {
             setImportandoCalendario(false);
             if (calendarioFileInputRef.current) calendarioFileInputRef.current.value = '';
         }
     };
 
-    const handleRemoveListItem = (type: 'holidays', idOrIndex: string) => {
-        setAcademicConfiguration(prev => {
-            const currentList = prev[type] || [];
-            const newList = (currentList as Holiday[]).filter(item => item.id !== idOrIndex);
-            return { ...prev, [type]: newList };
-        });
+    const handleRemoveListItem = (id: string) => {
+        const newList = holidaysDraft.filter(item => item.id !== id);
+        setHolidaysDraft(newList);
+        flushHolidaysSave(newList);
     };
 
     const handleGradeScaleChange = <K extends keyof GradeScaleRule>(index: number, field: K, value: GradeScaleRule[K]) => {
@@ -377,7 +458,7 @@ const AcademicConfigManager: React.FC<{
                             el de dentro del grupo -- se guarda junto al festivo
                             al agrupar. */}
                         {(Object.keys(TIPO_FESTIVO_LABEL) as (keyof typeof TIPO_FESTIVO_LABEL)[]).map(tipo => {
-                            const items = academicConfiguration.holidays
+                            const items = holidaysDraft
                                 .map((holiday, index) => ({ holiday, index }))
                                 .filter(({ holiday }) => (holiday.type ?? 'festivo') === tipo);
 
@@ -398,14 +479,14 @@ const AcademicConfigManager: React.FC<{
                                         {items.map(({ holiday, index }) => (
                                             <div key={holiday.id} className="px-2 py-1.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
                                                 <div className="flex gap-2 items-center">
-                                                    <Input type="text" value={holiday.name} onChange={e => handleListItemChange('holidays', index, 'name', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs !text-amber-700 font-semibold" placeholder="Nombre festivo" title={holiday.name}/>
-                                                    <button onClick={() => handleRemoveListItem('holidays', holiday.id)} className="p-1 text-red-500 hover:bg-red-50 rounded flex-shrink-0"><TrashIcon className="w-3 h-3"/></button>
+                                                    <Input type="text" value={holiday.name} onChange={e => handleListItemChange(index, 'name', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs !text-amber-700 font-semibold" placeholder="Nombre festivo" title={holiday.name}/>
+                                                    <button onClick={() => handleRemoveListItem(holiday.id)} className="p-1 text-red-500 hover:bg-red-50 rounded flex-shrink-0"><TrashIcon className="w-3 h-3"/></button>
                                                 </div>
                                                 <div className="flex gap-2 items-center">
-                                                    <Input type="date" value={holiday.startDate} onChange={e => handleListItemChange('holidays', index, 'startDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
-                                                    <Input type="date" value={holiday.endDate} onChange={e => handleListItemChange('holidays', index, 'endDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
+                                                    <Input type="date" value={holiday.startDate} onChange={e => handleListItemChange(index, 'startDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
+                                                    <Input type="date" value={holiday.endDate} onChange={e => handleListItemChange(index, 'endDate', e.target.value)} className="!py-1 flex-1 min-w-0 text-xs"/>
                                                 </div>
-                                                <Select value={holiday.type ?? 'festivo'} onChange={e => handleListItemChange('holidays', index, 'type', e.target.value)} className="!w-auto !py-1 text-xs">
+                                                <Select value={holiday.type ?? 'festivo'} onChange={e => handleListItemChange(index, 'type', e.target.value)} className="!w-auto !py-1 text-xs">
                                                     {(Object.keys(TIPO_FESTIVO_LABEL) as (keyof typeof TIPO_FESTIVO_LABEL)[]).map(t => (
                                                         <option key={t} value={t}>{TIPO_FESTIVO_LABEL[t]}</option>
                                                     ))}
@@ -417,7 +498,7 @@ const AcademicConfigManager: React.FC<{
                             );
                         })}
                         <div className="flex items-center gap-3 flex-wrap">
-                            <button onClick={() => handleAddListItem('holidays')} className={`text-xs ${linkClassName}`}>+ Añadir Festivo</button>
+                            <button onClick={() => handleAddListItem()} className={`text-xs ${linkClassName}`}>+ Añadir Festivo</button>
                             <input type="file" ref={calendarioFileInputRef} onChange={handleImportarFestivosPdf} accept=".pdf" className="hidden" />
                             <button
                                 onClick={() => calendarioFileInputRef.current?.click()}

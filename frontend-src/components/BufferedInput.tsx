@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Input from './Input';
 
 // Bug real (2026-08-04, encontrado en AcademicConfigManager.tsx): campos que
@@ -21,13 +21,29 @@ const BufferedInput: React.FC<
     & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onBlur'>
 > = ({ value, onCommit, ...rest }) => {
     const [local, setLocal] = useState(value);
-    useEffect(() => { setLocal(value); }, [value]);
+    // Segundo bug real, encontrado 2026-09-02: el resync de `local` no
+    // comprobaba si el campo estaba siendo editado AHORA MISMO -- un
+    // refetch ajeno de la query (invalidada por CUALQUIER otro guardado
+    // que comparta esa query key, o por el propio refetchOnWindowFocus de
+    // react-query al volver a la pestaña) pisaba en mitad de la escritura
+    // lo que el profesor todavía no había llegado a confirmar (perder el
+    // foco). Con el campo enfocado, el resync se pospone -- se aplica en
+    // cuanto se desenfoca, que es también cuando se comprueba si hay que
+    // guardar.
+    const isFocusedRef = useRef(false);
+    useEffect(() => {
+        if (!isFocusedRef.current) setLocal(value);
+    }, [value]);
     return (
         <Input
             {...rest}
             value={local}
             onChange={e => setLocal(e.target.value)}
-            onBlur={() => { if (local !== value) onCommit(local); }}
+            onFocus={() => { isFocusedRef.current = true; }}
+            onBlur={() => {
+                isFocusedRef.current = false;
+                if (local !== value) onCommit(local);
+            }}
             onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
         />
     );

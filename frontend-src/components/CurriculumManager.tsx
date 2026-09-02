@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Course, KeyCompetence, OperationalDescriptor, SpecificCompetence, EvaluationCriterion, BasicKnowledge } from '../types';
 import { api } from '../services/api';
 import {
@@ -902,13 +902,51 @@ interface EditableItemProps {
 const EditableItem: React.FC<EditableItemProps> = ({ item, type, onSave, onDelete, editableWeight, defaultEditing, descriptorCodeById, competenceCodeById }) => {
     const [isEditing, setIsEditing] = useState(!!defaultEditing);
     const [data, setData] = useState<CurriculumItem>(item);
+    // Autoguardado mientras se edita (1.5s tras la última pulsación, mismo
+    // criterio que el resto de la sesión) -- "Guardar"/"Cancelar" siguen
+    // ahí para cerrar el modo edición explícitamente, pero ya no hace falta
+    // acordarse de pulsarlos para no perder el cambio.
+    const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; run: () => void } | null>(null);
+
+    // Al desmontar (la lista se reordena/filtra y este ítem deja de
+    // renderizarse mientras se editaba) lanza cualquier autoguardado
+    // pendiente.
+    useEffect(() => () => {
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current.run(); }
+    }, []);
+
+    // Mismo criterio que el "No puede quedar sin ninguno de los dos" de más
+    // abajo -- nunca autoguarda un criterio de evaluación con peso a medio
+    // resolver (ni número ni "No cuenta"), aunque el resto de campos sí
+    // estén listos para guardarse solos.
+    const esPesoInvalido = (candidate: CurriculumItem): boolean => {
+        if (type !== 'ec' || !editableWeight) return false;
+        const w = 'weight' in candidate ? candidate.weight : undefined;
+        const excl = 'excludeFromWeighting' in candidate ? candidate.excludeFromWeighting === true : false;
+        return !excl && (w == null || w === 0);
+    };
+
+    const scheduleAutosave = (next: CurriculumItem) => {
+        if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current.timer);
+        if (esPesoInvalido(next)) return;
+        const run = () => { pendingSaveRef.current = null; onSave(type, next); };
+        pendingSaveRef.current = { timer: setTimeout(run, 1500), run };
+    };
+
+    const updateData = (next: CurriculumItem) => {
+        setData(next);
+        scheduleAutosave(next);
+    };
 
     const handleSave = () => {
+        // Cancela el temporizador sin lanzarlo -- ya vamos a guardar ahora.
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current = null; }
         onSave(type, data);
         setIsEditing(false);
     };
 
     const handleCancel = () => {
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current = null; }
         setData(item);
         setIsEditing(false);
     };
@@ -924,12 +962,12 @@ const EditableItem: React.FC<EditableItemProps> = ({ item, type, onSave, onDelet
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
                 <Input
                     value={data.code}
-                    onChange={(e) => setData({ ...data, code: e.target.value })}
+                    onChange={(e) => updateData({ ...data, code: e.target.value })}
                     placeholder="Código"
                 />
                  <Textarea
                     value={data.description}
-                    onChange={(e) => setData({ ...data, description: e.target.value })}
+                    onChange={(e) => updateData({ ...data, description: e.target.value })}
                     className="min-h-[60px]"
                     placeholder="Descripción"
                 />
@@ -940,7 +978,7 @@ const EditableItem: React.FC<EditableItemProps> = ({ item, type, onSave, onDelet
                             <Input
                                 type="number" min="0" max="100" step="1"
                                 value={weight ?? ''}
-                                onChange={(e) => setData({ ...data, weight: e.target.value === '' ? undefined : Number(e.target.value) } as EvaluationCriterion)}
+                                onChange={(e) => updateData({ ...data, weight: e.target.value === '' ? undefined : Number(e.target.value) } as EvaluationCriterion)}
                                 className="!w-28"
                                 disabled={excluded}
                                 error={pesoInvalido}
@@ -949,7 +987,7 @@ const EditableItem: React.FC<EditableItemProps> = ({ item, type, onSave, onDelet
                                 <input
                                     type="checkbox"
                                     checked={excluded}
-                                    onChange={(e) => setData({ ...data, excludeFromWeighting: e.target.checked, weight: e.target.checked ? undefined : weight } as EvaluationCriterion)}
+                                    onChange={(e) => updateData({ ...data, excludeFromWeighting: e.target.checked, weight: e.target.checked ? undefined : weight } as EvaluationCriterion)}
                                     className={checkboxClassName}
                                 />
                                 No cuenta para la nota

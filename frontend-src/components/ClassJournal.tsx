@@ -23,7 +23,6 @@ interface ClassJournalProps {
   academicConfiguration: AcademicConfiguration;
   units: ProgrammingUnit[];
   courses: Course[];
-  onDirtyChange?: (dirty: boolean) => void;
 }
 
 const toYYYYMMDD = (date: Date): string => {
@@ -43,12 +42,17 @@ const addDays = (date: Date, days: number): Date => {
 // clase con varias sesiones el mismo día tiene una anotación por sesión.
 const entryKey = (classId: string, periodIndex: number): string => `${classId}::${periodIndex}`;
 
-const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, academicConfiguration, units, courses, onDirtyChange }) => {
+const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, academicConfiguration, units, courses }) => {
   const [selectedDate, setSelectedDate] = useState<string>(toYYYYMMDD(new Date()));
   // Local state to hold edits before saving: Map<classId, string>
   const [notesMap, setNotesMap] = useState<Record<string, string>>({});
   const [isDirtyMap, setIsDirtyMap] = useState<Record<string, boolean>>({});
   const isDirty = Object.values(isDirtyMap).some(Boolean);
+  // Un temporizador de autoguardado pendiente por franja (clave =
+  // entryKey), con la propia función de guardado ya lista para poder
+  // lanzarla antes de tiempo (al desmontar o cambiar de día) en vez de solo
+  // cancelarla -- ver handleNoteChange más abajo.
+  const pendingSavesRef = useRef<Record<string, { timer: ReturnType<typeof setTimeout>; run: () => void }>>({});
 
   // Búsqueda de anotaciones pasadas: el Diario solo muestra un día a la
   // vez, así que sin esto no había forma de encontrar "qué anoté sobre X"
@@ -68,13 +72,13 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Avisa a App.tsx (para bloquear el cambio de vista) y al propio
-  // navegador (cierre/recarga de pestaña) mientras haya anotaciones sin
-  // guardar: es fácil escribir la nota y olvidarse de pulsar "Guardar".
-  useEffect(() => {
-    onDirtyChange?.(isDirty);
-  }, [isDirty, onDirtyChange]);
-
+  // Red de seguridad para el hueco de <1.5s entre la última pulsación y el
+  // autoguardado (ver handleNoteChange): un cierre/recarga real de pestaña
+  // no siempre deja tiempo a que se ejecute la limpieza de React (al
+  // desmontar sí, ver más abajo). Ya no bloquea cambiar de vista dentro de
+  // la app -- eso lo resolvía antes con un confirm() en cada cambio de
+  // vista mientras hubiera algo sin guardar, redundante ahora que el
+  // autoguardado hace innecesario acordarse de pulsar "Guardar".
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!isDirty) return;
@@ -85,7 +89,12 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDirty]);
 
-  useEffect(() => () => { onDirtyChange?.(false); }, [onDirtyChange]);
+  // Al desmontar (cambio de vista, cierre del modal contenedor...), lanza
+  // de inmediato cualquier autoguardado todavía pendiente en vez de dejar
+  // que el temporizador se pierda sin disparar.
+  useEffect(() => () => {
+    Object.values(pendingSavesRef.current).forEach(({ timer, run }) => { clearTimeout(timer); run(); });
+  }, []);
 
   // Determine day of week for schedule filtering (1=Mon, 5=Fri)
   const dayOfWeek = useMemo(() => {
@@ -242,36 +251,54 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
       setIsDirtyMap(newDirty);
   }, [selectedDate, scheduledClasses, entries]);
 
-  const handleNoteChange = (key: string, text: string) => {
-      setNotesMap(prev => ({ ...prev, [key]: text }));
-      setIsDirtyMap(prev => ({ ...prev, [key]: true }));
-  };
-
-  // Guardado por franja: cada tarjeta tiene su propio botón (aparece en
-  // cuanto se escribe algo en ella), en vez de un único botón global que
-  // guardaba todo a la vez sin indicar qué franja concreta cambió.
-  const handleSaveOne = (item: { classData: ClassData, periodIndex: number }) => {
+  const saveNote = (item: { classData: ClassData, periodIndex: number }, key: string, text: string) => {
       const classId = item.classData.id;
-      const key = entryKey(classId, item.periodIndex);
       const existingEntry = entries.find(e => e.classId === classId && e.date === selectedDate && e.periodIndex === item.periodIndex);
-      const noteContent = notesMap[key] ?? '';
 
       onSave({
           id: existingEntry?.id || `j-${Date.now()}-${classId}-${item.periodIndex}-${Math.random().toString(36).substring(2, 5)}`,
           date: selectedDate,
           classId: classId,
           periodIndex: item.periodIndex,
-          notes: noteContent
+          notes: text
       });
 
       setIsDirtyMap(prev => ({ ...prev, [key]: false }));
   };
 
-  // Cambiar de día descarta silenciosamente notesMap/isDirtyMap (se
-  // reinicializan para el nuevo día en el useEffect de arriba): avisar antes
-  // si hay algo sin guardar.
+  const handleNoteChange = (item: { classData: ClassData, periodIndex: number }, text: string) => {
+      const key = entryKey(item.classData.id, item.periodIndex);
+      setNotesMap(prev => ({ ...prev, [key]: text }));
+      setIsDirtyMap(prev => ({ ...prev, [key]: true }));
+
+      // Autoguardado: 1.5s tras la última pulsación se guarda solo, sin
+      // necesitar que se pulse "Guardar" (mismo intervalo que usaba el
+      // autoguardado del sistema anterior a la Fase 7, ver CLAUDE.md --
+      // "Rediseño de persistencia"). `text` se captura aquí mismo, no se
+      // relee de notesMap al disparar el temporizador -- notesMap todavía
+      // no habría reflejado este cambio al construir este closure (el
+      // setNotesMap de arriba es asíncrono).
+      const pending = pendingSavesRef.current[key];
+      if (pending) clearTimeout(pending.timer);
+      const run = () => { delete pendingSavesRef.current[key]; saveNote(item, key, text); };
+      pendingSavesRef.current[key] = { timer: setTimeout(run, 1500), run };
+  };
+
+  // Guardado inmediato, sin esperar los 1.5s del autoguardado -- cada
+  // tarjeta tiene su propio botón (aparece en cuanto se escribe algo en
+  // ella), en vez de un único botón global.
+  const handleSaveOne = (item: { classData: ClassData, periodIndex: number }) => {
+      const key = entryKey(item.classData.id, item.periodIndex);
+      const pending = pendingSavesRef.current[key];
+      if (pending) { clearTimeout(pending.timer); delete pendingSavesRef.current[key]; }
+      saveNote(item, key, notesMap[key] ?? '');
+  };
+
+  // Cambiar de día reinicializa notesMap/isDirtyMap para el nuevo día (ver
+  // el useEffect de arriba) -- lanza antes cualquier autoguardado pendiente
+  // del día que se abandona, para no perderlo.
   const changeDate = (newDate: string) => {
-    if (isDirty && !window.confirm('Hay anotaciones sin guardar en este día. ¿Cambiar de día sin guardar?')) return;
+    Object.values(pendingSavesRef.current).forEach(({ timer, run }) => { clearTimeout(timer); run(); });
     setSelectedDate(newDate);
   };
 
@@ -423,7 +450,7 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
                                 </div>
                                 <Textarea
                                     value={notesMap[key] || ''}
-                                    onChange={(e) => handleNoteChange(key, e.target.value)}
+                                    onChange={(e) => handleNoteChange(item, e.target.value)}
                                     placeholder={`Anotaciones reales de la sesión (incidencias, tareas mandadas, etc.)...`}
                                     className="h-32 resize-y"
                                 />

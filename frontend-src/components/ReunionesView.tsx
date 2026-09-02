@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import type { Meeting } from '../types';
 import { TrashIcon, PlusIcon, UsersIcon, PencilIcon, ExclamationTriangleIcon, ClockIcon, CalendarDaysIcon } from './Icons';
 import { toYYYYMMDD, addDays, getDayOfWeek1a7, formatFechaEs, TIPO_REUNION_LABEL as TIPO_LABEL } from '../utils';
@@ -59,6 +59,23 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
     const [motivo, setMotivo] = useState('');
     const [acuerdos, setAcuerdos] = useState('');
     const [seguimiento, setSeguimiento] = useState('');
+    // editingIdRef espeja a editingId (estado) pero de lectura/escritura
+    // síncrona -- el autoguardado debounced (ver scheduleAutosave) lo
+    // necesita para decidir crear-vs-actualizar sin arriesgarse a un
+    // closure obsoleto si el usuario teclea de nuevo justo después de que
+    // el primer autoguardado cree la reunión (antes de que ese
+    // setEditingId(state) haya vuelto a renderizar).
+    const editingIdRef = useRef<string | null>(null);
+    const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; run: () => void } | null>(null);
+
+    const setEditingIdBoth = (id: string | null) => {
+        editingIdRef.current = id;
+        setEditingId(id);
+    };
+
+    const cancelPendingSave = () => {
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current = null; }
+    };
 
     const hoy = new Date();
     const hoyStr = toYYYYMMDD(hoy);
@@ -70,7 +87,8 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
     const [busqueda, setBusqueda] = useState('');
 
     const resetForm = () => {
-        setEditingId(null);
+        cancelPendingSave();
+        setEditingIdBoth(null);
         setFecha(toYYYYMMDD(new Date()));
         setHora('');
         setTipo('tutoria');
@@ -86,7 +104,8 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
     };
 
     const handleEdit = (m: Meeting) => {
-        setEditingId(m.id);
+        cancelPendingSave();
+        setEditingIdBoth(m.id);
         setFecha(m.fecha);
         setHora(m.hora || '');
         setTipo(m.tipo);
@@ -97,6 +116,13 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
         setIsFormOpen(true);
     };
 
+    // Al desmontar (se navega a otra vista del menú mientras el formulario
+    // tenía algo sin guardar), lanza de inmediato cualquier autoguardado
+    // pendiente en vez de perderlo.
+    useEffect(() => () => {
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current.run(); }
+    }, []);
+
     // Llegada desde la Agenda con una reunión concreta que abrir.
     useEffect(() => {
         if (!openMeetingId) return;
@@ -106,18 +132,52 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [openMeetingId]);
 
+    type ReunionFormValues = { fecha: string; hora: string; tipo: Meeting['tipo']; conQuien: string; motivo: string; acuerdos: string; seguimiento: string };
+
+    const buildData = (v: ReunionFormValues) => ({
+        fecha: v.fecha || toYYYYMMDD(new Date()),
+        hora: v.hora || undefined,
+        tipo: v.tipo,
+        conQuien: v.conQuien.trim() || undefined,
+        motivo: v.motivo.trim() || undefined,
+        acuerdos: v.acuerdos.trim() || undefined,
+        seguimiento: v.seguimiento.trim() || undefined,
+    });
+
+    // Autoguardado: 1.5s tras la última pulsación en CUALQUIER campo del
+    // formulario (mismo intervalo que ClassJournal.tsx y compañía) -- un
+    // único temporizador compartido para los 7 campos, no uno por campo,
+    // así que escribir en "Motivo" y luego en "Acuerdos" no dispara dos
+    // guardados sueltos. `overrides` lleva el campo recién tecleado (su
+    // setState todavía no se habría reflejado en el resto de variables de
+    // estado al construir este closure). Si todavía no existe la reunión
+    // (editingIdRef.current === null), el PRIMER autoguardado la crea y
+    // memoriza su id (vía editingIdRef, síncrono) para que los siguientes
+    // autoguardados actualicen esa misma fila en vez de crear duplicados.
+    const scheduleAutosave = (overrides: Partial<ReunionFormValues>) => {
+        const snapshot: ReunionFormValues = { fecha, hora, tipo, conQuien, motivo, acuerdos, seguimiento, ...overrides };
+        const data = buildData(snapshot);
+
+        cancelPendingSave();
+        const run = () => {
+            pendingSaveRef.current = null;
+            const idToUse = editingIdRef.current;
+            if (idToUse) {
+                setMeetings(prev => prev.map(m => m.id === idToUse ? { ...m, ...data } : m));
+            } else {
+                const newId = `meeting-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+                setMeetings(prev => [...prev, { id: newId, ...data }]);
+                setEditingIdBoth(newId);
+            }
+        };
+        pendingSaveRef.current = { timer: setTimeout(run, 1500), run };
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        cancelPendingSave();
 
-        const data = {
-            fecha: fecha || toYYYYMMDD(new Date()),
-            hora: hora || undefined,
-            tipo,
-            conQuien: conQuien.trim() || undefined,
-            motivo: motivo.trim() || undefined,
-            acuerdos: acuerdos.trim() || undefined,
-            seguimiento: seguimiento.trim() || undefined,
-        };
+        const data = buildData({ fecha, hora, tipo, conQuien, motivo, acuerdos, seguimiento });
 
         if (editingId) {
             setMeetings(prev => prev.map(m => m.id === editingId ? { ...m, ...data } : m));
@@ -130,6 +190,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
 
     const handleDelete = (id: string) => {
         if (!window.confirm('¿Eliminar esta reunión?')) return;
+        if (editingId === id) cancelPendingSave();
         setMeetings(prev => prev.filter(m => m.id !== id));
         if (editingId === id) {
             setIsFormOpen(false);
@@ -234,20 +295,20 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                 )}
             </div>
 
-            <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={editingId ? 'Editar reunión' : 'Nueva reunión'} size="full">
+            <Modal isOpen={isFormOpen} onClose={() => { cancelPendingSave(); setIsFormOpen(false); }} title={editingId ? 'Editar reunión' : 'Nueva reunión'} size="full">
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                             <label className="text-xs font-medium text-slate-600">Fecha</label>
-                            <Input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="w-full mt-1" />
+                            <Input type="date" value={fecha} onChange={e => { setFecha(e.target.value); scheduleAutosave({ fecha: e.target.value }); }} className="w-full mt-1" />
                         </div>
                         <div>
                             <label className="text-xs font-medium text-slate-600">Hora</label>
-                            <Input type="time" value={hora} onChange={e => setHora(e.target.value)} className="w-full mt-1" />
+                            <Input type="time" value={hora} onChange={e => { setHora(e.target.value); scheduleAutosave({ hora: e.target.value }); }} className="w-full mt-1" />
                         </div>
                         <div>
                             <label className="text-xs font-medium text-slate-600">Tipo</label>
-                            <Select value={tipo} onChange={e => setTipo(e.target.value as Meeting['tipo'])} className="w-full mt-1">
+                            <Select value={tipo} onChange={e => { setTipo(e.target.value as Meeting['tipo']); scheduleAutosave({ tipo: e.target.value as Meeting['tipo'] }); }} className="w-full mt-1">
                                 <option value="tutoria">Tutoría</option>
                                 <option value="r_tutores">R. Tutores</option>
                                 <option value="departamento">Departamento</option>
@@ -257,22 +318,22 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                     </div>
                     <div>
                         <label className="text-xs font-medium text-slate-600">Con quién</label>
-                        <Input type="text" value={conQuien} onChange={e => setConQuien(e.target.value)} placeholder="Ej: Familia de..., Claustro, Equipo docente..." className="w-full mt-1" />
+                        <Input type="text" value={conQuien} onChange={e => { setConQuien(e.target.value); scheduleAutosave({ conQuien: e.target.value }); }} placeholder="Ej: Familia de..., Claustro, Equipo docente..." className="w-full mt-1" />
                     </div>
                     <div>
                         <label className="text-xs font-medium text-slate-600">Motivo</label>
-                        <Textarea value={motivo} onChange={e => setMotivo(e.target.value)} rows={2} className="w-full mt-1" />
+                        <Textarea value={motivo} onChange={e => { setMotivo(e.target.value); scheduleAutosave({ motivo: e.target.value }); }} rows={2} className="w-full mt-1" />
                     </div>
                     <div>
                         <label className="text-xs font-medium text-slate-600">Acuerdos</label>
-                        <Textarea value={acuerdos} onChange={e => setAcuerdos(e.target.value)} rows={6} className="w-full mt-1" placeholder="Notas de la reunión: lo que se ha hablado y acordado..." />
+                        <Textarea value={acuerdos} onChange={e => { setAcuerdos(e.target.value); scheduleAutosave({ acuerdos: e.target.value }); }} rows={6} className="w-full mt-1" placeholder="Notas de la reunión: lo que se ha hablado y acordado..." />
                     </div>
                     <div>
                         <label className="text-xs font-medium text-slate-600">Seguimiento</label>
-                        <Textarea value={seguimiento} onChange={e => setSeguimiento(e.target.value)} rows={3} className="w-full mt-1" />
+                        <Textarea value={seguimiento} onChange={e => { setSeguimiento(e.target.value); scheduleAutosave({ seguimiento: e.target.value }); }} rows={3} className="w-full mt-1" />
                     </div>
                     <div className="flex items-center justify-end gap-2 pt-2">
-                        <Button type="button" variant="secondary" onClick={() => setIsFormOpen(false)}>Cancelar</Button>
+                        <Button type="button" variant="secondary" onClick={() => { cancelPendingSave(); setIsFormOpen(false); }}>Cancelar</Button>
                         <Button type="submit" variant="primary">
                             {editingId ? 'Guardar cambios' : 'Guardar'}
                         </Button>

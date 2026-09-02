@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Modal from './Modal';
 import Textarea from './Textarea';
 import Button from './Button';
@@ -18,17 +18,64 @@ interface SessionActionModalProps {
 
 const SessionActionModal: React.FC<SessionActionModalProps> = ({ isOpen, onClose, onCancelSession, onUpdateSession, event }) => {
     const [journalNote, setJournalNote] = useState('');
+    // Este componente NUNCA se desmonta (CalendarView.tsx solo cambia
+    // `isOpen`, no lo renderiza condicionalmente) -- así que no hay un
+    // "unmount" del que colgar el flush del autoguardado pendiente, a
+    // diferencia de ClassJournal.tsx. Se lanza en su lugar al cerrarse
+    // (ver el useEffect de isOpen más abajo).
+    const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; run: () => void } | null>(null);
+
+    const flushPendingSave = () => {
+        if (pendingSaveRef.current) {
+            clearTimeout(pendingSaveRef.current.timer);
+            pendingSaveRef.current.run();
+            pendingSaveRef.current = null;
+        }
+    };
 
     useEffect(() => {
         if (event) {
+            // Por si acaso hubiera algo pendiente del evento anterior (el
+            // modal normalmente se cierra entre uno y otro, pero no cuesta
+            // nada cubrir el caso).
+            flushPendingSave();
             // Load the journal note if exists, otherwise empty (to encourage "real" logging)
             setJournalNote(event.journalNote || '');
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [event]);
+
+    // Al cerrar el modal (por el botón "Guardar", la X, el fondo o Esc),
+    // lanza de inmediato cualquier autoguardado todavía pendiente.
+    useEffect(() => {
+        if (!isOpen) flushPendingSave();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     if (!event) return null;
 
+    const handleJournalNoteChange = (text: string) => {
+        setJournalNote(text);
+
+        // Autoguardado: 1.5s tras la última pulsación se guarda solo (mismo
+        // criterio e intervalo que ClassJournal.tsx) -- unitId/sessionNumber
+        // se capturan aquí, no se releen de `event` al disparar, por si
+        // hubiera cambiado mientras tanto.
+        if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current.timer);
+        const unitId = event.unitId;
+        const sessionNumber = event.sessionNumber;
+        const run = () => {
+            pendingSaveRef.current = null;
+            if (unitId && sessionNumber) onUpdateSession(unitId, sessionNumber, text);
+        };
+        pendingSaveRef.current = { timer: setTimeout(run, 1500), run };
+    };
+
     const handleSaveJournalNote = () => {
+        // Cancela el temporizador sin lanzarlo (no "flush" -- ya vamos a
+        // guardar ahora mismo con journalNote, lanzarlo también duplicaría
+        // la llamada).
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current = null; }
         if (event?.unitId && event?.sessionNumber) {
             onUpdateSession(event.unitId, event.sessionNumber, journalNote);
             onClose();
@@ -81,7 +128,7 @@ const SessionActionModal: React.FC<SessionActionModalProps> = ({ isOpen, onClose
                     <Textarea
                         id="journal-note-edit"
                         value={journalNote}
-                        onChange={(e) => setJournalNote(e.target.value)}
+                        onChange={(e) => handleJournalNoteChange(e.target.value)}
                         className="min-h-[150px]"
                         placeholder="Escribe aquí lo que realmente se hizo en clase, incidencias, tareas, etc..."
                     />

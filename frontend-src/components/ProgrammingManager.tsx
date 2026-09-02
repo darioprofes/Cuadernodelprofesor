@@ -127,6 +127,14 @@ const InstrumentoSelectConIA: React.FC<{
         setEditando(false);
     };
 
+    // Misma escritura que handleGuardarEdicion, pero sin cerrar el editor
+    // -- para el autoguardado (ver `autosave`/`onAutosave` más abajo), que
+    // no debe cerrar nada mientras el profesor sigue editando.
+    const handleAutosaveEdicion = (tool: EvaluationTool) => {
+        const { id, ...data } = tool;
+        updateToolMutation.mutate({ id, data });
+    };
+
     return (
         <div className="flex items-center gap-1.5">
             <div className="flex-1"><InstrumentoSelect evaluationTools={evaluationTools} value={value} onChange={onChange} /></div>
@@ -177,6 +185,8 @@ const InstrumentoSelectConIA: React.FC<{
                     toolToEdit={instrumentoActual}
                     criteria={criteria}
                     courses={cursoDeEstaSA}
+                    autosave
+                    onAutosave={handleAutosaveEdicion}
                 />
             )}
         </div>
@@ -368,24 +378,34 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
     }, [selectedCourseId, classes, academicConfiguration, filteredUnits]);
 
 
+    const buildUnitData = (unit: ProgrammingUnit) => ({
+        name: unit.name,
+        sessions: unit.sessions,
+        startDate: unit.startDate || undefined,
+        context: unit.context || undefined,
+        sessionDetails: unit.sessionDetails,
+        linkedCriteriaIds: unit.linkedCriteriaIds,
+        linkedBasicKnowledgeIds: unit.linkedBasicKnowledgeIds,
+        linkedSpecificCompetenceIds: unit.linkedSpecificCompetenceIds,
+        finalProduct: unit.finalProduct,
+        finalExam: unit.finalExam,
+    });
+
     const handleSave = (unit: ProgrammingUnit) => {
-        const data = {
-            name: unit.name,
-            sessions: unit.sessions,
-            startDate: unit.startDate || undefined,
-            context: unit.context || undefined,
-            sessionDetails: unit.sessionDetails,
-            linkedCriteriaIds: unit.linkedCriteriaIds,
-            linkedBasicKnowledgeIds: unit.linkedBasicKnowledgeIds,
-            linkedSpecificCompetenceIds: unit.linkedSpecificCompetenceIds,
-            finalProduct: unit.finalProduct,
-            finalExam: unit.finalExam,
-        };
+        const data = buildUnitData(unit);
         if (unitEditorState?.mode === 'edit') {
             updateUnitMutation.mutate({ id: unit.id, courseId: selectedCourseId, data }, { onSuccess: () => setUnitEditorState(null) });
         } else {
             createUnitMutation.mutate({ courseId: selectedCourseId, data }, { onSuccess: () => setUnitEditorState(null) });
         }
+    };
+
+    // Misma escritura que la rama 'edit' de handleSave, pero sin cerrar el
+    // editor -- para el autoguardado (ver `autosave`/`onAutosave` de
+    // UnitEditor), que solo se pasa cuando unitEditorState.mode === 'edit'
+    // (nunca al crear, donde guardar inserta una fila nueva cada vez).
+    const handleAutosaveUnit = (unit: ProgrammingUnit) => {
+        updateUnitMutation.mutate({ id: unit.id, courseId: selectedCourseId, data: buildUnitData(unit) });
     };
 
     const handleDelete = (unitId: string) => {
@@ -577,6 +597,8 @@ const ProgrammingManager: React.FC<ProgrammingManagerProps> = ({ courseId, cours
                         specificCompetences={filteredSpecificCompetences}
                         evaluationTools={filteredEvaluationTools}
                         courses={courses}
+                        autosave={unitEditorState.mode === 'edit'}
+                        onAutosave={handleAutosaveUnit}
                     />
                 </Modal>
             )}
@@ -876,8 +898,40 @@ const UnitEditor: React.FC<{
     specificCompetences: SpecificCompetence[];
     evaluationTools: EvaluationTool[];
     courses: Course[];
-}> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences, evaluationTools, courses }) => {
+    // Solo true cuando de verdad se edita una SA ya persistida -- nunca al
+    // crear una nueva, donde guardar inserta una fila cada vez (autoguardar
+    // duplicaría SA). Mismo criterio que `autosave` en
+    // EvaluationToolEditorModal. `onAutosave`, DISTINTO de `onSave`: onSave
+    // (el botón "Guardar SA" explícito) cierra el modal al terminar -- si
+    // el autoguardado lo reutilizara, el modal se cerraría solo a cada tick
+    // mientras el profesor sigue editando. Obligatorio cuando autosave=true.
+    autosave?: boolean;
+    onAutosave?: (unit: ProgrammingUnit) => void;
+}> = ({ unit, onSave, onCancel, criteria, basicKnowledge, specificCompetences, evaluationTools, courses, autosave, onAutosave }) => {
     const [editedUnit, setEditedUnit] = useState(unit);
+    // Autoguardado: 1.5s tras el último cambio de `editedUnit` -- mismo
+    // patrón (efecto que compara por referencia contra el último valor ya
+    // visto, no un flag de "primera vez") que EvaluationToolEditorModal,
+    // por la misma razón: todos los handlers de aquí abajo pasan por
+    // setEditedUnit, así que engancharse a los cambios de todo el objeto
+    // cubre los ~15 handlers sin tocar cada uno.
+    const lastHandledUnitRef = useRef(editedUnit);
+    const pendingSaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; run: () => void } | null>(null);
+    useEffect(() => {
+        if (editedUnit === lastHandledUnitRef.current) return;
+        lastHandledUnitRef.current = editedUnit;
+        if (!autosave || !onAutosave || !editedUnit.name.trim()) return;
+        if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current.timer);
+        const run = () => { pendingSaveRef.current = null; onAutosave(editedUnit); };
+        pendingSaveRef.current = { timer: setTimeout(run, 1500), run };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editedUnit]);
+
+    // Al desmontar (se cierra el modal -- unitEditorState && <Modal><UnitEditor/></Modal>,
+    // condicional de verdad) lanza cualquier autoguardado pendiente.
+    useEffect(() => () => {
+        if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current.run(); }
+    }, []);
     const [activeTab, setActiveTab] = useState<'general' | 'curriculo' | 'sesiones' | 'evaluacion' | 'cobertura'>('general');
     // Actividades plegadas por defecto -- solo título/tipo/agrupamiento/
     // duración visibles hasta que se despliegan (petición explícita: mucha
@@ -1002,6 +1056,8 @@ const UnitEditor: React.FC<{
 
     const handleSaveClick = () => {
         if (editedUnit.name.trim()) {
+            // Cancela el temporizador sin lanzarlo -- ya vamos a guardar ahora.
+            if (pendingSaveRef.current) { clearTimeout(pendingSaveRef.current.timer); pendingSaveRef.current = null; }
             onSave(editedUnit);
         }
     };
