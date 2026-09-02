@@ -77,7 +77,7 @@ import HorarioView from './components/HorarioView';
 import ReunionesView from './components/ReunionesView';
 import ExamenesView from './components/ExamenesView';
 import ClassLabel from './components/ClassLabel';
-import { formatClassLabel, getClassName, compararCodigo, getSiglas, getMateria } from './utils';
+import { formatClassLabel, getClassName, compararCodigo } from './utils';
 import { backgroundPatternStyle } from './theme/backgroundPattern';
 
 // Copia de seguridad genérica sobre las tablas relacionales (ver
@@ -104,34 +104,24 @@ async function exportDatabase(): Promise<Uint8Array> {
 
 async function resetDatabase(): Promise<void> {
     const confirmed = window.confirm(
-        "¡ADVERTENCIA MÁXIMA! Esta acción es irreversible y eliminará ABSOLUTAMENTE TODOS los datos de la aplicación: clases, alumnos, calificaciones, currículo, planificaciones, TODO. La aplicación quedará completamente en blanco, lista para que introduzcas tus propios datos desde cero. ¿Estás COMPLETAMENTE seguro de que quieres borrar todo?"
+        "¡ADVERTENCIA MÁXIMA! Esta acción es irreversible y eliminará ABSOLUTAMENTE TODOS los datos de la aplicación: clases, alumnos, calificaciones, currículo, planificaciones, perfil docente (nombre, foto, notas), TODO. La aplicación quedará exactamente como recién instalada, lista para que introduzcas tus propios datos desde cero. ¿Estás COMPLETAMENTE seguro de que quieres borrar todo?"
     );
     if (!confirmed) {
         return;
     }
 
     try {
-        // Orden: academic_years primero (su DELETE ya borra classes
-        // explícitamente antes que el propio año — ver delete_academic_year —
-        // así que al llegar aquí no quedan classes/enrollments/categories/
-        // assignments/grades/journalEntries/tasks/meetings/agendaNotes
-        // colgando); luego courses (cascada su currículo) y keyCompetences
-        // (cascada sus descriptores) en cualquier orden entre sí; students al
-        // final, ya sin matrículas que los bloqueen (RESTRICT).
-        const [years, courses, keyComps, students, tools, oldShortcuts] = await Promise.all([
-            api.get<{ id: string }[]>('/academic-years'),
-            api.get<{ id: string }[]>('/courses'),
-            api.get<{ id: string }[]>('/key-competences'),
-            api.get<{ id: string }[]>('/students'),
-            api.get<{ id: string }[]>('/evaluation-tools'),
-            api.get<{ id: string }[]>('/shortcuts'),
-        ]);
-        for (const y of years) await api.delete(`/academic-years/${y.id}`);
-        await Promise.all(courses.map(c => api.delete(`/courses/${c.id}`)));
-        await Promise.all(keyComps.map(k => api.delete(`/key-competences/${k.id}`)));
-        await Promise.all(students.map(s => api.delete(`/students/${s.id}`)));
-        await Promise.all(tools.map(t => api.delete(`/evaluation-tools/${t.id}`)));
-        await Promise.all(oldShortcuts.map(s => api.delete(`/shortcuts/${s.id}`)));
+        // Antes esto borraba entidad por entidad (años→clases en cascada,
+        // cursos, alumnado...) a mano desde el frontend -- frágil (dependía
+        // de acertar el orden exacto para no chocar con las FK) y, sobre
+        // todo, INCOMPLETO: nunca tocaba app_preferences, así que el nombre/
+        // foto/notas del profesor y las preferencias de calificación
+        // sobrevivían al "restablecer" (bug real, reportado por el usuario).
+        // Reutilizar el import de la copia de seguridad con un volcado
+        // vacío consigue lo mismo que pide un restablecido real: TRUNCATE de
+        // las 24 tablas de dominio (import_all, ver services/backup.py/
+        // backup.rs -- app_preferences es la PRIMERA), sin insertar nada.
+        await api.post('/backup/import', {});
         await Promise.all(getInitialShortcuts().map(({ id: _id, ...s }) => api.post('/shortcuts', s)));
         await Promise.all(getInitialEvaluationTools().map(({ id: _id, ...t }) => api.post('/evaluation-tools', t)));
         alert("Todos los datos han sido borrados. La aplicación se recargará.");
@@ -412,16 +402,9 @@ const App = () => {
     const [pendingSAResultado, setPendingSAResultado] = useState<{ courseId: string; resultado: ResultadoTrabajoSA } | null>(null);
     const [pendingInstrumentoResultado, setPendingInstrumentoResultado] = useState<{ courseId: string; resultado: ResultadoTrabajoInstrumento } | null>(null);
     const [activeView, setActiveViewRaw] = useState<View>('hoy');
-    // El Diario de Clase avisa aquí cuando tiene anotaciones sin guardar
-    // (es fácil escribir y olvidarse de pulsar "Guardar"): mientras esté a
-    // true, cualquier cambio de vista pide confirmación antes de descartarlas.
-    const [isJournalDirty, setIsJournalDirty] = useState(false);
     const setActiveView = useCallback((view: View) => {
-        if (activeView === 'journal' && isJournalDirty) {
-            if (!window.confirm('Hay anotaciones sin guardar en el Diario de Clase. ¿Salir sin guardar?')) return;
-        }
         setActiveViewRaw(view);
-    }, [activeView, isJournalDirty]);
+    }, []);
     // El contenedor <main> es el que hace scroll (overflow-y-auto), no la
     // ventana: cambiar de vista sin esto deja el scroll donde estaba (p.ej.
     // entrar al cuaderno desde un acceso rápido y aparecer a mitad de página).
@@ -481,9 +464,9 @@ const App = () => {
             setActiveClassId(firstAcademicClass?.id ?? hydratedClasses[0].id);
         }
         setInitialized(true);
-        // setActiveView is intentionally excluded: this effect must run exactly
-        // once (guarded by !initialized), and at that point activeView/isJournalDirty
-        // (its own deps) are still their initial values, so there's no stale closure.
+        // setActiveView is intentionally excluded: it's a stable useCallback
+        // ([] deps) that never changes identity, and this effect must run
+        // exactly once anyway (guarded by !initialized).
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialized, currentYear.isLoading, remoteClasses.isLoading, hydratedClasses, remoteCourses.data]);
 
@@ -725,7 +708,6 @@ const App = () => {
                 academicConfiguration={effectiveAcademicConfiguration}
                 units={allProgrammingUnits}
                 courses={curriculumCourses}
-                onDirtyChange={setIsJournalDirty}
             />;
         }
 
@@ -844,7 +826,7 @@ const App = () => {
             );
         }
 
-        if (!activeClass && activeView !== 'calendar') {
+        if (!activeClass && activeView !== 'calendar' && activeView !== 'annual-calendar') {
             return (
                 <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border overflow-hidden">
                     {/* Render class selector tabs even in empty state if we are in Gradebook view and have classes */}
@@ -1054,9 +1036,12 @@ const App = () => {
             </button>
 
             <div className="flex-1 flex flex-col min-w-0 pt-14 md:pt-0">
-                <header className={`${topBarHidden ? 'flex md:hidden' : 'flex'} border-b border-white/10 px-4 py-2 items-center justify-between sticky top-0 z-30`} style={{ backgroundColor: SIDEBAR_BG }}>
-                    <ShortcutsBar shortcuts={shortcuts} onCreate={handleCreateShortcut} onUpdate={handleUpdateShortcut} onDelete={handleDeleteShortcut} />
+                <header className={`${topBarHidden ? 'flex md:hidden' : 'flex'} border-b border-white/10 px-4 py-2 items-center justify-end sticky top-0 z-30`} style={{ backgroundColor: SIDEBAR_BG }}>
                     <div className="flex items-center gap-2">
+                        {/* Icono de enlace genérico junto a perfil/ajustes (pedido
+                            explícito del usuario, sustituye a la fila de iconos +
+                            lápiz de editar que tenía antes) -- ver ShortcutsBar.tsx. */}
+                        <ShortcutsBar shortcuts={shortcuts} onCreate={handleCreateShortcut} onUpdate={handleUpdateShortcut} onDelete={handleDeleteShortcut} />
                         {/* Informes usa el contexto seleccionado aquí -- Cuaderno ya
                             tiene su propio picker en la cabecera de la clase
                             (GradebookTable.tsx) y Materia/Planificación SA el suyo
@@ -1065,36 +1050,19 @@ const App = () => {
                             Académico se quitó de aquí (redundante con "Activar" en
                             Ajustes → Cursos Académicos, mismo useActivateAcademicYear
                             por debajo) y el de Clase se quitó de las vistas donde no
-                            hacía nada -- petición explícita del usuario, 2026-08-30. */}
-                        {REPORT_VIEWS.includes(activeView) && (allYears.data?.length ?? 0) > 0 && (
-                            <>
-                                {/* !w-auto: sin esto, width:100% (del Select compartido,
-                                    pensado para formularios) les da una base de flex enorme,
-                                    y bajo presión de espacio en la cabecera (accesos directos
-                                    a la izquierda) el algoritmo de flexbox las encogía por
-                                    debajo de su propio contenido. */}
-                                {academicClasses.length > 0 && (
-                                    <Select value={activeClassId} onChange={(e) => setActiveClassId(e.target.value)} className="font-semibold !w-auto">
-                                        <option value="">Clase…</option>
-                                        {academicClasses.map(c => {
-                                            const materia = getMateria(c, curriculumCourses);
-                                            return <option key={c.id} value={c.id} title={materia}>{c.grupo || 'Sin nombre'} - {getSiglas(materia)}</option>;
-                                        })}
-                                    </Select>
-                                )}
-                                {/* Currículo/Planificación de la materia de la clase activa --
-                                    precarga materiaPageCourseId con ella, pero la página de
-                                    Materia tiene su propio selector independiente por si se
-                                    quiere cambiar de materia una vez allí. */}
-                                {activeCourseId && (
-                                    <IconButton
-                                        label="Gestionar esta materia (currículo y planificación)"
-                                        onClick={() => { setMateriaPageCourseId(activeCourseId); setActiveView('curriculum'); }}
-                                    >
-                                        <BookOpenIcon className="w-5 h-5" />
-                                    </IconButton>
-                                )}
-                            </>
+                            hacía nada -- petición explícita del usuario, 2026-08-30.
+                            El selector de Clase en sí se quitó también de aquí --
+                            Informes ya tiene el suyo propio junto a las pestañas de
+                            tipo de informe (más abajo en renderContent()), y tener
+                            los dos a la vez era redundante -- petición explícita del
+                            usuario. Solo queda el acceso directo a Materia. */}
+                        {REPORT_VIEWS.includes(activeView) && (allYears.data?.length ?? 0) > 0 && activeCourseId && (
+                            <IconButton
+                                label="Gestionar esta materia (currículo y planificación)"
+                                onClick={() => { setMateriaPageCourseId(activeCourseId); setActiveView('curriculum'); }}
+                            >
+                                <BookOpenIcon className="w-5 h-5" />
+                            </IconButton>
                         )}
                         <button
                             onClick={() => setIsTeacherProfileModalOpen(true)}
