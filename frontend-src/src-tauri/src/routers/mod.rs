@@ -5,7 +5,7 @@ use crate::error::ApiError;
 use crate::services::{
     absences, academic_years, agenda_notes, assignments, basic_knowledge, categories, classes,
     courses, educastur, evaluation_criteria, evaluation_tools, enrollments, grades, journal_entries,
-    key_competences, meetings, preferences, programming_units, shortcuts, specific_competences,
+    key_competences, meetings, preferences, programming_units, prompts, shortcuts, specific_competences,
     students, tasks,
 };
 
@@ -203,6 +203,13 @@ pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>
         ("POST", ["academic-years", year_id, "agenda-notes"]) => agenda_notes::create(conn, year_id, require_body(body)?),
         ("PATCH", ["agenda-notes", id]) => agenda_notes::update(conn, id, require_body(body)?),
         ("DELETE", ["agenda-notes", id]) => agenda_notes::delete(conn, id),
+
+        // ---- Generadores de prompt IA (solo la vía "online" copiar/pegar,
+        // ver services/prompts.rs) ----
+        ("POST", ["prompts", "unidad-programacion", "generar"]) => prompts::generar_prompt_unidad(conn, require_body(body)?),
+        ("POST", ["prompts", "unidad-programacion", "validar"]) => prompts::validar_unidad(conn, require_body(body)?),
+        ("POST", ["prompts", "instrumento-evaluacion", "prompt"]) => prompts::generar_prompt_instrumento(conn, require_body(body)?),
+        ("POST", ["prompts", "instrumento-evaluacion", "validar"]) => prompts::validar_instrumento(conn, require_body(body)?),
 
         _ => Err(ApiError { status: 404, detail: format!("Ruta no encontrada: {method} {path}") }),
     }

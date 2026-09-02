@@ -12,6 +12,8 @@ import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
 import { useApiClasses, useUpdateClass } from '../hooks/useApiClasses';
 import { usePreferences, useUpdatePreferences } from '../hooks/usePreferences';
 import { apiClassToLocal } from '../services/apiAdapters';
+import { api } from '../services/api';
+import { isTauri } from '@tauri-apps/api/core';
 import type { ResultadoTrabajoSA } from '../hooks/useTrabajosIA';
 
 type Paso = 1 | 2 | 3 | 4 | 5 | 6;
@@ -317,16 +319,9 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
         setGenerando(true);
         setErrorPaso1(null);
         try {
-            const response = await fetch('/api/prompts/unidad-programacion/generar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payloadGeneracion()),
-            });
-            if (!response.ok) {
-                const body = await response.json().catch(() => ({}));
-                throw new Error(body.detail || `Error HTTP ${response.status}`);
-            }
-            const data: { prompt: string; mapa: Record<string, string> } = await response.json();
+            const data = await api.post<{ prompt: string; mapa: Record<string, string> }>(
+                '/prompts/unidad-programacion/generar', payloadGeneracion(),
+            );
             setResultado(data);
             setPaso(5);
         } catch (err) {
@@ -425,16 +420,11 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
         setProcesando(true);
         setErrorPaso3(null);
         try {
-            const response = await fetch('/api/prompts/unidad-programacion/validar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ course_id: courseId, respuesta: respuestaIA, mapa: resultado.mapa }),
-            });
-            if (!response.ok) {
-                const body = await response.json().catch(() => ({}));
-                throw new Error(body.detail || `Error HTTP ${response.status}`);
-            }
-            entregarUnidadGenerada(await response.json());
+            const data = await api.post<{
+                unidad: Parameters<typeof entregarUnidadGenerada>[0]['unidad'];
+                codigosDescartados: string[];
+            }>('/prompts/unidad-programacion/validar', { course_id: courseId, respuesta: respuestaIA, mapa: resultado.mapa });
+            entregarUnidadGenerada(data);
         } catch (err) {
             setErrorPaso3(err instanceof Error ? err.message : String(err));
         } finally {
@@ -596,6 +586,7 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                                     corrompía el propio currículo). Revisa que no mencione a ningún alumno antes de
                                     copiarlo a la IA online.
                                 </p>
+                                {!isTauri() && (
                                 <div className="flex items-center gap-2">
                                     <input
                                         ref={fileInputRef}
@@ -618,6 +609,7 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                                         {subiendoDocumento ? 'Extrayendo...' : 'Subir documento'}
                                     </Button>
                                 </div>
+                                )}
                                 {avisoExtraccion && (
                                     <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-3">
                                         <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -1080,7 +1072,7 @@ const GenerarSituacionAprendizajeModal: React.FC<GenerarSituacionAprendizajeModa
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(3)}>Atrás</Button>
                             <div className="flex gap-2">
-                                {!groqAgotado && (
+                                {!isTauri() && !groqAgotado && (
                                     <Button type="button" variant="secondary" onClick={handleGenerarConIA} disabled={probandoGroq || generando || generandoPorPartes}>
                                         {probandoGroq ? 'Probando con Groq...' : generandoPorPartes ? 'Generando por partes...' : 'Generar con IA (Groq)'}
                                     </Button>

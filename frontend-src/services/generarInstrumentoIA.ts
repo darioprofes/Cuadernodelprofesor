@@ -1,4 +1,5 @@
 import type { EvaluationTool } from '../types';
+import { api } from './api';
 
 export interface GenerarInstrumentoParams {
     courseId: string;
@@ -90,20 +91,14 @@ export async function generarInstrumentoConGroq(params: GenerarInstrumentoParams
 // online (como ya hace el generador de Situación de Aprendizaje), en vez
 // de llamar al ia-server.
 export async function generarPromptInstrumento(params: GenerarInstrumentoParams): Promise<string> {
-    const response = await fetch('/api/prompts/instrumento-evaluacion/prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            course_id: params.courseId,
-            criterion_ids: params.criterionIds,
-            tool_type: params.toolType,
-            contexto: params.contexto,
-            num_niveles: params.numNiveles,
-            documento: params.documento,
-        }),
+    const data = await api.post<{ prompt: string }>('/prompts/instrumento-evaluacion/prompt', {
+        course_id: params.courseId,
+        criterion_ids: params.criterionIds,
+        tool_type: params.toolType,
+        contexto: params.contexto,
+        num_niveles: params.numNiveles,
+        documento: params.documento,
     });
-    if (!response.ok) throw new Error(await extraerDetalle(response));
-    const data: { prompt: string } = await response.json();
     return data.prompt;
 }
 
@@ -128,11 +123,5 @@ export async function sugerirCriteriosConGroq(courseId: string, descripcion: str
 }
 
 export async function validarRespuestaInstrumento(courseId: string, toolType: string, respuesta: string): Promise<GenerarInstrumentoResultado> {
-    const response = await fetch('/api/prompts/instrumento-evaluacion/validar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ course_id: courseId, tool_type: toolType, respuesta }),
-    });
-    if (!response.ok) throw new Error(await extraerDetalle(response));
-    return await response.json();
+    return api.post<GenerarInstrumentoResultado>('/prompts/instrumento-evaluacion/validar', { course_id: courseId, tool_type: toolType, respuesta });
 }

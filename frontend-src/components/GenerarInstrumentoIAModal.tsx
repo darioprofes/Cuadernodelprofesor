@@ -9,6 +9,7 @@ import { ArrowUpTrayIcon, ClipboardDocumentIcon, ExclamationTriangleIcon } from 
 import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 import { useGroqDisponible } from '../hooks/useGroqDisponible';
 import { generarInstrumentoConGroq, generarInstrumentoConIA, generarPromptInstrumento, validarRespuestaInstrumento } from '../services/generarInstrumentoIA';
+import { isTauri } from '@tauri-apps/api/core';
 
 interface GenerarInstrumentoIAModalProps {
     isOpen: boolean;
@@ -64,7 +65,10 @@ const CopyButton: React.FC<{ texto: string }> = ({ texto }) => {
 const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
     isOpen, onClose, courseId, linkedCriteriaIds, contexto, documentoClaseInicial, onDraftReady,
 }) => {
-    const [via, setVia] = useState<Via>('groq');
+    // En escritorio no hay backend Python al que llamar para Groq/IA local
+    // (ver project_tauri_ia_scope.md) -- solo se ofrece la vía "online"
+    // (copiar/pegar), sin selector visible ya que no hay entre qué elegir.
+    const [via, setVia] = useState<Via>(isTauri() ? 'online' : 'groq');
     const [tipo, setTipo] = useState<ToolType>('rubric');
     const [numNiveles, setNumNiveles] = useState(4);
     // Editable, no solo un valor de solo lectura -- cuando no hay criterios
@@ -91,7 +95,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
     const sinInsumos = linkedCriteriaIds.length === 0 && !contextoEditable.trim() && !documentoClase.trim();
 
     const reset = () => {
-        setVia('groq');
+        setVia(isTauri() ? 'online' : 'groq');
         setTipo('rubric');
         setNumNiveles(4);
         setContextoEditable(contexto || '');
@@ -227,6 +231,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                     </p>
                 )}
                 <>
+                        {!isTauri() && (
                         <div className="flex gap-1.5">
                             <button
                                 type="button"
@@ -250,6 +255,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                                 IA online (última opción)
                             </button>
                         </div>
+                        )}
 
                         {via === 'local' && !iaLocalDisponible && (
                             <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -307,6 +313,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                                 <div>
                                     <div className="flex items-center justify-between mb-1.5">
                                         <p className="text-sm font-semibold text-slate-700">Contenido visto en clase (opcional)</p>
+                                        {!isTauri() && (
                                         <div className="flex items-center gap-2">
                                             <input
                                                 ref={fileInputRef}
@@ -324,6 +331,7 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
                                                 {subiendoDocumento ? 'Extrayendo...' : 'Subir documento'}
                                             </Button>
                                         </div>
+                                        )}
                                     </div>
                                     <p className="text-xs text-slate-500 mb-1.5">
                                         Sin esto, la IA solo tiene la descripción abstracta de cada criterio -- con
