@@ -399,7 +399,7 @@ describe('scheduleWizard', () => {
                 label: '2026-2027',
                 startDate: '2026-09-09',
                 endDate: '2027-06-23',
-                holidays: [{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08' }],
+                holidays: [{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08', tipo: 'festivo' }],
                 evaluationPeriods: [
                     { nombre: '1ª Evaluación', fechaInicio: '2026-09-09', fechaFin: '2026-12-01', peso: 1 },
                     { nombre: '2ª Evaluación', fechaInicio: '2026-12-02', fechaFin: '2027-03-01', peso: 1 },
@@ -461,7 +461,7 @@ describe('scheduleWizard', () => {
             const { cursoAcademico, errores } = await parseWorkbook(buffer);
             expect(errores).toHaveLength(1);
             expect(errores[0]).toMatch(/Festivos/);
-            expect(cursoAcademico?.holidays).toEqual([{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08' }]);
+            expect(cursoAcademico?.holidays).toEqual([{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08', tipo: 'festivo' }]);
         });
 
         // Bug real reportado por el usuario: en una celda sin numFmt de
@@ -498,7 +498,7 @@ describe('scheduleWizard', () => {
             });
             const { cursoAcademico, errores } = await parseWorkbook(buffer);
             expect(errores).toEqual([]);
-            expect(cursoAcademico?.holidays).toEqual([{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08' }]);
+            expect(cursoAcademico?.holidays).toEqual([{ nombre: 'Navidad', fechaInicio: '2026-12-23', fechaFin: '2027-01-08', tipo: 'festivo' }]);
             expect(cursoAcademico?.evaluationPeriods).toEqual([{ nombre: '1ª Evaluación', fechaInicio: '2026-09-09', fechaFin: '2026-12-01', peso: 1 }]);
         });
     });
