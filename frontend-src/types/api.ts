@@ -528,7 +528,7 @@ export interface Meeting {
     academicYearId: string;
     fecha: string;
     hora?: string;
-    tipo: 'tutoria' | 'departamento' | 'familia' | 'r_tutores';
+    tipo: 'tutoria' | 'departamento' | 'familia' | 'r_tutores' | 'otras';
     conQuien?: string;
     motivo?: string;
     acuerdos?: string;

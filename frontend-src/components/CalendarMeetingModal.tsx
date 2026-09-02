@@ -72,6 +72,7 @@ const CalendarMeetingModal: React.FC<CalendarMeetingModalProps> = ({ isOpen, onC
                         <option value="r_tutores">R. Tutores</option>
                         <option value="departamento">Departamento</option>
                         <option value="familia">Familia</option>
+                        <option value="otras">Otras</option>
                     </Select>
                 </div>
                 <div>

@@ -24,6 +24,7 @@ const TIPO_COLOR: Record<Meeting['tipo'], string> = {
     r_tutores: 'bg-amber-100 text-amber-700',
     departamento: 'bg-purple-100 text-purple-700',
     familia: 'bg-teal-100 text-teal-700',
+    otras: 'bg-slate-100 text-slate-700',
 };
 
 // Mismo color que TIPO_COLOR de arriba pero en hex (tono "700" de cada
@@ -34,6 +35,7 @@ const TIPO_ACCENT: Record<Meeting['tipo'], string> = {
     r_tutores: '#b45309',
     departamento: '#7e22ce',
     familia: '#0f766e',
+    otras: '#475569',
 };
 
 type RangoFecha = 'hoy' | 'semana' | 'mes' | 'todas';
@@ -252,6 +254,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                         <option value="r_tutores">R. Tutores</option>
                         <option value="departamento">Departamento</option>
                         <option value="familia">Familia</option>
+                        <option value="otras">Otras</option>
                     </Select>
                 </div>
             </div>
@@ -313,6 +316,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                                 <option value="r_tutores">R. Tutores</option>
                                 <option value="departamento">Departamento</option>
                                 <option value="familia">Familia</option>
+                                <option value="otras">Otras</option>
                             </Select>
                         </div>
                     </div>

@@ -93,6 +93,7 @@ export const TIPO_REUNION_LABEL: Record<Meeting['tipo'], string> = {
     r_tutores: 'R. Tutores',
     departamento: 'Departamento',
     familia: 'Familia',
+    otras: 'Otras',
 };
 
 export const buildClassName = (grupo: string | undefined, materia: string): string => {

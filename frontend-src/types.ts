@@ -408,7 +408,7 @@ export interface Meeting {
   id: string;
   fecha: string; // YYYY-MM-DD
   hora?: string; // HH:MM
-  tipo: 'tutoria' | 'departamento' | 'familia' | 'r_tutores';
+  tipo: 'tutoria' | 'departamento' | 'familia' | 'r_tutores' | 'otras';
   conQuien?: string;
   motivo?: string;
   acuerdos?: string;
