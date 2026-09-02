@@ -1,35 +1,82 @@
 import React from 'react';
-import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenIcon, UsersIcon } from '../Icons';
+import type { Holiday } from '../../types';
+import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenIcon, UsersIcon, PlusIcon } from '../Icons';
 import { CalendarEvent, NOTE_COLOR, toYYYYMMDD_UTC, getContrastingTextColor } from './calendarEvents';
 import { TYPOGRAPHY } from '../../theme/typography';
+import { COLOR_INICIO_CURSO, COLOR_FIN_CURSO, COLOR_POR_TIPO_FESTIVO } from './calendarColors';
 
 const DayView: React.FC<{
     currentDate: Date;
     events: CalendarEvent[];
     isHoliday: (date: Date) => boolean;
+    getHoliday: (dateStr: string) => Holiday | undefined;
+    getPeriodStart: (dateStr: string) => { index: number; name: string } | null;
+    academicYearStart?: string;
+    academicYearEnd?: string;
+    onOpenTaskModal: (date: Date) => void;
     onOpenNoteModal: (date: Date) => void;
+    onOpenMeetingModal: (date: Date) => void;
     onEventClick: (event: CalendarEvent) => void;
     onDeleteNote: (noteId: string) => void;
     getCategoryName: (classId: string, categoryId: string) => string | undefined;
     getAssignmentCategoryName: (classId: string, assignmentId: string) => string | undefined;
-}> = ({ currentDate, events, isHoliday, onOpenNoteModal, onEventClick, onDeleteNote, getCategoryName, getAssignmentCategoryName }) => {
+}> = ({ currentDate, events, isHoliday, getHoliday, getPeriodStart, academicYearStart, academicYearEnd, onOpenTaskModal, onOpenNoteModal, onOpenMeetingModal, onEventClick, onDeleteNote, getCategoryName, getAssignmentCategoryName }) => {
     const currentDateStr = toYYYYMMDD_UTC(currentDate);
     const eventsForDay = events.filter(e => toYYYYMMDD_UTC(e.date) === currentDateStr);
     const isDayHoliday = isHoliday(currentDate);
+    const holiday = isDayHoliday ? getHoliday(currentDateStr) : undefined;
     const dayOfWeek = currentDate.getUTCDay();
     const isWeekend = dayOfWeek === 6 || dayOfWeek === 0;
+    const isStart = currentDateStr === academicYearStart;
+    const isEnd = currentDateStr === academicYearEnd;
+    const periodStart = getPeriodStart(currentDateStr);
+
+    // Mismo esquema que AnnualCalendarView.tsx (Calendario) -- pedido
+    // explícito del usuario: el fondo de la Agenda debe ser igual que el
+    // del Calendario. Los fines de semana sin festivo asociado se quedan
+    // en blanco (el aviso "Día no lectivo" de abajo ya avisa de esos).
+    let backgroundColor = '#ffffff';
+    if (isDayHoliday) backgroundColor = COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo'];
+    if (isStart) backgroundColor = COLOR_INICIO_CURSO;
+    if (isEnd) backgroundColor = COLOR_FIN_CURSO;
+
     return (
-        <div className={`p-4 h-[70vh] overflow-y-auto ${isDayHoliday || isWeekend ? 'bg-rose-50' : ''}`}>
+        <div className="p-4 h-[70vh] overflow-y-auto" style={{ backgroundColor }}>
              <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
                  <h3 className={TYPOGRAPHY.sectionTitle}>{currentDate.toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}</h3>
-                 <button
-                    onClick={() => onOpenNoteModal(currentDate)}
-                    className="flex items-center gap-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 py-1.5 px-3 rounded-lg"
-                 >
-                    <ListBulletIcon className="w-4 h-4" /> Añadir nota
-                 </button>
+                 {/* Mismos 3 botones que Mes/Semana, pedido explícito del
+                     usuario -- antes esta vista solo tenía "Añadir nota".
+                     Tarea/reunión no tienen sentido en un día no lectivo,
+                     una nota libre sí. */}
+                 <div className="flex items-center gap-2">
+                     {!isDayHoliday && (
+                         <button
+                            onClick={() => onOpenTaskModal(currentDate)}
+                            className="flex items-center gap-1.5 text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 py-1.5 px-3 rounded-lg"
+                         >
+                            <PlusIcon className="w-4 h-4" /> Añadir tarea
+                         </button>
+                     )}
+                     <button
+                        onClick={() => onOpenNoteModal(currentDate)}
+                        className="flex items-center gap-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 py-1.5 px-3 rounded-lg"
+                     >
+                        <ListBulletIcon className="w-4 h-4" /> Añadir nota
+                     </button>
+                     {!isDayHoliday && (
+                         <button
+                            onClick={() => onOpenMeetingModal(currentDate)}
+                            className="flex items-center gap-1.5 text-sm font-medium text-teal-700 bg-teal-100 hover:bg-teal-200 py-1.5 px-3 rounded-lg"
+                         >
+                            <UsersIcon className="w-4 h-4" /> Apuntar reunión
+                         </button>
+                     )}
+                 </div>
              </div>
-             {(isDayHoliday || isWeekend) && <p className="text-center font-semibold text-rose-700 mb-4">Día no lectivo</p>}
+             {(isDayHoliday || isWeekend) && <p className="text-center font-semibold text-rose-700 mb-4">Día no lectivo{holiday?.name ? ` — ${holiday.name}` : ''}</p>}
+             {isStart && <p className="text-center font-semibold text-white mb-4">Inicio de curso</p>}
+             {isEnd && <p className="text-center font-semibold text-white mb-4">Fin de curso</p>}
+             {periodStart && <p className={`text-center font-semibold mb-4 ${isDayHoliday || isStart || isEnd ? 'text-white' : 'text-slate-700'}`}>Empieza: {periodStart.name}</p>}
              {eventsForDay.length > 0 ? (
                 <div className="space-y-3">
                 {eventsForDay.map(event => {

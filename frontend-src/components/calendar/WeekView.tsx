@@ -1,29 +1,40 @@
 import React from 'react';
-import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenIcon, UsersIcon } from '../Icons';
+import type { EvaluationPeriod, Holiday } from '../../types';
+import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenIcon, UsersIcon, PlusIcon } from '../Icons';
 import { CalendarEvent, NOTE_COLOR, startOfWeekUTC, addDaysUTC, toYYYYMMDD_UTC, getContrastingTextColor } from './calendarEvents';
 import { SEMANTIC } from '../../theme/palette';
+import {
+    COLOR_INICIO_CURSO, COLOR_FIN_CURSO, COLOR_POR_TIPO_FESTIVO, COLORES_EVALUACION,
+} from './calendarColors';
 
 const DayColumn: React.FC<{
     date: Date;
     events: CalendarEvent[];
     isHoliday: (date: Date) => boolean;
+    getHoliday: (dateStr: string) => Holiday | undefined;
+    academicYearStart?: string;
+    academicYearEnd?: string;
     onEventClick: (event: CalendarEvent) => void;
     onDeleteNote: (noteId: string) => void;
     getCategoryName: (classId: string, categoryId: string) => string | undefined;
     getAssignmentCategoryName: (classId: string, assignmentId: string) => string | undefined;
-}> = ({ date: d, events, isHoliday, onEventClick, onDeleteNote, getCategoryName, getAssignmentCategoryName }) => {
+}> = ({ date: d, events, isHoliday, getHoliday, academicYearStart, academicYearEnd, onEventClick, onDeleteNote, getCategoryName, getAssignmentCategoryName }) => {
     const dayStr = toYYYYMMDD_UTC(d);
     const eventsForDay = events.filter(e => toYYYYMMDD_UTC(e.date) === dayStr);
     const isDayHoliday = isHoliday(d);
-    const dayOfWeek = d.getUTCDay();
-    const isWeekend = dayOfWeek === 6 || dayOfWeek === 0;
-    let cellBgClass = 'bg-white';
-    if (isDayHoliday || isWeekend) {
-         cellBgClass = 'bg-rose-50';
-    }
+    const holiday = isDayHoliday ? getHoliday(dayStr) : undefined;
+    const isStart = dayStr === academicYearStart;
+    const isEnd = dayStr === academicYearEnd;
+    // Mismo esquema que AnnualCalendarView.tsx (Calendario) -- pedido
+    // explícito del usuario: el fondo de la Agenda debe ser igual que el
+    // del Calendario.
+    let backgroundColor = '#ffffff';
+    if (isDayHoliday) backgroundColor = COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo'];
+    if (isStart) backgroundColor = COLOR_INICIO_CURSO;
+    if (isEnd) backgroundColor = COLOR_FIN_CURSO;
 
     return (
-        <div className={`border-r p-1.5 overflow-y-auto ${cellBgClass}`}>
+        <div className="border-r p-1.5 overflow-y-auto" style={{ backgroundColor }}>
             <div className="space-y-1 mt-1">
             {eventsForDay.map(event => {
                 let style: React.CSSProperties;
@@ -124,11 +135,19 @@ const WeekView: React.FC<{
     currentDate: Date;
     events: CalendarEvent[];
     isHoliday: (date: Date) => boolean;
+    getHoliday: (dateStr: string) => Holiday | undefined;
+    getPeriodForDate: (date: Date) => { period: EvaluationPeriod, index: number } | null;
+    getPeriodStart: (dateStr: string) => { index: number; name: string } | null;
+    academicYearStart?: string;
+    academicYearEnd?: string;
+    onOpenTaskModal: (date: Date) => void;
+    onOpenNoteModal: (date: Date) => void;
+    onOpenMeetingModal: (date: Date) => void;
     onEventClick: (event: CalendarEvent) => void;
     onDeleteNote: (noteId: string) => void;
     getCategoryName: (classId: string, categoryId: string) => string | undefined;
     getAssignmentCategoryName: (classId: string, assignmentId: string) => string | undefined;
-}> = ({ currentDate, events, isHoliday, onEventClick, onDeleteNote, getCategoryName, getAssignmentCategoryName }) => {
+}> = ({ currentDate, events, isHoliday, getHoliday, getPeriodForDate, getPeriodStart, academicYearStart, academicYearEnd, onOpenTaskModal, onOpenNoteModal, onOpenMeetingModal, onEventClick, onDeleteNote, getCategoryName, getAssignmentCategoryName }) => {
     const weekStart = startOfWeekUTC(currentDate);
     // Only 5 days (Mon-Fri)
     const days = Array.from({ length: 5 }).map((_, i) => addDaysUTC(weekStart, i));
@@ -140,10 +159,60 @@ const WeekView: React.FC<{
                 {days.map(d => {
                     const today = new Date();
                     const isToday = d.getUTCFullYear() === today.getUTCFullYear() && d.getUTCMonth() === today.getUTCMonth() && d.getUTCDate() === today.getUTCDate();
+                    const dayStr = toYYYYMMDD_UTC(d);
+                    const isDayHoliday = isHoliday(d);
+                    // Mismo criterio de color que MonthView.tsx: por
+                    // evaluación, blanco si es festivo (el fondo de la
+                    // columna ya avisa de eso).
+                    const periodInfo = getPeriodForDate(d);
+                    const periodStart = getPeriodStart(dayStr);
+                    const dayNumberColor = isDayHoliday
+                        ? '#ffffff'
+                        : periodInfo ? COLORES_EVALUACION[periodInfo.index % COLORES_EVALUACION.length] : undefined;
+                    const ringColor = !isToday && periodStart ? COLORES_EVALUACION[periodStart.index % COLORES_EVALUACION.length] : undefined;
                     return (
-                        <div key={d.toISOString()} className="py-2 border-r">
+                        <div key={d.toISOString()} className="relative py-2 border-r group/day">
                             <div className="text-xs">{d.toLocaleString('es-ES', { weekday: 'short', timeZone: 'UTC' })}</div>
-                            <div className="text-xl mt-1 font-semibold" style={isToday ? { color: SEMANTIC.primary.base } : undefined}>{d.getUTCDate()}</div>
+                            <div
+                                className="text-xl mt-1 font-bold inline-flex items-center justify-center w-8 h-8 rounded-full"
+                                style={isToday
+                                    ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text }
+                                    : { color: dayNumberColor, boxShadow: ringColor ? `inset 0 0 0 2px ${ringColor}` : undefined }}
+                                title={periodStart ? `Empieza: ${periodStart.name}` : undefined}
+                            >
+                                {d.getUTCDate()}
+                            </div>
+                            {/* Mismos 3 botones que MonthView.tsx (tarea/nota/reunión),
+                                pedido explícito del usuario -- antes solo estaban en la
+                                vista Mes. Tarea/reunión no tienen sentido en un día no
+                                lectivo, una nota libre sí. */}
+                            <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover/day:opacity-100 transition-opacity z-10">
+                                {!isDayHoliday && (
+                                    <button
+                                        onClick={() => onOpenTaskModal(d)}
+                                        className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-blue-200 hover:text-blue-600"
+                                        title="Añadir tarea calificable"
+                                    >
+                                        <PlusIcon className="w-4 h-4" />
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => onOpenNoteModal(d)}
+                                    className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-amber-200 hover:text-amber-700"
+                                    title="Añadir nota libre (no evaluable)"
+                                >
+                                    <ListBulletIcon className="w-4 h-4" />
+                                </button>
+                                {!isDayHoliday && (
+                                    <button
+                                        onClick={() => onOpenMeetingModal(d)}
+                                        className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-teal-200 hover:text-teal-700"
+                                        title="Apuntar una reunión"
+                                    >
+                                        <UsersIcon className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     )
                 })}
@@ -156,6 +225,9 @@ const WeekView: React.FC<{
                         date={d}
                         events={events}
                         isHoliday={isHoliday}
+                        getHoliday={getHoliday}
+                        academicYearStart={academicYearStart}
+                        academicYearEnd={academicYearEnd}
                         onEventClick={onEventClick}
                         onDeleteNote={onDeleteNote}
                         getCategoryName={getCategoryName}

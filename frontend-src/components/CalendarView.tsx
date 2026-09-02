@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, JournalEntry, EvaluationPeriod, Assignment, EvaluationCriterion, SpecificCompetence, KeyCompetence, SessionDetail, AgendaNote, Meeting, View } from '../types';
+import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, JournalEntry, EvaluationPeriod, Holiday, Assignment, EvaluationCriterion, SpecificCompetence, KeyCompetence, SessionDetail, AgendaNote, Meeting, View } from '../types';
 import { useCreateAssignment } from '../hooks/useAssignments';
 import { useUpdateClass } from '../hooks/useApiClasses';
 import { useCurrentAcademicYear } from '../hooks/useAcademicYears';
@@ -241,6 +241,23 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
         setCurrentDate(new Date(dateStr + 'T00:00:00Z'));
     };
 
+    // Tipo real del festivo (festivo/no_lectivo/vacaciones) -- isHoliday de
+    // arriba solo da un booleano, mismo criterio que AnnualCalendarView.tsx
+    // (Calendario), cuyo esquema de colores reutiliza aquí la Agenda.
+    const getHoliday = useMemo(() => {
+        const ranges = (academicConfiguration.holidays ?? []).filter(h => h.startDate && h.endDate);
+        return (dateStr: string): Holiday | undefined =>
+            ranges.find(h => h.startDate <= dateStr && dateStr <= h.endDate);
+    }, [academicConfiguration.holidays]);
+
+    // Qué evaluación EMPIEZA justo ese día -- mismo criterio que
+    // AnnualCalendarView.tsx (aviso de cambio de evaluación).
+    const getPeriodStart = useMemo(() => {
+        const startsByDate = new Map<string, { index: number; name: string }>();
+        (academicConfiguration.evaluationPeriods ?? []).forEach((p, i) => startsByDate.set(p.startDate, { index: i, name: p.name }));
+        return (dateStr: string): { index: number; name: string } | null => startsByDate.get(dateStr) ?? null;
+    }, [academicConfiguration.evaluationPeriods]);
+
     const getPeriodForDate = useMemo(() => {
         const periods = academicConfiguration.evaluationPeriods;
         if (!periods || periods.length === 0) return () => null;
@@ -279,7 +296,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
                         currentDate={currentDate}
                         events={events}
                         isHoliday={isHoliday}
+                        getHoliday={getHoliday}
                         getPeriodForDate={getPeriodForDate}
+                        getPeriodStart={getPeriodStart}
+                        academicYearStart={academicConfiguration.academicYearStart}
+                        academicYearEnd={academicConfiguration.academicYearEnd}
                         onOpenTaskModal={handleOpenTaskModal}
                         onOpenNoteModal={handleOpenNoteModal}
                         onOpenMeetingModal={handleOpenMeetingModal}
@@ -295,6 +316,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
                         currentDate={currentDate}
                         events={events}
                         isHoliday={isHoliday}
+                        getHoliday={getHoliday}
+                        getPeriodForDate={getPeriodForDate}
+                        getPeriodStart={getPeriodStart}
+                        academicYearStart={academicConfiguration.academicYearStart}
+                        academicYearEnd={academicConfiguration.academicYearEnd}
+                        onOpenTaskModal={handleOpenTaskModal}
+                        onOpenNoteModal={handleOpenNoteModal}
+                        onOpenMeetingModal={handleOpenMeetingModal}
                         onEventClick={handleEventClick}
                         onDeleteNote={handleDeleteNote}
                         getCategoryName={getCategoryName}
@@ -306,7 +335,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
                         currentDate={currentDate}
                         events={events}
                         isHoliday={isHoliday}
+                        getHoliday={getHoliday}
+                        getPeriodStart={getPeriodStart}
+                        academicYearStart={academicConfiguration.academicYearStart}
+                        academicYearEnd={academicConfiguration.academicYearEnd}
+                        onOpenTaskModal={handleOpenTaskModal}
                         onOpenNoteModal={handleOpenNoteModal}
+                        onOpenMeetingModal={handleOpenMeetingModal}
                         onEventClick={handleEventClick}
                         onDeleteNote={handleDeleteNote}
                         getCategoryName={getCategoryName}

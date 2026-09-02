@@ -1,16 +1,21 @@
 import React from 'react';
-import type { EvaluationPeriod } from '../../types';
+import type { EvaluationPeriod, Holiday } from '../../types';
 import { PlusIcon, ListBulletIcon, UsersIcon, TrashIcon, PencilIcon, BookOpenIcon, ClipboardDocumentIcon } from '../Icons';
 import { CalendarEvent, NOTE_COLOR, MEETING_COLOR, startOfMonthUTC, endOfMonthUTC, startOfWeekUTC, addDaysUTC, toYYYYMMDD_UTC, getContrastingTextColor } from './calendarEvents';
 import { SEMANTIC } from '../../theme/palette';
-
-const periodColors = ['bg-violet-100', 'bg-emerald-100', 'bg-amber-100'];
+import {
+    COLOR_INICIO_CURSO, COLOR_FIN_CURSO, COLOR_POR_TIPO_FESTIVO, COLORES_EVALUACION, COLOR_DIA_NORMAL,
+} from './calendarColors';
 
 const MonthView: React.FC<{
     currentDate: Date;
     events: CalendarEvent[];
     isHoliday: (date: Date) => boolean;
+    getHoliday: (dateStr: string) => Holiday | undefined;
     getPeriodForDate: (date: Date) => { period: EvaluationPeriod, index: number } | null;
+    getPeriodStart: (dateStr: string) => { index: number; name: string } | null;
+    academicYearStart?: string;
+    academicYearEnd?: string;
     onOpenTaskModal: (date: Date) => void;
     onOpenNoteModal: (date: Date) => void;
     onOpenMeetingModal: (date: Date) => void;
@@ -19,7 +24,7 @@ const MonthView: React.FC<{
     onEventClick: (event: CalendarEvent) => void;
     getCategoryName: (classId: string, categoryId: string) => string | undefined;
     getAssignmentCategoryName: (classId: string, assignmentId: string) => string | undefined;
-}> = ({ currentDate, events, isHoliday, getPeriodForDate, onOpenTaskModal, onOpenNoteModal, onOpenMeetingModal, onDeleteNote, onDeleteMeeting, onEventClick, getCategoryName, getAssignmentCategoryName }) => {
+}> = ({ currentDate, events, isHoliday, getHoliday, getPeriodForDate, getPeriodStart, academicYearStart, academicYearEnd, onOpenTaskModal, onOpenNoteModal, onOpenMeetingModal, onDeleteNote, onDeleteMeeting, onEventClick, getCategoryName, getAssignmentCategoryName }) => {
     const monthStart = startOfMonthUTC(currentDate);
     const monthEnd = endOfMonthUTC(currentDate);
     const startDate = startOfWeekUTC(monthStart);
@@ -51,29 +56,46 @@ const MonthView: React.FC<{
                      const today = new Date();
                      const isToday = d.getUTCFullYear() === today.getUTCFullYear() && d.getUTCMonth() === today.getUTCMonth() && d.getUTCDate() === today.getUTCDate();
                      const isDayHoliday = isHoliday(d);
+                     const holiday = isDayHoliday ? getHoliday(dayStr) : undefined;
+                     const isStart = dayStr === academicYearStart;
+                     const isEnd = dayStr === academicYearEnd;
 
                      const periodInfo = getPeriodForDate(d);
+                     const periodStart = getPeriodStart(dayStr);
 
-                     let cellBgClass = 'bg-white';
-                     if (isDayHoliday) {
-                        cellBgClass = 'bg-rose-50';
-                     } else if (periodInfo) {
-                        cellBgClass = periodColors[periodInfo.index % periodColors.length] || 'bg-white';
-                     } else if (!isCurrentMonth) {
-                        cellBgClass = 'bg-slate-50/70';
-                     }
+                     // Mismo esquema que AnnualCalendarView.tsx (Calendario) --
+                     // pedido explícito del usuario: el fondo de la Agenda debe
+                     // ser igual que el del Calendario.
+                     let cellBackgroundColor = isCurrentMonth ? '#ffffff' : '#f8fafc';
+                     let dayNumberColor = periodInfo ? COLORES_EVALUACION[periodInfo.index % COLORES_EVALUACION.length] : COLOR_DIA_NORMAL;
+                     if (isDayHoliday) { cellBackgroundColor = COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo']; dayNumberColor = '#ffffff'; }
+                     if (isStart) { cellBackgroundColor = COLOR_INICIO_CURSO; dayNumberColor = '#ffffff'; }
+                     if (isEnd) { cellBackgroundColor = COLOR_FIN_CURSO; dayNumberColor = '#ffffff'; }
+
+                     // Aviso de cambio de evaluación: un anillo en el color de
+                     // la evaluación que empieza ese día.
+                     const ringColor = periodStart ? COLORES_EVALUACION[periodStart.index % COLORES_EVALUACION.length] : undefined;
 
                     return (
                          // Fixed: Increased minimum height and removed overflow-y-auto to allow full month scrolling
-                         <div key={d.toISOString()} className={`relative border-r border-b p-2 ${cellBgClass} min-h-[7rem] group/day`}>
+                         <div key={d.toISOString()} className="relative border-r border-b p-2 min-h-[7rem] group/day" style={{ backgroundColor: cellBackgroundColor }}>
                             <div
-                                className="flex items-center justify-center w-6 h-6 text-xs rounded-full"
-                                style={isToday ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text, fontWeight: 600 } : undefined}
+                                className="flex items-center justify-center w-6 h-6 text-xs rounded-full font-bold"
+                                style={isToday
+                                    ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text, fontWeight: 700 }
+                                    : { color: dayNumberColor, boxShadow: ringColor ? `inset 0 0 0 2px ${ringColor}` : undefined }}
+                                title={periodStart ? `Empieza: ${periodStart.name}` : undefined}
                             >
                               {d.getUTCDate()}
                             </div>
-                            { !isDayHoliday && (
-                                <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover/day:opacity-100 transition-opacity z-10">
+                            {/* Tarea/reunión no tienen sentido en un día no lectivo
+                                (no hay clase, no se califica), pero una nota libre
+                                sí -- p.ej. "reunión con la familia" puede caer en
+                                festivo. Antes las 3 estaban juntas tras el mismo
+                                !isDayHoliday y una nota tampoco se podía añadir en
+                                festivo -- bug real reportado por el usuario. */}
+                            <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover/day:opacity-100 transition-opacity z-10">
+                                {!isDayHoliday && (
                                     <button
                                         onClick={() => onOpenTaskModal(d)}
                                         className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-blue-200 hover:text-blue-600"
@@ -81,13 +103,15 @@ const MonthView: React.FC<{
                                     >
                                         <PlusIcon className="w-4 h-4" />
                                     </button>
-                                    <button
-                                        onClick={() => onOpenNoteModal(d)}
-                                        className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-amber-200 hover:text-amber-700"
-                                        title="Añadir nota libre (no evaluable)"
-                                    >
-                                        <ListBulletIcon className="w-4 h-4" />
-                                    </button>
+                                )}
+                                <button
+                                    onClick={() => onOpenNoteModal(d)}
+                                    className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-amber-200 hover:text-amber-700"
+                                    title="Añadir nota libre (no evaluable)"
+                                >
+                                    <ListBulletIcon className="w-4 h-4" />
+                                </button>
+                                {!isDayHoliday && (
                                     <button
                                         onClick={() => onOpenMeetingModal(d)}
                                         className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-teal-200 hover:text-teal-700"
@@ -95,8 +119,8 @@ const MonthView: React.FC<{
                                     >
                                         <UsersIcon className="w-4 h-4" />
                                     </button>
-                                </div>
-                            )}
+                                )}
+                            </div>
                             <div className="space-y-1 mt-1">
                                 {eventsForDay.map(event => {
                                     if (event.eventType === 'otherActivity') {
