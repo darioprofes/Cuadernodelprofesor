@@ -21,7 +21,13 @@ interface TempStudent {
 interface BulkAddStudentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (students: { nombre?: string; primerApellido?: string; segundoApellido?: string; nie?: string; acneae: string[] }[]) => void;
+    onSave: (students: { nombre?: string; primerApellido?: string; segundoApellido?: string; nie?: string; acneae: string[]; ultimoCursoSauce?: string; ultimaUnidadSauce?: string }[]) => void;
+    // Nivel/grupo de la clase desde la que se abre este modal -- precarga
+    // ahí el nivel/grupo de referencia (lo normal es que coincidan), para
+    // que solo haga falta tocarlos cuando de verdad sean distintos (p.ej.
+    // una optativa con alumnado mezclado de varios grupos).
+    defaultNivelReferencia?: string;
+    defaultGrupoReferencia?: string;
 }
 
 
@@ -90,9 +96,32 @@ const AcneaeSelector: React.FC<{ selected: Set<string>; onChange: (newSelection:
 };
 
 
-const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClose, onSave }) => {
+const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClose, onSave, defaultNivelReferencia, defaultGrupoReferencia }) => {
     const [students, setStudents] = useState<TempStudent[]>([]);
     const [rawText, setRawText] = useState('');
+    // Nivel/grupo de referencia -- se aplica a TODO el lote de una vez (lo
+    // normal al pegar una lista es que sea el mismo grupo administrativo
+    // para todos), no campo a campo por fila. Mismo par de campos que
+    // rellena/actualiza la importación de SAUCE (ultimoCursoSauce/
+    // ultimaUnidadSauce) -- editable a mano aquí para quien nunca pasa por
+    // SAUCE, ver ExistingStudentPicker.tsx, que los usa como filtro.
+    // Precargados desde la clase activa (ver defaultNivelReferencia/
+    // defaultGrupoReferencia): en el caso normal (materia de grupo
+    // homogéneo) no hay que tocarlos.
+    const [nivelReferencia, setNivelReferencia] = useState(defaultNivelReferencia || '');
+    const [grupoReferencia, setGrupoReferencia] = useState(defaultGrupoReferencia || '');
+
+    // Reabrir el modal (p.ej. para otra clase, con otro nivel/grupo por
+    // defecto) debe recargar estos dos campos -- useState solo lee su
+    // argumento inicial la primerísima vez que el componente se monta, no
+    // en cada apertura posterior.
+    useEffect(() => {
+        if (isOpen) {
+            setNivelReferencia(defaultNivelReferencia || '');
+            setGrupoReferencia(defaultGrupoReferencia || '');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     // Antes esto se hacía interceptando el evento "paste" del textarea
     // (preventDefault + clipboardData): si el pegado llegaba por otra vía
@@ -136,6 +165,8 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
     };
 
     const handleSave = () => {
+        const nivel = nivelReferencia.trim() || undefined;
+        const grupo = grupoReferencia.trim() || undefined;
         const studentsToSave = students
             .filter(s => s.primerApellido.trim() || s.nombre.trim())
             .map(s => ({
@@ -144,8 +175,10 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
                 segundoApellido: s.segundoApellido.trim() || undefined,
                 nie: s.nie.trim() || undefined,
                 acneae: Array.from(s.acneae),
+                ultimoCursoSauce: nivel,
+                ultimaUnidadSauce: grupo,
             }));
-        
+
         if(studentsToSave.length > 0) {
             onSave(studentsToSave);
         }
@@ -155,6 +188,8 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
     const handleClose = () => {
         setStudents([]);
         setRawText('');
+        setNivelReferencia('');
+        setGrupoReferencia('');
         onClose();
     };
 
@@ -192,6 +227,17 @@ const BulkAddStudentModal: React.FC<BulkAddStudentModalProps> = ({ isOpen, onClo
 
                 {students.length > 0 && (
                     <div>
+                        <div className="flex items-end gap-2 mb-2">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-600">Nivel de referencia</label>
+                                <Input type="text" value={nivelReferencia} onChange={e => setNivelReferencia(e.target.value)} placeholder="Ej: 1º ESO" className="!w-32 mt-0.5" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-600">Grupo de referencia</label>
+                                <Input type="text" value={grupoReferencia} onChange={e => setGrupoReferencia(e.target.value)} placeholder="Ej: A" className="!w-24 mt-0.5" />
+                            </div>
+                            <p className="text-xs text-slate-400 pb-1.5">Se aplica a todo el lote — opcional, para poder filtrarlos luego en "Alumnado disponible" al matricularlos en otra clase.</p>
+                        </div>
                         <h4 className="text-sm font-medium text-slate-700 mb-2">Alumnado a añadir:</h4>
                         <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-2 bg-slate-50">
                             {students.map((student, index) => (

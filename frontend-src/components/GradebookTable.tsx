@@ -139,6 +139,30 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     allClasses.filter(c => allCourses.find(course => course.id === c.courseId)?.type !== 'other')
   ), [allClasses, allCourses]);
 
+  // Nivel/grupo REALES de cada alumno (de sus matrículas de verdad en
+  // otras clases), no solo lo que trajera SAUCE -- mismo criterio y mismo
+  // motivo que en ClassManager.tsx (Ajustes → Clases y Alumnado): sin
+  // esto, el alumnado añadido a mano/en lote no se podía filtrar por
+  // nivel/grupo en "Alumnado disponible" pese a estar ya matriculado en
+  // otra clase. `allClasses` ya trae el alumnado de cada clase hidratado
+  // (App.tsx), así que no hace falta pedir matrículas aparte aquí.
+  const nivelesGruposByStudent = useMemo(() => {
+    const map = new Map<string, { nivel: string; grupo: string }[]>();
+    allClasses.forEach(cls => {
+      const course = allCourses.find(c => c.id === cls.courseId);
+      if (!course) return;
+      cls.students.forEach(s => {
+        const list = map.get(s.id) ?? [];
+        const clave = `${course.level}::${cls.grupo || ''}`;
+        if (!list.some(x => `${x.nivel}::${x.grupo}` === clave)) {
+          list.push({ nivel: course.level, grupo: cls.grupo || '' });
+        }
+        map.set(s.id, list);
+      });
+    });
+    return map;
+  }, [allClasses, allCourses]);
+
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [categoryToEdit, setCategoryToEdit] = useState<Category | null>(null);
   
@@ -240,11 +264,17 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       await createEnrollmentMutation.mutateAsync({ classId: classData.id, data: { studentId } });
   };
 
-  const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; nie?: string; acneae: string[] }[]) => {
+  const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; nie?: string; acneae: string[]; ultimoCursoSauce?: string; ultimaUnidadSauce?: string }[]) => {
       for (const data of newStudentData) {
           await createEnrollmentMutation.mutateAsync({
               classId: classData.id,
-              data: { newStudent: { nombre: data.nombre, primerApellido: data.primerApellido, segundoApellido: data.segundoApellido, nie: data.nie }, acneae: data.acneae },
+              data: {
+                  newStudent: {
+                      nombre: data.nombre, primerApellido: data.primerApellido, segundoApellido: data.segundoApellido, nie: data.nie,
+                      ultimoCursoSauce: data.ultimoCursoSauce, ultimaUnidadSauce: data.ultimaUnidadSauce,
+                  },
+                  acneae: data.acneae,
+              },
           });
       }
       setIsBulkAddOpen(false);
@@ -1318,7 +1348,13 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       />
       {gradeEntryData && <GradeEntryModal isOpen={isGradeEntryModalOpen} onClose={() => setIsGradeEntryModalOpen(false)} student={gradeEntryData.student} assignment={gradeEntryData.assignment} grade={gradeEntryData.grade} criteriaList={criteria} onSave={handleSaveGrade} evaluationTools={evaluationTools} allAssignments={classData.assignments} students={classData.students} />}
       {assignmentForImport && <BulkGradeImportModal isOpen={isBulkImportModalOpen} onClose={() => setIsBulkImportModalOpen(false)} onSave={handleBulkSaveGrades} assignment={assignmentForImport} students={classData.students} />}
-      <BulkAddStudentModal isOpen={isBulkAddOpen} onClose={() => setIsBulkAddOpen(false)} onSave={handleBulkAddStudents} />
+      <BulkAddStudentModal
+          isOpen={isBulkAddOpen}
+          onClose={() => setIsBulkAddOpen(false)}
+          onSave={handleBulkAddStudents}
+          defaultNivelReferencia={allCourses.find(c => c.id === classData.courseId)?.level}
+          defaultGrupoReferencia={classData.grupo}
+      />
       <Modal isOpen={isEnrollExistingOpen} onClose={() => setIsEnrollExistingOpen(false)} title="Matricular alumnado ya existente" size="lg">
           <p className="text-xs text-slate-500 mb-3">
               Esto matricula en esta clase a alumnado que ya existe en el registro (por ejemplo, importado
@@ -1329,6 +1365,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
               allStudents={remoteStudents.data ?? []}
               currentYearId={yearId}
               alreadyEnrolledIds={new Set(classData.students.map(s => s.id))}
+              nivelesGruposByStudentId={nivelesGruposByStudent}
               onEnroll={handleEnrollExisting}
           />
       </Modal>

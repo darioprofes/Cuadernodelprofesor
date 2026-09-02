@@ -17,6 +17,11 @@ interface PickerStudent {
     ultimaUnidadSauce?: string;
 }
 
+interface NivelGrupo {
+    nivel: string;
+    grupo: string;
+}
+
 // Panel de "alumnado disponible" para matricular en la clase activa —
 // solo tiene sentido en web (registro global de STUDENT propio del
 // backend nuevo, ver plan "Fase 5 fusionada" bloque 5); en escritorio no
@@ -41,6 +46,16 @@ const ExistingStudentPicker: React.FC<{
     allStudents: PickerStudent[];
     alreadyEnrolledIds: Set<string>;
     currentYearId?: string;
+    // Nivel/grupo REALES por alumno, derivados de sus matrículas de verdad
+    // en otras clases (ver ClassManager.tsx/GradebookTable.tsx) -- a
+    // diferencia de ultimoCursoSauce/ultimaUnidadSauce (que SOLO rellena
+    // ImportSauceStudentsModal.tsx), esto cubre también al alumnado
+    // añadido a mano/en lote. Ambas fuentes alimentan el mismo filtro de
+    // Nivel/Grupo más abajo -- petición explícita del usuario: con mucho
+    // alumnado añadido a mano en varias clases, no había forma de
+    // encontrar "a quién tengo ya en 1º ESO A" para matricularlo también
+    // en una clase nueva.
+    nivelesGruposByStudentId?: Map<string, NivelGrupo[]>;
     onEnroll: (studentId: string) => Promise<void> | void;
     // Borrado definitivo de ficha(s) (no solo desmatricular) — opcional
     // porque solo tiene sentido donde exista un registro global de
@@ -49,7 +64,7 @@ const ExistingStudentPicker: React.FC<{
     // el llamante decide qué hacer con quien siga matriculado en otra
     // clase (preguntar si desmatricular también, o dejarlo tal cual).
     onDeleteStudents?: (studentIds: string[]) => Promise<void> | void;
-}> = ({ allStudents, alreadyEnrolledIds, currentYearId, onEnroll, onDeleteStudents }) => {
+}> = ({ allStudents, alreadyEnrolledIds, currentYearId, nivelesGruposByStudentId, onEnroll, onDeleteStudents }) => {
     const [query, setQuery] = useState('');
     const [verTodos, setVerTodos] = useState(false);
     const [filtroCurso, setFiltroCurso] = useState('');
@@ -75,30 +90,44 @@ const ExistingStudentPicker: React.FC<{
         return disponibles.filter(s => !s.importedAcademicYearId || s.importedAcademicYearId === currentYearId);
     }, [disponibles, verTodos, currentYearId]);
 
-    // Los desplegables de Curso/Unidad solo aparecen si hay datos de SAUCE
-    // que filtrar — si nadie se importó así todavía, no tiene sentido
-    // mostrar un filtro vacío.
+    // Combina el nivel/grupo real (de matrículas de verdad en otras
+    // clases) con el de SAUCE (ultimoCursoSauce/ultimaUnidadSauce) en una
+    // única lista por alumno -- el mismo filtro de abajo sirve para las
+    // dos fuentes, sin que el profesor tenga que saber de cuál viene cada
+    // dato.
+    const nivelesGruposDe = (s: PickerStudent): NivelGrupo[] => {
+        const real = nivelesGruposByStudentId?.get(s.id) ?? [];
+        if (!s.ultimoCursoSauce && !s.ultimaUnidadSauce) return real;
+        const sauce: NivelGrupo = { nivel: s.ultimoCursoSauce || '', grupo: s.ultimaUnidadSauce || '' };
+        const yaExiste = real.some(r => r.nivel === sauce.nivel && r.grupo === sauce.grupo);
+        return yaExiste ? real : [...real, sauce];
+    };
+
+    // Los desplegables de Nivel/Grupo solo aparecen si hay algo que
+    // filtrar (de SAUCE o de matrículas reales en otras clases) — si no
+    // hay nada todavía, no tiene sentido mostrar un filtro vacío.
     const cursosDisponibles = useMemo(
-        () => Array.from(new Set(enAmbito.map(s => s.ultimoCursoSauce).filter((c): c is string => !!c))).sort(),
-        [enAmbito]
+        () => Array.from(new Set(enAmbito.flatMap(s => nivelesGruposDe(s)).map(ng => ng.nivel).filter(Boolean))).sort(),
+        [enAmbito, nivelesGruposByStudentId]
     );
     const unidadesDisponibles = useMemo(
         () => Array.from(new Set(
             enAmbito
-                .filter(s => !filtroCurso || s.ultimoCursoSauce === filtroCurso)
-                .map(s => s.ultimaUnidadSauce)
-                .filter((u): u is string => !!u)
+                .flatMap(s => nivelesGruposDe(s))
+                .filter(ng => !filtroCurso || ng.nivel === filtroCurso)
+                .map(ng => ng.grupo)
+                .filter(Boolean)
         )).sort(),
-        [enAmbito, filtroCurso]
+        [enAmbito, filtroCurso, nivelesGruposByStudentId]
     );
 
     const matches = useMemo(() => {
         const q = query.trim().toLowerCase();
         return enAmbito
-            .filter(s => !filtroCurso || s.ultimoCursoSauce === filtroCurso)
-            .filter(s => !filtroUnidad || s.ultimaUnidadSauce === filtroUnidad)
+            .filter(s => !filtroCurso || nivelesGruposDe(s).some(ng => ng.nivel === filtroCurso))
+            .filter(s => !filtroUnidad || nivelesGruposDe(s).some(ng => ng.grupo === filtroUnidad))
             .filter(s => !q || `${s.nombre ?? ''} ${s.primerApellido ?? ''} ${s.segundoApellido ?? ''}`.toLowerCase().includes(q));
-    }, [enAmbito, query, filtroCurso, filtroUnidad]);
+    }, [enAmbito, query, filtroCurso, filtroUnidad, nivelesGruposByStudentId]);
 
     const visibles = matches.slice(0, 60);
 
@@ -165,11 +194,11 @@ const ExistingStudentPicker: React.FC<{
             {cursosDisponibles.length > 0 && (
                 <div className="flex items-center gap-2">
                     <Select value={filtroCurso} onChange={e => { setFiltroCurso(e.target.value); setFiltroUnidad(''); }} className="text-xs">
-                        <option value="">Curso (SAUCE): todos</option>
+                        <option value="">Nivel: todos</option>
                         {cursosDisponibles.map(c => <option key={c} value={c}>{c}</option>)}
                     </Select>
                     <Select value={filtroUnidad} onChange={e => setFiltroUnidad(e.target.value)} className="text-xs">
-                        <option value="">Unidad (SAUCE): todas</option>
+                        <option value="">Grupo: todos</option>
                         {unidadesDisponibles.map(u => <option key={u} value={u}>{u}</option>)}
                     </Select>
                 </div>
@@ -199,14 +228,16 @@ const ExistingStudentPicker: React.FC<{
                                 onChange={() => toggleSeleccionado(s.id)}
                             />
                             <span className="flex-1 min-w-0 truncate" title={getNombreCompleto(s as Student)}>{getNombreCompleto(s as Student)}</span>
-                            {(s.ultimoCursoSauce || s.ultimaUnidadSauce) && (
-                                <span
-                                    className="text-xs text-slate-400 truncate max-w-[40%] flex-shrink"
-                                    title={[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}
-                                >
-                                    {[s.ultimoCursoSauce, s.ultimaUnidadSauce].filter(Boolean).join(' / ')}
-                                </span>
-                            )}
+                            {(() => {
+                                const etiquetas = nivelesGruposDe(s).map(ng => [ng.nivel, ng.grupo].filter(Boolean).join(' '));
+                                if (etiquetas.length === 0) return null;
+                                const texto = etiquetas.join(', ');
+                                return (
+                                    <span className="text-xs text-slate-400 truncate max-w-[40%] flex-shrink" title={texto}>
+                                        {texto}
+                                    </span>
+                                );
+                            })()}
                         </label>
                         {onDeleteStudents && (
                             <IconButton

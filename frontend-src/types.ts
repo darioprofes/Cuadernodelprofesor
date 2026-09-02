@@ -72,6 +72,15 @@ export interface Student {
   // SAUCE — ver services/sauceImport.ts.
   nie?: string;
   nacionalidad?: string;
+  // Nivel/grupo de referencia del alumno (p.ej. "1 ESO" / "A"),
+  // independiente de en qué clase-materia esté matriculado -- para
+  // materias con alumnado mezclado de varios grupos (optativas), donde el
+  // grupo de la CLASE no coincide con el real de cada alumno. La
+  // importación de SAUCE los rellena/actualiza en cada reimportación
+  // (SAUCE manda cuando hay dato real), pero también son editables a mano
+  // en la ficha -- ver ExistingStudentPicker.tsx, que los usa como filtro.
+  ultimoCursoSauce?: string;
+  ultimaUnidadSauce?: string;
   telefonoUrgencias?: string;
 
   tutor1?: Tutor;

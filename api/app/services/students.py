@@ -42,6 +42,15 @@ class StudentInput(ApiModel):
     # matricula por sí solo, solo alimenta el filtro por defecto/rápido de
     # ExistingStudentPicker.tsx.
     imported_academic_year_id: Optional[uuid.UUID] = None
+    # Nivel/grupo de referencia del alumno (p.ej. "1 ESO" / "A"),
+    # independiente de en qué clase-materia esté matriculado -- para
+    # materias con alumnado mezclado de varios grupos (optativas), donde el
+    # grupo de la CLASE no coincide con el real de cada alumno. La
+    # importación de SAUCE (ImportSauceStudentsModal.tsx) los rellena/
+    # actualiza automáticamente en cada reimportación (SAUCE manda cuando
+    # hay dato real), pero también son editables a mano en la ficha para
+    # quien nunca pasó por SAUCE -- ver ExistingStudentPicker.tsx, que los
+    # usa como filtro.
     ultimo_curso_sauce: Optional[str] = None
     ultima_unidad_sauce: Optional[str] = None
     telefono_urgencias: Optional[str] = None

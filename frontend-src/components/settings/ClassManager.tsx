@@ -126,6 +126,37 @@ const ClassManager: React.FC<{
         return map;
     }, [allEnrollmentsQueries]);
 
+    // Nivel/grupo REALES (de sus matrículas de verdad en otras clases de
+    // este curso académico), no solo lo que trajera SAUCE -- alumnado
+    // añadido a mano/en lote nunca tiene ultimoCursoSauce/ultimaUnidadSauce
+    // (esos campos solo los rellena ImportSauceStudentsModal.tsx), así que
+    // sin esto "Alumnado disponible" no podía filtrarlo por nivel/grupo
+    // pese a estar ya matriculado en otra clase (bug real reportado por el
+    // usuario: con 100 alumnos añadidos a mano en varias clases, no había
+    // forma de encontrar "a quién tengo ya en 1ESO A" para matricularlo
+    // también en una clase nueva). Se pasa a ExistingStudentPicker junto a
+    // los campos de SAUCE -- ambas fuentes alimentan el mismo filtro.
+    const classById = useMemo(() => new Map(academicClasses.map(c => [c.id, c])), [academicClasses]);
+    const courseById = useMemo(() => new Map(courses.map(c => [c.id, c])), [courses]);
+    const nivelesGruposByStudent = useMemo(() => {
+        const map = new Map<string, { nivel: string; grupo: string }[]>();
+        enrollmentsByStudent.forEach((enrollments, studentId) => {
+            const vistos = new Set<string>();
+            const lista: { nivel: string; grupo: string }[] = [];
+            enrollments.forEach(({ classId }) => {
+                const cls = classById.get(classId);
+                const course = cls ? courseById.get(cls.courseId) : undefined;
+                if (!cls || !course) return;
+                const clave = `${course.level}::${cls.grupo || ''}`;
+                if (vistos.has(clave)) return;
+                vistos.add(clave);
+                lista.push({ nivel: course.level, grupo: cls.grupo || '' });
+            });
+            if (lista.length > 0) map.set(studentId, lista);
+        });
+        return map;
+    }, [enrollmentsByStudent, classById, courseById]);
+
     const [activeClassId, setActiveClassId] = useState(academicClasses[0]?.id || '');
     const [isClassModalOpen, setIsClassModalOpen] = useState(false);
     const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
@@ -283,13 +314,19 @@ const ClassManager: React.FC<{
         await deleteClassMutation.mutateAsync({ id: classId, yearId });
     };
 
-    const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; nie?: string; acneae: string[] }[]) => {
+    const handleBulkAddStudents = async (newStudentData: { nombre?: string; primerApellido?: string; segundoApellido?: string; nie?: string; acneae: string[]; ultimoCursoSauce?: string; ultimaUnidadSauce?: string }[]) => {
         if (!activeClassId) return;
 
         for (const data of newStudentData) {
             await createEnrollmentMutation.mutateAsync({
                 classId: activeClassId,
-                data: { newStudent: { nombre: data.nombre, primerApellido: data.primerApellido, segundoApellido: data.segundoApellido, nie: data.nie }, acneae: data.acneae },
+                data: {
+                    newStudent: {
+                        nombre: data.nombre, primerApellido: data.primerApellido, segundoApellido: data.segundoApellido, nie: data.nie,
+                        ultimoCursoSauce: data.ultimoCursoSauce, ultimaUnidadSauce: data.ultimaUnidadSauce,
+                    },
+                    acneae: data.acneae,
+                },
             });
         }
         if (newStudentData.length > 0) {
@@ -358,6 +395,7 @@ const ClassManager: React.FC<{
                             allStudents={remoteStudents.data ?? []}
                             currentYearId={yearId}
                             alreadyEnrolledIds={new Set(activeClassStudents.map(s => s.id))}
+                            nivelesGruposByStudentId={nivelesGruposByStudent}
                             onEnroll={handleEnrollExisting}
                             onDeleteStudents={handleDeleteStudentsPermanently}
                         />
@@ -451,6 +489,8 @@ const ClassManager: React.FC<{
                 isOpen={isBulkAddModalOpen}
                 onClose={() => setIsBulkAddModalOpen(false)}
                 onSave={handleBulkAddStudents}
+                defaultNivelReferencia={courses.find(c => c.id === activeClassShell?.courseId)?.level}
+                defaultGrupoReferencia={activeClassShell?.grupo}
             />
             <StudentPersonalDataModal
                 isOpen={!!studentForFicha}
