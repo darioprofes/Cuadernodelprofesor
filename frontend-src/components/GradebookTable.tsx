@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon, ArrowPathIcon, GlobeIcon, PhotoIcon, TagIcon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon, ArrowPathIcon, GlobeIcon, PhotoIcon, TagIcon, UserPlusIcon, UserCircleIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
 import Input from './Input';
@@ -1291,10 +1291,10 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           </tbody>
         </table>
       </div>
-      <div className="p-3 border-t bg-slate-50/50 space-y-3">
+      <div className="p-4 border-t bg-slate-50/50 space-y-4">
           {classData.students.length > 1 && (
               <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">Orden</span>
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">Ordenar por</span>
                   <div className="inline-flex items-center gap-0.5 bg-slate-200/70 rounded-lg p-0.5">
                       {([
                           ['alfabetico', 'A-Z'],
@@ -1306,7 +1306,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                               type="button"
                               onClick={() => setOrdenAlumnado(modo)}
                               title={modo === 'manual' ? 'Arrastra una fila por su nombre para reordenar' : undefined}
-                              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${ordenAlumnado === modo ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                              className={`px-3 py-1 rounded-md text-xs font-semibold border transition-colors ${ordenAlumnado === modo ? 'bg-white border-blue-300 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                           >
                               {label}
                           </button>
@@ -1314,23 +1314,19 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                   </div>
               </div>
           )}
-          <div className="flex flex-wrap gap-2">
-              <button onClick={() => setIsBulkAddOpen(true)} className="flex-1 min-w-[10rem] text-center py-2 px-3 text-sm font-semibold text-green-600 hover:bg-green-100 bg-white rounded-md border border-slate-200 shadow-sm">
-                  + Añadir alumn@
-              </button>
-              <button onClick={() => setIsEnrollExistingOpen(true)} className="flex-1 min-w-[10rem] text-center py-2 px-3 text-sm font-semibold text-blue-600 hover:bg-blue-100 bg-white rounded-md border border-slate-200 shadow-sm">
-                  + Matricular alumn@ ya existente
-              </button>
-              {classData.students.length > 0 && (
-                  <button onClick={() => setFlagsEditTargetId(classData.students[0].id)} className="flex-1 min-w-[10rem] text-center py-2 px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 bg-white rounded-md border border-slate-200 shadow-sm">
-                      Editar datos rápidos (repetidor, bilingüe, NEAE...)
-                  </button>
-              )}
-              {!isTauri() && (
-                  <button onClick={() => setIsImportPhotosOpen(true)} className="flex-1 min-w-[10rem] text-center py-2 px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 bg-white rounded-md border border-slate-200 shadow-sm">
-                      Importar fotos desde PDF
-                  </button>
-              )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FooterActionGroup icon={<UserPlusIcon className="w-5 h-5" />} title="Añadir alumnado">
+                  <FooterActionCard icon={<UserCircleIcon className="w-5 h-5" />} label="En lote" color="text-green-600" onClick={() => setIsBulkAddOpen(true)} />
+                  <FooterActionCard icon={<UserPlusIcon className="w-5 h-5" />} label="Matricular existente" color="text-blue-600" onClick={() => setIsEnrollExistingOpen(true)} />
+              </FooterActionGroup>
+              <FooterActionGroup icon={<PencilIcon className="w-5 h-5" />} title="Editar alumnado" className="md:border-l md:pl-4">
+                  {classData.students.length > 0 && (
+                      <FooterActionCard icon={<PencilIcon className="w-5 h-5" />} label="Edición rápida" color="text-slate-600" onClick={() => setFlagsEditTargetId(classData.students[0].id)} />
+                  )}
+                  {!isTauri() && (
+                      <FooterActionCard icon={<PhotoIcon className="w-5 h-5" />} label="Importar fotos" color="text-amber-600" onClick={() => setIsImportPhotosOpen(true)} />
+                  )}
+              </FooterActionGroup>
           </div>
       </div>
        {activePeriodId !== 'final' && (
@@ -1745,6 +1741,33 @@ const TogglePrivacidad: React.FC<{
         style={{ backgroundColor: activo ? colorActivo : '#94a3b8' }}
     >
         <Icono className="w-2.5 h-2.5 text-white" />
+    </button>
+);
+
+// Agrupa las tarjetas de acción del panel inferior del Cuaderno (Añadir/
+// Editar alumnado) bajo un encabezado con icono -- mismo criterio visual
+// que las FichaSection de StudentPersonalDataModal.tsx, adaptado a tarjetas
+// en vez de a un desplegable.
+const FooterActionGroup: React.FC<{ icon: React.ReactNode; title: string; className?: string; children: React.ReactNode }> = ({ icon, title, className, children }) => (
+    <div className={className}>
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+            <span className="text-slate-400">{icon}</span>
+            {title}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {children}
+        </div>
+    </div>
+);
+
+const FooterActionCard: React.FC<{ icon: React.ReactNode; label: string; color: string; onClick: () => void }> = ({ icon, label, color, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-2.5 text-left py-2.5 px-3 text-sm font-semibold bg-white rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50"
+    >
+        <span className={`flex-shrink-0 ${color}`}>{icon}</span>
+        <span className="text-slate-700">{label}</span>
     </button>
 );
 
