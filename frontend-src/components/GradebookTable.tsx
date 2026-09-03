@@ -1330,14 +1330,17 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           </div>
       </div>
        {activePeriodId !== 'final' && (
-          <div className="p-4 border-t flex justify-start items-center bg-slate-200 rounded-b-xl">
+          <div className="p-2 border-t bg-slate-50/50 rounded-b-xl">
             <div className="relative" ref={copyCatRef}>
-              <button 
-                onClick={() => setIsCopyCatOpen(prev => !prev)} 
+              <button
+                type="button"
+                onClick={() => setIsCopyCatOpen(prev => !prev)}
                 disabled={evaluationPeriods.length <= 1 && allClasses.length <= 1} // Basic disable check, simplified
-                className="text-xs font-semibold text-slate-600 hover:bg-slate-200 p-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex items-center gap-2 text-left py-2 px-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                  Copiar categorías desde...
+                  <DocumentDuplicateIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                  <span className="flex-1">Copiar categorías desde...</span>
+                  <ChevronDownIcon className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${isCopyCatOpen ? 'rotate-180' : ''}`} />
               </button>
               {isCopyCatOpen && (
                 <div className="absolute bottom-full mb-2 w-80 bg-white shadow-lg border rounded-md p-2 z-20">
