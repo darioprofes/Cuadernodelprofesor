@@ -65,6 +65,29 @@ fn json_columns(table: &str) -> &'static [&'static str] {
     }
 }
 
+// SQLite no tiene tipo BOOLEAN real -- todas estas columnas se guardan como
+// INTEGER (0/1), igual que cualquier otro entero, sin forma de distinguirlas
+// por tipo (a diferencia de json_columns, que sí puede apoyarse en el tipo
+// TEXT vs el resto). El backend web (Postgres) SÍ tiene columnas BOOLEAN de
+// verdad, y un INSERT con un entero 0/1 donde espera boolean falla en seco
+// (columna "x" es de tipo boolean pero la expresión es de tipo integer) --
+// bug real, encontrado el 2026-09-03 restaurando una copia de escritorio en
+// la web: había que declarar aquí, a mano, qué columnas son lógicamente
+// booleanas para exportarlas como true/false en vez de 1/0. Calcado de las
+// columnas BOOLEAN de api/app/migrations/ -- una columna booleana nueva en
+// el esquema (a cualquier lado) tiene que añadirse aquí también.
+fn bool_columns(table: &str) -> &'static [&'static str] {
+    match table {
+        "students" => &["autorizacion_imagen", "autorizacion_salidas"],
+        "courses" => &["peso_criterios_manual"],
+        "evaluation_criteria" => &["exclude_from_weighting"],
+        "academic_years" => &["is_current"],
+        "enrollments" => &["ha_repetido_curso", "neae", "programa_bilingue"],
+        "tasks" => &["hecho"],
+        _ => &[],
+    }
+}
+
 fn sqlite_ref_to_json(v: ValueRef) -> Value {
     match v {
         ValueRef::Null => Value::Null,
@@ -84,6 +107,7 @@ pub fn export_all(conn: &Connection) -> Result<Value, ApiError> {
         let mut stmt = conn.prepare(&format!("SELECT * FROM {table}"))?;
         let column_names: Vec<String> = stmt.column_names().into_iter().map(|s| s.to_string()).collect();
         let json_cols = json_columns(table);
+        let bool_cols = bool_columns(table);
 
         let rows = stmt.query_map([], |row| {
             let mut obj = Map::new();
@@ -95,6 +119,12 @@ pub fn export_all(conn: &Connection) -> Result<Value, ApiError> {
                 let json_val = if json_cols.contains(&col.as_str()) {
                     match value_ref {
                         ValueRef::Text(t) => serde_json::from_slice::<Value>(t).unwrap_or(Value::Null),
+                        ValueRef::Null => Value::Null,
+                        other => sqlite_ref_to_json(other),
+                    }
+                } else if bool_cols.contains(&col.as_str()) {
+                    match value_ref {
+                        ValueRef::Integer(i) => json!(i != 0),
                         ValueRef::Null => Value::Null,
                         other => sqlite_ref_to_json(other),
                     }
