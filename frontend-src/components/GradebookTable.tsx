@@ -1010,7 +1010,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             <tr>
               {/* Alumno Header Top Half: No bottom border, align bottom */}
               <th scope="col" className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] ${activePeriodId !== 'final' ? 'border-b-0 align-bottom' : 'align-middle'}`}>
-                  <div className="flex flex-col gap-1 normal-case font-normal">
+                  <div className="flex flex-col gap-0.5 normal-case font-normal">
                       {classData.students.length > 6 ? (
                           <div className="flex items-center gap-1">
                               <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
@@ -1025,23 +1025,34 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                       ) : (
                           <span>Alumn@</span>
                       )}
-                      <div className="flex items-center gap-2">
-                          {([
-                              [mostrarFotos, setMostrarFotos, PhotoIcon, 'Mostrar/ocultar fotos'],
-                              [mostrarIconos, setMostrarIconos, ArrowPathIcon, 'Mostrar/ocultar iconos (repetidor, bilingüe, ACNEAE)'],
-                              [mostrarBadges, setMostrarBadges, TagIcon, 'Mostrar/ocultar grupo de referencia'],
-                          ] as const).map(([activo, setActivo, Icono, titulo], i) => (
-                              <button
-                                  key={i}
-                                  type="button"
-                                  onClick={() => setActivo(v => !v)}
-                                  title={titulo}
-                                  style={activo ? { color: getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg } : undefined}
-                                  className={activo ? '' : 'text-slate-400'}
-                              >
-                                  <Icono className="w-3.5 h-3.5" />
-                              </button>
-                          ))}
+                      <div className="flex items-center justify-between">
+                          {/* Foto a la izquierda (ahí sale el avatar en cada fila);
+                              iconos y badge a la derecha (ahí salen ellos). Círculo
+                              de color con el icono en blanco dentro -- un simple
+                              trazo de color apenas se veía. */}
+                          <TogglePrivacidad
+                              activo={mostrarFotos}
+                              onClick={() => setMostrarFotos(v => !v)}
+                              titulo="Mostrar/ocultar fotos"
+                              Icono={PhotoIcon}
+                              colorActivo={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg}
+                          />
+                          <div className="flex items-center gap-1">
+                              <TogglePrivacidad
+                                  activo={mostrarIconos}
+                                  onClick={() => setMostrarIconos(v => !v)}
+                                  titulo="Mostrar/ocultar iconos (repetidor, bilingüe, ACNEAE)"
+                                  Icono={ArrowPathIcon}
+                                  colorActivo={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg}
+                              />
+                              <TogglePrivacidad
+                                  activo={mostrarBadges}
+                                  onClick={() => setMostrarBadges(v => !v)}
+                                  titulo="Mostrar/ocultar grupo de referencia"
+                                  Icono={TagIcon}
+                                  colorActivo={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg}
+                              />
+                          </div>
                       </div>
                   </div>
               </th>
@@ -1614,5 +1625,25 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     </div>
   );
 };
+
+// Círculo de color con el icono en blanco dentro -- un simple icono con
+// trazo de color (la primera versión) apenas se distinguía a ese tamaño.
+const TogglePrivacidad: React.FC<{
+    activo: boolean;
+    onClick: () => void;
+    titulo: string;
+    Icono: React.FC<{ className?: string }>;
+    colorActivo: string;
+}> = ({ activo, onClick, titulo, Icono, colorActivo }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        title={titulo}
+        className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+        style={{ backgroundColor: activo ? colorActivo : '#94a3b8' }}
+    >
+        <Icono className="w-2.5 h-2.5 text-white" />
+    </button>
+);
 
 export default GradebookTable;
