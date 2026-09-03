@@ -53,6 +53,11 @@ const finDeMes = (hoy: Date): string => toYYYYMMDD(new Date(hoy.getFullYear(), h
 // tutoría 1 a 1 con familia/alumno.
 const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, openMeetingId, onOpened }) => {
     const [isFormOpen, setIsFormOpen] = useState(false);
+    // "Reunión ahora" abre directo en una pantalla reducida (tipo + con
+    // quién + un único cuadro de notas grande) pensada para tenerla abierta
+    // EN la reunión, sin ir a buscar fecha/hora/motivo/seguimiento -- esos
+    // campos siguen ahí, solo replegados (ver "Más campos" más abajo).
+    const [modoReunion, setModoReunion] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [fecha, setFecha] = useState(toYYYYMMDD(new Date()));
     const [hora, setHora] = useState('');
@@ -102,6 +107,18 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
 
     const handleOpenNew = () => {
         resetForm();
+        setModoReunion(false);
+        setIsFormOpen(true);
+    };
+
+    // Crea la reunión ya mismo (fecha/hora actuales) y entra directo en modo
+    // reunión -- pensado para pulsarlo según se sienta a la reunión, sin
+    // tener que rellenar nada antes de poder empezar a escribir.
+    const handleOpenNow = () => {
+        resetForm();
+        setFecha(toYYYYMMDD(new Date()));
+        setHora(new Date().toTimeString().slice(0, 5));
+        setModoReunion(true);
         setIsFormOpen(true);
     };
 
@@ -115,6 +132,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
         setMotivo(m.motivo || '');
         setAcuerdos(m.acuerdos || '');
         setSeguimiento(m.seguimiento || '');
+        setModoReunion(true);
         setIsFormOpen(true);
     };
 
@@ -190,6 +208,21 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
         resetForm();
     };
 
+    // Cerrar el formulario: en modo reunión no hay un botón "Guardar" visible
+    // (todo va por autoguardado), así que cerrar tiene que VOLCAR cualquier
+    // cambio pendiente en vez de descartarlo -- a diferencia de "Cancelar" en
+    // el formulario normal, que si descarta a propósito (mismo criterio que
+    // el resto de la app: cancelar es cancelar).
+    const handleCloseForm = () => {
+        if (modoReunion && pendingSaveRef.current) {
+            clearTimeout(pendingSaveRef.current.timer);
+            pendingSaveRef.current.run();
+        } else {
+            cancelPendingSave();
+        }
+        setIsFormOpen(false);
+    };
+
     const handleDelete = (id: string) => {
         if (!window.confirm('¿Eliminar esta reunión?')) return;
         if (editingId === id) cancelPendingSave();
@@ -237,8 +270,11 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                         placeholder="Buscar por tipo, con quién, motivo..."
                         className="sm:flex-grow"
                     />
-                    <Button variant="primary" onClick={handleOpenNew} className="flex-shrink-0">
+                    <Button variant="secondary" onClick={handleOpenNew} className="flex-shrink-0">
                         <PlusIcon className="w-4 h-4" /> Nueva reunión
+                    </Button>
+                    <Button variant="primary" onClick={handleOpenNow} className="flex-shrink-0">
+                        <ClockIcon className="w-4 h-4" /> Reunión ahora
                     </Button>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -298,7 +334,64 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                 )}
             </div>
 
-            <Modal isOpen={isFormOpen} onClose={() => { cancelPendingSave(); setIsFormOpen(false); }} title={editingId ? 'Editar reunión' : 'Nueva reunión'} size="full">
+            <Modal isOpen={isFormOpen} onClose={handleCloseForm} title={editingId ? 'Editar reunión' : (modoReunion ? 'Reunión en curso' : 'Nueva reunión')} size="full">
+                {modoReunion ? (
+                    <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {(['tutoria', 'r_tutores', 'departamento', 'familia', 'otras'] as const).map(t => (
+                                <button
+                                    key={t}
+                                    type="button"
+                                    onClick={() => { setTipo(t); scheduleAutosave({ tipo: t }); }}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${tipo === t ? `${TIPO_COLOR[t]} border-transparent` : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                                >
+                                    {TIPO_LABEL[t]}
+                                </button>
+                            ))}
+                        </div>
+                        <Input
+                            type="text"
+                            value={conQuien}
+                            onChange={e => { setConQuien(e.target.value); scheduleAutosave({ conQuien: e.target.value }); }}
+                            placeholder="Con quién (Familia de..., Claustro, Equipo docente...)"
+                            className="w-full"
+                        />
+                        <Textarea
+                            autoFocus
+                            value={acuerdos}
+                            onChange={e => { setAcuerdos(e.target.value); scheduleAutosave({ acuerdos: e.target.value }); }}
+                            rows={16}
+                            className="w-full font-mono text-sm"
+                            placeholder="Empieza a escribir -- se guarda solo mientras hablas..."
+                        />
+                        <details className="text-sm">
+                            <summary className="cursor-pointer text-slate-500 font-medium select-none">Más campos (fecha, hora, motivo, seguimiento)</summary>
+                            <div className="mt-3 space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-xs font-medium text-slate-600">Fecha</label>
+                                        <Input type="date" value={fecha} onChange={e => { setFecha(e.target.value); scheduleAutosave({ fecha: e.target.value }); }} className="w-full mt-1" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-slate-600">Hora</label>
+                                        <Input type="time" value={hora} onChange={e => { setHora(e.target.value); scheduleAutosave({ hora: e.target.value }); }} className="w-full mt-1" />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-slate-600">Motivo</label>
+                                    <Textarea value={motivo} onChange={e => { setMotivo(e.target.value); scheduleAutosave({ motivo: e.target.value }); }} rows={2} className="w-full mt-1" />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-slate-600">Seguimiento</label>
+                                    <Textarea value={seguimiento} onChange={e => { setSeguimiento(e.target.value); scheduleAutosave({ seguimiento: e.target.value }); }} rows={3} className="w-full mt-1" />
+                                </div>
+                            </div>
+                        </details>
+                        <div className="flex items-center justify-end pt-2">
+                            <Button type="button" variant="primary" onClick={handleCloseForm}>Cerrar</Button>
+                        </div>
+                    </div>
+                ) : (
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
@@ -343,6 +436,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                         </Button>
                     </div>
                 </form>
+                )}
             </Modal>
         </div>
     );
