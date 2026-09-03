@@ -276,8 +276,13 @@ export interface Student {
     medicacionHabitual?: string;
     intoleranciasAlimentarias?: string;
     observacionesSanitarias?: string;
-    autorizacionImagen?: boolean;
-    autorizacionSalidas?: boolean;
+    // boolean | null en vez de solo boolean -- SiNoToggle necesita poder
+    // enviar `null` explícito para volver a dejarlo sin marcar (un `patch`
+    // sin esta clave significa "no tocar"; JSON.stringify se comía un
+    // `undefined` aquí y el "sin marcar" nunca llegaba a guardarse -- ver
+    // el mismo criterio en Enrollment.programaBilingue/haRepetidoCurso/neae).
+    autorizacionImagen?: boolean | null;
+    autorizacionSalidas?: boolean | null;
     // Solo indica si hay foto (los bytes viajan aparte, ver /photos/{id}).
     fotoContentType?: string;
     createdAt: string;
@@ -296,11 +301,12 @@ export interface Enrollment {
     classId: string;
     acneae: string[];
     centroProcedencia?: string;
-    haRepetidoCurso?: boolean;
-    programaBilingue?: boolean;
+    // boolean | null -- ver el mismo comentario en Student.autorizacionImagen.
+    haRepetidoCurso?: boolean | null;
+    programaBilingue?: boolean | null;
     materiasPendientes?: string;
     programaEspecifico?: string;
-    neae?: boolean;
+    neae?: boolean | null;
     neaeDetalle?: string;
     medidasEducativas?: string;
     indicacionesPti?: string;
@@ -322,11 +328,11 @@ export type EnrollmentInput =
 interface EnrollmentFields {
     acneae?: string[];
     centroProcedencia?: string;
-    haRepetidoCurso?: boolean;
-    programaBilingue?: boolean;
+    haRepetidoCurso?: boolean | null;
+    programaBilingue?: boolean | null;
     materiasPendientes?: string;
     programaEspecifico?: string;
-    neae?: boolean;
+    neae?: boolean | null;
     neaeDetalle?: string;
     medidasEducativas?: string;
     indicacionesPti?: string;

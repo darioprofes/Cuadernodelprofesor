@@ -92,8 +92,12 @@ export interface Student {
   domicilioTelefono?: string;
 
   centroProcedencia?: string;
-  haRepetidoCurso?: boolean;
-  programaBilingue?: boolean;
+  // boolean | null en vez de solo boolean -- SiNoToggle necesita poder
+  // enviar `null` explícito para volver a dejarlo sin marcar (un patch sin
+  // esta clave significa "no tocar"; JSON.stringify se comía un `undefined`
+  // aquí y el "sin marcar" nunca llegaba a guardarse, ver SiNoToggle.tsx).
+  haRepetidoCurso?: boolean | null;
+  programaBilingue?: boolean | null;
   materiasPendientes?: string;
   programaEspecifico?: string; // p.ej. "Diversificación"
 
@@ -103,13 +107,13 @@ export interface Student {
   intoleranciasAlimentarias?: string;
   observacionesSanitarias?: string;
 
-  neae?: boolean; // Necesidades Específicas de Apoyo Educativo
+  neae?: boolean | null; // Necesidades Específicas de Apoyo Educativo
   neaeDetalle?: string;
   medidasEducativas?: string;
   indicacionesPti?: string; // Indicaciones del PTI (Plan de Trabajo Individualizado)
 
-  autorizacionImagen?: boolean;
-  autorizacionSalidas?: boolean;
+  autorizacionImagen?: boolean | null;
+  autorizacionSalidas?: boolean | null;
 
   observacionesTutor?: string; // notas libres del profesor/a-tutor/a
 

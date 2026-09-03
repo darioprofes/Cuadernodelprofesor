@@ -165,7 +165,7 @@ const TutorSummary: React.FC<{ label: string; tutor?: Tutor }> = ({ label, tutor
     );
 };
 
-const SiNoText = (v?: boolean) => v === true ? 'Sí' : v === false ? 'No' : undefined;
+const SiNoText = (v?: boolean | null) => v === true ? 'Sí' : v === false ? 'No' : undefined;
 
 const tieneMasDatos = (student: Student): boolean => {
     const hayFamilia = !!((student.tutor1?.nombre || student.tutor1?.telefono || student.tutor1?.email || student.tutor1?.relacion)

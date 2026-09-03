@@ -7,6 +7,7 @@ import Input from './Input';
 import Textarea from './Textarea';
 import { TrashIcon, ChevronRightIcon, ChevronDownIcon } from './Icons';
 import StudentPhotoAvatar from './StudentPhotoAvatar';
+import SiNoToggle from './SiNoToggle';
 import { fileToDataUrl, getNombreCompleto } from '../utils';
 import { checkboxClassName } from '../theme/components/Input';
 
@@ -403,28 +404,6 @@ const TutorFields: React.FC<{ label: string; value?: Tutor; onChange: (patch: Pa
         <Field label="Correo electrónico">
             <Input type="email" value={value?.email || ''} onChange={e => onChange({ email: e.target.value })} className={inputClass} />
         </Field>
-    </div>
-);
-
-// Sí/No sin forzar una respuesta: ambos botones empiezan sin marcar
-// (equivalente a las casillas ☐ Sí ☐ No en blanco del papel) hasta que se
-// elige una; se puede volver a dejar sin especificar pulsando la ya activa.
-const SiNoToggle: React.FC<{ value?: boolean; onChange: (v: boolean | undefined) => void }> = ({ value, onChange }) => (
-    <div className="mt-1 flex items-center gap-2">
-        <button
-            type="button"
-            onClick={() => onChange(value === true ? undefined : true)}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg border ${value === true ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
-        >
-            Sí
-        </button>
-        <button
-            type="button"
-            onClick={() => onChange(value === false ? undefined : false)}
-            className={`px-3 py-1.5 text-sm font-medium rounded-lg border ${value === false ? 'bg-slate-600 border-slate-600 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
-        >
-            No
-        </button>
     </div>
 );
 
