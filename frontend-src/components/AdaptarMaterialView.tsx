@@ -21,6 +21,7 @@ import { useProgrammingUnitsForCourses } from '../hooks/useProgrammingUnits';
 import { programmingUnitFromApi } from '../services/apiAdapters';
 import { instrumentoATexto } from '../services/instrumentoATexto';
 import { generarAdaptacionConGroq, generarAdaptacionConIA, generarPromptAdaptacion } from '../services/generarAdaptacionMaterial';
+import { isTauri } from '@tauri-apps/api/core';
 
 type OrigenTipo = 'libre' | 'sa' | 'instrumento';
 type Via = 'groq' | 'local' | 'online';
@@ -171,7 +172,13 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
     // (petición explícita: con el resaltado ya no hace falta ver el
     // original y el anonimizado a la vez).
     const [editandoManualmente, setEditandoManualmente] = useState(false);
-    const [via, setVia] = useState<Via>('groq');
+    // En escritorio no hay Anonimizador (depende de spaCy, sin equivalente en
+    // Rust/Tauri, ver project_tauri_ia_scope.md) -- se salta ese paso y el
+    // propio profesor redacta el texto a mano en el mismo cuadro (mapaActivo
+    // se queda en {}, así reintegrar() no sustituye nada). Mismo criterio que
+    // el resto de generadores: en escritorio solo queda la vía "online"
+    // (copiar/pegar).
+    const [via, setVia] = useState<Via>(isTauri() ? 'online' : 'groq');
     const [generando, setGenerando] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [promptOnline, setPromptOnline] = useState<string | null>(null);
@@ -219,6 +226,15 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
         // DESPUÉS de anonimizar -- nunca pasan por el Anonimizador, ver el
         // comentario de notasCategoricas().
         const categoricas = notasCategoricas(alumno);
+        if (isTauri()) {
+            // Sin Anonimizador en escritorio: el texto se deja tal cual, ya
+            // en modo editable, para que el profesor quite a mano cualquier
+            // dato identificativo antes de continuar.
+            setTextoAnonimizado(categoricas ? `${notasLibres}\n${categoricas}` : notasLibres);
+            setMapaActivo({});
+            setEditandoManualmente(true);
+            return;
+        }
         try {
             const data = await anonimizarMutation.mutateAsync(notasLibres);
             setTextoAnonimizado(categoricas ? `${data.anonimizado}\n${categoricas}` : data.anonimizado);
@@ -366,7 +382,7 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
                                 Elegir instrumento...
                             </Button>
                         )}
-                        {origenTipo === 'libre' && (
+                        {origenTipo === 'libre' && !isTauri() && (
                             <div className="flex items-center gap-2">
                                 <input
                                     ref={fileInputRef}
@@ -484,14 +500,22 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
                                 {anonimizarMutation.isPending && <p className="text-sm text-slate-500">Anonimizando...</p>}
                                 {!anonimizarMutation.isPending && mapaActivo && (
                                     <>
-                                        <p className="text-sm text-slate-600">
-                                            Se han sustituido <strong>{Object.keys(mapaActivo).length}</strong> dato(s) del alumno por
-                                            códigos (pasa el ratón por encima de uno para ver el dato real). Revisa antes de continuar --
-                                            esto es lo único que sale
-                                            {via === 'online' ? ' hacia la IA online' : via === 'groq' ? ' hacia Groq' : ' hacia la IA local'}
-                                            {' '}junto con el material (que no pasa por el Anonimizador, ver el paso anterior).
-                                        </p>
-                                        {editandoManualmente ? (
+                                        {isTauri() ? (
+                                            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                                La versión de escritorio no tiene Anonimizador automático (necesita un servidor). Revisa y
+                                                quita a mano cualquier dato que identifique al alumno antes de continuar -- esto es lo único
+                                                que va a salir hacia la IA online junto con el material.
+                                            </p>
+                                        ) : (
+                                            <p className="text-sm text-slate-600">
+                                                Se han sustituido <strong>{Object.keys(mapaActivo).length}</strong> dato(s) del alumno por
+                                                códigos (pasa el ratón por encima de uno para ver el dato real). Revisa antes de continuar --
+                                                esto es lo único que sale
+                                                {via === 'online' ? ' hacia la IA online' : via === 'groq' ? ' hacia Groq' : ' hacia la IA local'}
+                                                {' '}junto con el material (que no pasa por el Anonimizador, ver el paso anterior).
+                                            </p>
+                                        )}
+                                        {editandoManualmente || isTauri() ? (
                                             <Textarea
                                                 value={textoAnonimizado}
                                                 onChange={e => setTextoAnonimizado(e.target.value)}
@@ -506,10 +530,12 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
                                             />
                                         )}
                                         <div className="flex justify-between">
-                                            <Button type="button" variant="secondary" onClick={() => setEditandoManualmente(v => !v)}>
-                                                {editandoManualmente ? 'Ver con códigos resaltados' : 'Editar manualmente'}
-                                            </Button>
-                                            <Button type="button" onClick={() => setPasoAlumno('via')}>Siguiente</Button>
+                                            {!isTauri() && (
+                                                <Button type="button" variant="secondary" onClick={() => setEditandoManualmente(v => !v)}>
+                                                    {editandoManualmente ? 'Ver con códigos resaltados' : 'Editar manualmente'}
+                                                </Button>
+                                            )}
+                                            <Button type="button" className={isTauri() ? 'ml-auto' : undefined} onClick={() => setPasoAlumno('via')}>Siguiente</Button>
                                         </div>
                                     </>
                                 )}
@@ -518,22 +544,24 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
 
                         {pasoAlumno === 'via' && (
                             <div className="flex flex-col gap-3">
-                                <div className="flex gap-1.5">
-                                    {([
-                                        { value: 'groq', label: 'Groq (rápido)' },
-                                        { value: 'local', label: 'IA local' },
-                                        { value: 'online', label: 'IA online (última opción)' },
-                                    ] as { value: Via; label: string }[]).map(v => (
-                                        <button
-                                            key={v.value}
-                                            type="button"
-                                            onClick={() => { setVia(v.value); setPromptOnline(null); }}
-                                            className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === v.value ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
-                                        >
-                                            {v.label}
-                                        </button>
-                                    ))}
-                                </div>
+                                {!isTauri() && (
+                                    <div className="flex gap-1.5">
+                                        {([
+                                            { value: 'groq', label: 'Groq (rápido)' },
+                                            { value: 'local', label: 'IA local' },
+                                            { value: 'online', label: 'IA online (última opción)' },
+                                        ] as { value: Via; label: string }[]).map(v => (
+                                            <button
+                                                key={v.value}
+                                                type="button"
+                                                onClick={() => { setVia(v.value); setPromptOnline(null); }}
+                                                className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === v.value ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                            >
+                                                {v.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
 
                                 {via === 'local' && !iaLocalDisponible && (
                                     <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -558,28 +586,32 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
                                         <div>
                                             <div className="flex items-center justify-between mb-1.5">
                                                 <p className="text-sm font-semibold text-slate-700">2. Pega aquí la respuesta de la IA</p>
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        ref={docxRespuestaInputRef}
-                                                        type="file"
-                                                        accept=".docx"
-                                                        className="hidden"
-                                                        onChange={e => {
-                                                            const file = e.target.files?.[0];
-                                                            if (file) handleSubirRespuestaDocx(file);
-                                                            e.target.value = '';
-                                                        }}
-                                                    />
-                                                    <Button type="button" variant="secondary" onClick={() => docxRespuestaInputRef.current?.click()} disabled={restituyendoDocx}>
-                                                        <ArrowUpTrayIcon className="w-4 h-4" />
-                                                        {restituyendoDocx ? 'Procesando .docx...' : 'Subir .docx de la respuesta'}
-                                                    </Button>
-                                                </div>
+                                                {!isTauri() && (
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            ref={docxRespuestaInputRef}
+                                                            type="file"
+                                                            accept=".docx"
+                                                            className="hidden"
+                                                            onChange={e => {
+                                                                const file = e.target.files?.[0];
+                                                                if (file) handleSubirRespuestaDocx(file);
+                                                                e.target.value = '';
+                                                            }}
+                                                        />
+                                                        <Button type="button" variant="secondary" onClick={() => docxRespuestaInputRef.current?.click()} disabled={restituyendoDocx}>
+                                                            <ArrowUpTrayIcon className="w-4 h-4" />
+                                                            {restituyendoDocx ? 'Procesando .docx...' : 'Subir .docx de la respuesta'}
+                                                        </Button>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <p className="text-xs text-slate-500 mb-1.5">
-                                                Si la IA te ha dado la respuesta como archivo .docx (para conservar formato/imágenes),
-                                                súbelo aquí en vez de pegar el texto -- los códigos PERS_/GRUPO_ deben quedar intactos.
-                                            </p>
+                                            {!isTauri() && (
+                                                <p className="text-xs text-slate-500 mb-1.5">
+                                                    Si la IA te ha dado la respuesta como archivo .docx (para conservar formato/imágenes),
+                                                    súbelo aquí en vez de pegar el texto -- los códigos PERS_/GRUPO_ deben quedar intactos.
+                                                </p>
+                                            )}
                                             {errorRestitucionDocx && (
                                                 <p className="text-sm text-red-600 flex items-center gap-1.5 mb-1.5">
                                                     <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />

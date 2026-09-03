@@ -1,3 +1,5 @@
+import { api } from './api';
+
 export interface ElementoDetectado {
     id: string;
     code: string;
@@ -68,22 +70,14 @@ export async function detectarElementosConGroq(params: DetectarElementosParams):
 }
 
 export async function generarPromptDeteccion(params: DetectarElementosParams): Promise<string> {
-    const response = await fetch('/api/prompts/deteccion-curricular/prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: cuerpo(params),
+    const data = await api.post<{ prompt: string }>('/prompts/deteccion-curricular/prompt', {
+        course_id: params.courseId,
+        documento: params.documento,
+        tipos: params.tipos,
     });
-    if (!response.ok) throw new Error(await extraerDetalle(response));
-    const data: { prompt: string } = await response.json();
     return data.prompt;
 }
 
 export async function validarRespuestaDeteccion(courseId: string, tipos: string[], respuesta: string): Promise<ResultadoDeteccion> {
-    const response = await fetch('/api/prompts/deteccion-curricular/validar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ course_id: courseId, tipos, respuesta }),
-    });
-    if (!response.ok) throw new Error(await extraerDetalle(response));
-    return await response.json();
+    return api.post<ResultadoDeteccion>('/prompts/deteccion-curricular/validar', { course_id: courseId, tipos, respuesta });
 }

@@ -6,6 +6,8 @@
 // resultado final (anonimizado), listo para reintegrar en el cliente igual
 // que ya hace AiToolsView.tsx.
 
+import { api } from './api';
+
 export interface GenerarAdaptacionParams {
     material: string;
     notasAlumno: string;
@@ -59,12 +61,9 @@ export async function generarAdaptacionConGroq(params: GenerarAdaptacionParams):
 }
 
 export async function generarPromptAdaptacion(params: GenerarAdaptacionParams): Promise<string> {
-    const response = await fetch('/api/prompts/adaptacion-material/prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ material: params.material, notas_alumno: params.notasAlumno }),
+    const data = await api.post<{ prompt: string }>('/prompts/adaptacion-material/prompt', {
+        material: params.material,
+        notas_alumno: params.notasAlumno,
     });
-    if (!response.ok) throw new Error(await extraerDetalle(response));
-    const data: { prompt: string } = await response.json();
     return data.prompt;
 }

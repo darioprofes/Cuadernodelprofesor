@@ -67,21 +67,27 @@ const NAV_SECTIONS: NavSection[] = [
             { view: 'criteria', label: 'Informes', icon: ChartBarIcon },
         ],
     },
-    // Depende del backend Python (services/anonimizador.py) -- sin
-    // equivalente en escritorio (Tauri/Rust), mismo criterio ya aplicado a
-    // la importación de horario en PDF (ImportScheduleModal.tsx::PDF_IMPORT_AVAILABLE).
     // "Anonimizador", no "Herramientas IA" genérico -- eso es lo que hay
     // hoy de verdad; cuando se añadan más generadores (ver hoja de ruta),
     // cada uno gana su propia entrada aquí en vez de esconderse todos
     // detrás de un nombre paraguas.
-    ...(isTauri() ? [] : [{
+    //
+    // Anonimizador depende del backend Python (services/anonimizador.py,
+    // NER con spaCy) -- sin equivalente viable en escritorio (Tauri/Rust,
+    // requeriría empaquetar un modelo NER completo), mismo criterio ya
+    // aplicado a la importación de horario en PDF
+    // (ImportScheduleModal.tsx::PDF_IMPORT_AVAILABLE), así que se queda
+    // oculto en Tauri. Adaptar material NEAE y Detección curricular SÍ
+    // tienen backend Rust (solo la vía "online" copiar/pegar, ver
+    // services/prompts.rs) y se muestran en las dos plataformas.
+    {
         label: 'Herramientas',
         items: [
-            { view: 'ai-tools' as View, label: 'Anonimizador', icon: SparklesIcon },
+            ...(isTauri() ? [] : [{ view: 'ai-tools' as View, label: 'Anonimizador', icon: SparklesIcon }]),
             { view: 'adaptar-material' as View, label: 'Adaptar material NEAE', icon: AcademicCapIcon },
             { view: 'deteccion-curricular' as View, label: 'Detección curricular', icon: MagnifyingGlassIcon },
         ],
-    }]),
+    },
 ];
 
 // Solo "Herramientas" arranca plegada -- pedido explícito (de momento

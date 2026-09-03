@@ -26,7 +26,7 @@ use serde_json::{json, Value};
 
 use crate::error::ApiError;
 
-use super::{basic_knowledge, courses, enrollments, evaluation_criteria, preferences, programming_units};
+use super::{basic_knowledge, courses, enrollments, evaluation_criteria, key_competences, preferences, programming_units, specific_competences};
 
 // ---------- helpers de extracción de body ----------
 
@@ -961,6 +961,248 @@ pub fn validar_instrumento(conn: &Connection, body: Value) -> Result<Value, ApiE
     Ok(json!({"instrumento": instrumento, "codigosDescartados": codigos_descartados}))
 }
 
+// Puerto de api/app/services/prompts/adaptacion_material.py::construir_prompt().
+// A diferencia del resto de generadores, la entrada YA viene anonimizada por
+// el profesor a mano (no hay Anonimizador en escritorio, ver
+// project_tauri_ia_scope.md) y la respuesta pegada se usa tal cual, sin un
+// paso de "validar" aparte -- por eso solo hace falta esta función, ninguna
+// `validar_adaptacion_material`.
+pub fn generar_prompt_adaptacion_material(_conn: &Connection, body: Value) -> Result<Value, ApiError> {
+    let material = req_str(&body, "material")?;
+    let notas_alumno = body.get("notas_alumno").and_then(Value::as_str).unwrap_or("");
+
+    let prompt = format!(
+        "Eres un profesor de apoyo especializado en adaptar materiales didácticos para \
+alumnado con necesidades específicas de apoyo educativo (NEAE), alumnado repetidor o con \
+programas específicos.
+
+<material_original>
+{material}
+</material_original>
+
+<indicaciones_para_ti_sobre_como_adaptar>
+Esto NO son peticiones del alumno ni contenido de la tarea -- son pautas dirigidas A TI, el \
+profesor de apoyo, para que decidas CÓMO reescribir <material_original>. No cites estas \
+indicaciones, no las repitas, no las conviertas en parte del enunciado ni en algo que el alumno \
+lea: son información de fondo tuya, invisible para él.
+
+{notas_alumno}
+</indicaciones_para_ti_sobre_como_adaptar>
+
+<tarea>
+<material_original> es un enunciado/actividad TODAVÍA SIN HACER que el alumno va a recibir \
+directamente, tal cual escribas tu respuesta -- no es un encargo para que OTRA persona (el \
+alumno, otro profesor...) haga la adaptación, LA ADAPTACIÓN LA HACES TÚ AHORA MISMO, en tu \
+respuesta, usando <indicaciones_para_ti_sobre_como_adaptar> solo como guía de trabajo, nunca \
+como texto a incluir. Escribe el resultado exactamente en la misma forma que el original (un \
+enunciado de actividad, una pregunta de examen, un texto explicativo...) -- nunca una lista de \
+instrucciones sobre cómo adaptarlo, ni una explicación de qué cambios has hecho, ni una frase \
+dirigida a \"el alumno\" o \"el profesor\" pidiendo que alguien haga algo con el material. El alumno \
+debe leer el resultado y ponerse directamente a trabajar en él, sin enterarse de que ha sido \
+adaptado para él -- no menciones NEAE, necesidades, diagnósticos ni el PTI en el texto que \
+entregues.
+
+Dos límites igual de importantes:
+1. NO resuelvas ni completes la tarea tú: no rellenes tablas con respuestas, no contestes las \
+   preguntas que plantea, no hagas tú el procedimiento/experimento/ejercicio descrito. El alumno \
+   debe seguir teniendo que hacer exactamente la misma tarea de fondo (las mismas preguntas, los \
+   mismos pasos, el mismo objetivo de aprendizaje) -- una tabla para rellenar sigue vacía en tu \
+   resultado.
+2. Ajusta SOLO cómo se plantea: vocabulario más sencillo, frases más cortas, instrucciones más \
+   estructuradas (p.ej. en pasos numerados), o el formato si hace falta (p.ej. una tabla en vez \
+   de un párrafo largo). Si toca añadir apoyo visual, INSÉRTALO tú mismo directamente en el \
+   texto -- un emoji o pictograma junto a cada paso (p.ej. \"💧 Mide la humedad del suelo\") -- en \
+   vez de escribir una instrucción sobre ello (nunca frases como \"usa un pictograma de 💧\" o \
+   \"añade aquí un icono\"): el propio emoji ya es el apoyo visual, no algo que el alumno tenga que \
+   buscar o poner él.
+
+No inventes datos personales nuevos (nombres, edades, diagnósticos...) que no estén ya en \
+<indicaciones_para_ti_sobre_como_adaptar>. Si aparecen códigos como PERS_XXXXXX o GRUPO_XXXXXX, son anonimización \
+real de datos personales -- déjalos EXACTAMENTE igual en el resultado, no los traduzcas ni los \
+elimines.
+</tarea>
+
+<formato_de_salida>
+Devuelve ÚNICAMENTE el enunciado ya adaptado, listo para entregar al alumno tal cual, en texto/ \
+Markdown plano -- sin explicaciones antes ni después, sin envolverlo en bloques de código, sin \
+ninguna respuesta/solución/dato relleno que el alumno tenga que aportar él mismo, y sin ninguna \
+mención a que el texto ha sido adaptado o a las necesidades del alumno.
+</formato_de_salida>"
+    );
+
+    Ok(json!({"prompt": prompt}))
+}
+
+// Puerto de api/app/services/prompts/deteccion_curricular.py.
+fn elementos_por_tipo(conn: &Connection, course_id: &str, tipo: &str) -> Result<Vec<(String, String, String)>, ApiError> {
+    let extraer = |v: Value| -> Vec<(String, String, String)> {
+        v.as_array().into_iter().flatten()
+            .filter_map(|e| Some((
+                e.get("id")?.as_str()?.to_string(),
+                e.get("code")?.as_str()?.to_string(),
+                e.get("description")?.as_str()?.to_string(),
+            )))
+            .collect()
+    };
+    match tipo {
+        "criterios" => Ok(extraer(evaluation_criteria::list(conn, course_id)?)),
+        "saberes" => Ok(extraer(basic_knowledge::list(conn, course_id)?)),
+        "competencias_especificas" => Ok(extraer(specific_competences::list(conn, course_id)?)),
+        // Las competencias clave son globales (sin course_id) -- se listan
+        // todas, y se aplanan también sus descriptores operativos como
+        // elementos detectables aparte, cada uno con su propio código real.
+        "competencias_clave" => {
+            let mut elementos = vec![];
+            for kc in key_competences::list(conn)?.as_array().into_iter().flatten() {
+                if let (Some(id), Some(code), Some(desc)) = (
+                    kc.get("id").and_then(Value::as_str),
+                    kc.get("code").and_then(Value::as_str),
+                    kc.get("description").and_then(Value::as_str),
+                ) {
+                    elementos.push((id.to_string(), code.to_string(), desc.to_string()));
+                }
+                for d in kc.get("descriptors").and_then(Value::as_array).into_iter().flatten() {
+                    if let (Some(id), Some(code), Some(desc)) = (
+                        d.get("id").and_then(Value::as_str),
+                        d.get("code").and_then(Value::as_str),
+                        d.get("description").and_then(Value::as_str),
+                    ) {
+                        elementos.push((id.to_string(), code.to_string(), desc.to_string()));
+                    }
+                }
+            }
+            Ok(elementos)
+        }
+        _ => Err(ApiError::bad_request(format!("Tipo de elemento curricular desconocido: {tipo}"))),
+    }
+}
+
+fn etiqueta_tipo_curricular(tipo: &str) -> Option<&'static str> {
+    match tipo {
+        "criterios" => Some("Criterios de evaluación"),
+        "saberes" => Some("Saberes básicos"),
+        "competencias_especificas" => Some("Competencias específicas"),
+        "competencias_clave" => Some("Competencias clave / descriptores operativos"),
+        _ => None,
+    }
+}
+
+fn seccion_tipo_curricular(tipo: &str) -> &'static str {
+    match tipo {
+        "criterios" => "criterios_de_evaluacion",
+        "saberes" => "saberes_basicos",
+        "competencias_especificas" => "competencias_especificas",
+        "competencias_clave" => "competencias_clave",
+        _ => "elementos",
+    }
+}
+
+pub fn generar_prompt_deteccion_curricular(conn: &Connection, body: Value) -> Result<Value, ApiError> {
+    let course_id = req_str(&body, "course_id")?;
+    let documento = req_str(&body, "documento")?;
+    let tipos = str_list(&body, "tipos");
+
+    if tipos.is_empty() {
+        return Err(ApiError::bad_request("Elige al menos un tipo de elemento curricular a detectar."));
+    }
+
+    let curso = courses::get_one(conn, course_id)?
+        .ok_or_else(|| ApiError::bad_request("Curso no encontrado."))?;
+    let subject = curso["subject"].as_str().unwrap_or("");
+    let level = curso["level"].as_str().unwrap_or("");
+
+    let mut secciones: Vec<String> = vec![];
+    for tipo in &tipos {
+        let elementos = elementos_por_tipo(conn, course_id, tipo)?;
+        if elementos.is_empty() { continue; }
+        let etiqueta_seccion = seccion_tipo_curricular(tipo);
+        let lista = elementos.iter().map(|(_id, code, description)| format!("- {code}: {description}")).collect::<Vec<_>>().join("\n");
+        secciones.push(format!("<{etiqueta_seccion}>\n{lista}\n</{etiqueta_seccion}>"));
+    }
+
+    if secciones.is_empty() {
+        return Err(ApiError::bad_request(
+            "Este curso no tiene cargado ningún elemento curricular de los tipos elegidos -- añádelos en Ajustes antes de usar esta herramienta."
+        ));
+    }
+
+    let etiquetas_elegidas = tipos.iter().filter_map(|t| etiqueta_tipo_curricular(t)).collect::<Vec<_>>().join(", ");
+    let secciones_txt = secciones.join("\n\n");
+
+    let prompt = format!(
+        "Eres un profesor de {subject} de {level} revisando un documento propio \
+(apuntes, descripción de actividades...) para identificar qué elementos curriculares moviliza de \
+verdad, de estos tipos: {etiquetas_elegidas}.
+
+<documento>
+{documento}
+</documento>
+
+{secciones_txt}
+
+<tarea>
+Devuelve el MISMO documento, sin resumirlo ni reescribirlo (puedes ajustar puntuación mínima si \
+hace falta para insertar una anotación con claridad, pero el contenido y el orden se mantienen \
+igual) -- inserta una anotación justo después de cada pasaje que trabaje de verdad un elemento de \
+las listas de arriba, con el formato EXACTO [[código]] (doble corchete, así lo distingues de un \
+enlace Markdown normal). Usa SOLO los códigos de las listas dadas -- no inventes ninguno fuera de \
+ellas, si un código no existe se descartará al procesar tu respuesta. No hace falta anotar todos \
+los elementos de las listas, solo los que el documento trabaje de verdad -- no fuerces relaciones \
+que no existan. Un mismo pasaje puede llevar varias anotaciones seguidas si moviliza más de un \
+elemento, p.ej. \"...miden la humedad del suelo [[2.3]][[B.4]]...\".
+</tarea>
+
+<formato_de_salida>
+Devuelve ÚNICAMENTE el documento anotado en texto/Markdown plano, sin explicaciones antes ni \
+después, sin envolverlo en bloques de código.
+</formato_de_salida>"
+    );
+
+    Ok(json!({"prompt": prompt}))
+}
+
+pub fn validar_deteccion_curricular(conn: &Connection, body: Value) -> Result<Value, ApiError> {
+    let course_id = req_str(&body, "course_id")?;
+    let tipos = str_list(&body, "tipos");
+    let respuesta = body.get("respuesta").and_then(Value::as_str).unwrap_or("");
+
+    let mut codigo_a_elemento: HashMap<String, (String, String, String, String)> = HashMap::new();
+    for tipo in &tipos {
+        for (id, code, description) in elementos_por_tipo(conn, course_id, tipo)? {
+            codigo_a_elemento.insert(code.clone(), (tipo.clone(), id, code, description));
+        }
+    }
+
+    let mut elementos: BTreeMap<String, Vec<Value>> = tipos.iter().map(|t| (t.clone(), vec![])).collect();
+    let mut ids_vistos: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut codigos_descartados: Vec<String> = vec![];
+
+    let re = Regex::new(r"\[\[([^\[\]]+)\]\]").unwrap();
+    for cap in re.captures_iter(respuesta) {
+        let codigo = cap[1].trim();
+        match codigo_a_elemento.get(codigo) {
+            None => {
+                if !codigos_descartados.iter().any(|c| c == codigo) {
+                    codigos_descartados.push(codigo.to_string());
+                }
+            }
+            Some((tipo, elem_id, code, description)) => {
+                if ids_vistos.contains(elem_id) { continue; }
+                ids_vistos.insert(elem_id.clone());
+                if let Some(list) = elementos.get_mut(tipo) {
+                    list.push(json!({"id": elem_id, "code": code, "description": description}));
+                }
+            }
+        }
+    }
+
+    Ok(json!({
+        "documentoAnotado": respuesta,
+        "elementos": elementos,
+        "codigosDescartados": codigos_descartados,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::db;
@@ -1115,6 +1357,58 @@ mod tests {
 
         let err = dispatch(&conn, "POST", "/prompts/instrumento-evaluacion/prompt", Some(json!({
             "course_id": course_id, "criterion_ids": [], "tool_type": "checklist",
+        }))).unwrap_err();
+        assert_eq!(err.status, 400);
+    }
+
+    #[test]
+    fn generar_prompt_adaptacion_material_incluye_material_y_notas() {
+        let conn = db::test_connection();
+
+        let resultado = dispatch(&conn, "POST", "/prompts/adaptacion-material/prompt", Some(json!({
+            "material": "Explica el ciclo del agua en 5 pasos.",
+            "notas_alumno": "Alumno: PERS_000001\nNecesidades NEAE: dislexia",
+        }))).unwrap();
+
+        let prompt = resultado["prompt"].as_str().unwrap();
+        assert!(prompt.contains("Explica el ciclo del agua en 5 pasos."));
+        assert!(prompt.contains("PERS_000001"));
+        assert!(prompt.contains("dislexia"));
+    }
+
+    #[test]
+    fn generar_prompt_deteccion_curricular_y_validar_round_trip() {
+        let conn = db::test_connection();
+        let course_id = seed_curso_con_curriculo(&conn);
+
+        let resultado = dispatch(&conn, "POST", "/prompts/deteccion-curricular/prompt", Some(json!({
+            "course_id": course_id,
+            "documento": "El agua cambia de estado según la temperatura.",
+            "tipos": ["criterios", "saberes"],
+        }))).unwrap();
+        let prompt = resultado["prompt"].as_str().unwrap();
+        assert!(prompt.contains("1.1: Explica el ciclo del agua"));
+        assert!(prompt.contains("A.1: El ciclo del agua"));
+
+        let documento_anotado = "El agua cambia de estado [[1.1]][[A.1]] según la temperatura [[9.9]].";
+        let validado = dispatch(&conn, "POST", "/prompts/deteccion-curricular/validar", Some(json!({
+            "course_id": course_id,
+            "tipos": ["criterios", "saberes"],
+            "respuesta": documento_anotado,
+        }))).unwrap();
+
+        assert_eq!(validado["elementos"]["criterios"].as_array().unwrap().len(), 1);
+        assert_eq!(validado["elementos"]["saberes"].as_array().unwrap().len(), 1);
+        assert_eq!(validado["codigosDescartados"].as_array().unwrap(), &vec![json!("9.9")]);
+    }
+
+    #[test]
+    fn generar_prompt_deteccion_curricular_sin_tipos_falla() {
+        let conn = db::test_connection();
+        let course_id = seed_curso_con_curriculo(&conn);
+
+        let err = dispatch(&conn, "POST", "/prompts/deteccion-curricular/prompt", Some(json!({
+            "course_id": course_id, "documento": "...", "tipos": [],
         }))).unwrap_err();
         assert_eq!(err.status, 400);
     }

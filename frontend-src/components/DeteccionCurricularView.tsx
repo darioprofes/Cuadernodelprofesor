@@ -15,6 +15,7 @@ import {
     detectarElementosConGroq, detectarElementosConIA, generarPromptDeteccion, validarRespuestaDeteccion,
     type ResultadoDeteccion, type ElementoDetectado,
 } from '../services/generarDeteccionCurricular';
+import { isTauri } from '@tauri-apps/api/core';
 
 type Via = 'groq' | 'local' | 'online';
 
@@ -68,7 +69,10 @@ const DeteccionCurricularView: React.FC<DeteccionCurricularViewProps> = ({
     const [errorExtraccion, setErrorExtraccion] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [via, setVia] = useState<Via>('groq');
+    // En escritorio solo hay backend Rust para la vía "online" (copiar/
+    // pegar) -- Groq y la IA local necesitan el backend Python, sin
+    // equivalente en Tauri (ver project_tauri_ia_scope.md).
+    const [via, setVia] = useState<Via>(isTauri() ? 'online' : 'groq');
     const [generando, setGenerando] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [promptOnline, setPromptOnline] = useState<string | null>(null);
@@ -241,23 +245,25 @@ const DeteccionCurricularView: React.FC<DeteccionCurricularViewProps> = ({
                 <div>
                     <div className="flex items-center justify-between mb-1.5">
                         <p className="text-sm font-semibold text-slate-700">Documento</p>
-                        <div className="flex items-center gap-2">
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept=".docx,.pptx,.pdf"
-                                className="hidden"
-                                onChange={e => {
-                                    const file = e.target.files?.[0];
-                                    if (file) handleSubirDocumento(file);
-                                    e.target.value = '';
-                                }}
-                            />
-                            <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={subiendoDocumento}>
-                                <ArrowUpTrayIcon className="w-4 h-4" />
-                                {subiendoDocumento ? 'Extrayendo...' : 'Subir documento'}
-                            </Button>
-                        </div>
+                        {!isTauri() && (
+                            <div className="flex items-center gap-2">
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".docx,.pptx,.pdf"
+                                    className="hidden"
+                                    onChange={e => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleSubirDocumento(file);
+                                        e.target.value = '';
+                                    }}
+                                />
+                                <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={subiendoDocumento}>
+                                    <ArrowUpTrayIcon className="w-4 h-4" />
+                                    {subiendoDocumento ? 'Extrayendo...' : 'Subir documento'}
+                                </Button>
+                            </div>
+                        )}
                     </div>
                     {avisoExtraccion && (
                         <p className="text-sm text-amber-700 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-1.5">
@@ -280,22 +286,24 @@ const DeteccionCurricularView: React.FC<DeteccionCurricularViewProps> = ({
                     />
                 </div>
 
-                <div className="flex gap-1.5">
-                    {([
-                        { value: 'groq', label: 'Groq (rápido)' },
-                        { value: 'local', label: 'IA local' },
-                        { value: 'online', label: 'IA online (última opción)' },
-                    ] as { value: Via; label: string }[]).map(v => (
-                        <button
-                            key={v.value}
-                            type="button"
-                            onClick={() => { setVia(v.value); setPromptOnline(null); }}
-                            className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === v.value ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
-                        >
-                            {v.label}
-                        </button>
-                    ))}
-                </div>
+                {!isTauri() && (
+                    <div className="flex gap-1.5">
+                        {([
+                            { value: 'groq', label: 'Groq (rápido)' },
+                            { value: 'local', label: 'IA local' },
+                            { value: 'online', label: 'IA online (última opción)' },
+                        ] as { value: Via; label: string }[]).map(v => (
+                            <button
+                                key={v.value}
+                                type="button"
+                                onClick={() => { setVia(v.value); setPromptOnline(null); }}
+                                className={`flex-1 text-sm font-medium px-3 py-1.5 rounded-full border transition-colors ${via === v.value ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                            >
+                                {v.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
 
                 {via === 'local' && !iaLocalDisponible && (
                     <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
