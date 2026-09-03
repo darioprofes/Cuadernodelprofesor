@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon, ArrowPathIcon, GlobeIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
 import Input from './Input';
@@ -24,6 +24,7 @@ import BulkGradeImportModal from './BulkGradeImportModal';
 import BulkAddStudentModal from './BulkAddStudentModal';
 import StudentSummaryModal from './StudentSummaryModal';
 import StudentPersonalDataModal from './StudentPersonalDataModal';
+import StudentFlagsModal from './StudentFlagsModal';
 import PlanoClaseModal from './PlanoClaseModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ImportarDesdeSAModal from './ImportarDesdeSAModal';
@@ -139,6 +140,18 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     allClasses.filter(c => allCourses.find(course => course.id === c.courseId)?.type !== 'other')
   ), [allClasses, allCourses]);
 
+  // Nivel/grupo de la propia CLASE (no del alumno) -- para detectar cuándo
+  // el grupo de referencia real de un alumno (ultimoCursoSauce/
+  // ultimaUnidadSauce) no coincide, típicamente en optativas con alumnado
+  // mezclado de varios grupos (ver comentario en types.ts junto a esos
+  // campos).
+  const classLevel = allCourses.find(c => c.id === classData.courseId)?.level;
+  const classGrupo = classData.grupo;
+  const grupoReferenciaDifiere = (student: Student): boolean => (
+    (!!student.ultimoCursoSauce && !!classLevel && student.ultimoCursoSauce !== classLevel) ||
+    (!!student.ultimaUnidadSauce && !!classGrupo && student.ultimaUnidadSauce !== classGrupo)
+  );
+
   // Nivel/grupo REALES de cada alumno (de sus matrículas de verdad en
   // otras clases), no solo lo que trajera SAUCE -- mismo criterio y mismo
   // motivo que en ClassManager.tsx (Ajustes → Clases y Alumnado): sin
@@ -204,6 +217,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
   const [studentContextMenu, setStudentContextMenu] = useState<{ x: number; y: number; student: Student } | null>(null);
   const [fichaEditTarget, setFichaEditTarget] = useState<Student | null>(null);
+  const [flagsEditTargetId, setFlagsEditTargetId] = useState<string | null>(null);
   const [isPlanoOpen, setIsPlanoOpen] = useState(false);
   const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
   const [isEnrollExistingOpen, setIsEnrollExistingOpen] = useState(false);
@@ -1061,6 +1075,20 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                         >
                             <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
                             <AcneaeTag tags={student.acneae}/>
+                            {student.haRepetidoCurso && (
+                                <span title="Repite curso" className="flex-shrink-0 text-amber-600"><ArrowPathIcon className="w-3.5 h-3.5" /></span>
+                            )}
+                            {student.programaBilingue && (
+                                <span title="Programa bilingüe" className="flex-shrink-0 text-blue-600"><GlobeIcon className="w-3.5 h-3.5" /></span>
+                            )}
+                            {grupoReferenciaDifiere(student) && (
+                                <span
+                                    title={`Grupo de referencia real: ${student.ultimoCursoSauce || '?'} ${student.ultimaUnidadSauce || ''}`.trim()}
+                                    className="flex-shrink-0 text-[9px] font-bold leading-none text-white bg-slate-500 rounded px-1 py-0.5"
+                                >
+                                    {student.ultimaUnidadSauce || student.ultimoCursoSauce || '?'}
+                                </span>
+                            )}
                             <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                         </button>
                     </div>
@@ -1128,6 +1156,11 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           <button onClick={() => setIsEnrollExistingOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-blue-600 hover:bg-blue-100 bg-white rounded-md border border-slate-200 shadow-sm">
               + Matricular alumn@ ya existente
           </button>
+          {classData.students.length > 0 && (
+              <button onClick={() => setFlagsEditTargetId(classData.students[0].id)} className="w-full text-center py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 bg-white rounded-md border border-slate-200 shadow-sm">
+                  Editar datos rápidos (repetidor, bilingüe, NEAE...)
+              </button>
+          )}
       </div>
        {activePeriodId !== 'final' && (
           <div className="p-4 border-t flex justify-start items-center bg-slate-200 rounded-b-xl">
@@ -1256,6 +1289,21 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                               className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                           >
                               <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
+                              <AcneaeTag tags={student.acneae}/>
+                              {student.haRepetidoCurso && (
+                                  <span title="Repite curso" className="flex-shrink-0 text-amber-600"><ArrowPathIcon className="w-3.5 h-3.5" /></span>
+                              )}
+                              {student.programaBilingue && (
+                                  <span title="Programa bilingüe" className="flex-shrink-0 text-blue-600"><GlobeIcon className="w-3.5 h-3.5" /></span>
+                              )}
+                              {grupoReferenciaDifiere(student) && (
+                                  <span
+                                      title={`Grupo de referencia real: ${student.ultimoCursoSauce || '?'} ${student.ultimaUnidadSauce || ''}`.trim()}
+                                      className="flex-shrink-0 text-[9px] font-bold leading-none text-white bg-slate-500 rounded px-1 py-0.5"
+                                  >
+                                      {student.ultimaUnidadSauce || student.ultimoCursoSauce || '?'}
+                                  </span>
+                              )}
                               <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                           </button>
                       </div>
@@ -1375,6 +1423,13 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           student={fichaEditTarget}
           onSave={handleSaveFichaEdit}
       />
+      <StudentFlagsModal
+          isOpen={!!flagsEditTargetId}
+          onClose={() => setFlagsEditTargetId(null)}
+          students={classData.students}
+          initialStudentId={flagsEditTargetId}
+          onSave={handleSaveFichaEdit}
+      />
       {isPlanoOpen && (
           <PlanoClaseModal
               isOpen={isPlanoOpen}
@@ -1407,6 +1462,12 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                       onMouseDown={() => { setFichaEditTarget(studentContextMenu.student); setStudentContextMenu(null); }}
                   >
                       Editar ficha
+                  </button>
+                  <button
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700"
+                      onMouseDown={() => { setFlagsEditTargetId(studentContextMenu.student.id); setStudentContextMenu(null); }}
+                  >
+                      Editar datos rápidos
                   </button>
                   <button
                       className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600"
