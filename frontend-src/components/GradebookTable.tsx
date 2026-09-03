@@ -141,17 +141,29 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     allClasses.filter(c => allCourses.find(course => course.id === c.courseId)?.type !== 'other')
   ), [allClasses, allCourses]);
 
-  // Nivel/grupo de la propia CLASE (no del alumno) -- para detectar cuándo
-  // el grupo de referencia real de un alumno (ultimoCursoSauce/
-  // ultimaUnidadSauce) no coincide, típicamente en optativas con alumnado
-  // mezclado de varios grupos (ver comentario en types.ts junto a esos
-  // campos).
-  const classLevel = allCourses.find(c => c.id === classData.courseId)?.level;
-  const classGrupo = classData.grupo;
-  const grupoReferenciaDifiere = (student: Student): boolean => (
-    (!!student.ultimoCursoSauce && !!classLevel && student.ultimoCursoSauce !== classLevel) ||
-    (!!student.ultimaUnidadSauce && !!classGrupo && student.ultimaUnidadSauce !== classGrupo)
-  );
+  // Nivel/grupo de referencia real de cada alumno (ultimoCursoSauce/
+  // ultimaUnidadSauce) solo interesa mostrarlo en el Cuaderno cuando NO
+  // todo el alumnado de la clase comparte el mismo valor -- típicamente en
+  // optativas con alumnado mezclado de varios grupos, o en Bachillerato
+  // donde el profesor lo usa a mano para distinguir modalidades dentro de
+  // la misma clase (ver comentario en types.ts junto a esos campos).
+  // Compararlo contra el nivel/grupo nominal de la propia clase (como se
+  // hacía antes) mostraba el aviso en TODAS las filas en cuanto ese texto
+  // no coincidía exactamente, aunque fuera el mismo para todo el mundo --
+  // sin ninguna información real que aportar. Nivel y grupo se evalúan
+  // por separado: si solo uno de los dos varía, solo se muestra ese.
+  const { nivelReferenciaVaria, grupoReferenciaVaria } = useMemo(() => {
+    const niveles = new Set(classData.students.map(s => s.ultimoCursoSauce).filter(Boolean));
+    const grupos = new Set(classData.students.map(s => s.ultimaUnidadSauce).filter(Boolean));
+    return { nivelReferenciaVaria: niveles.size > 1, grupoReferenciaVaria: grupos.size > 1 };
+  }, [classData.students]);
+
+  const grupoReferenciaTexto = (student: Student): string | null => {
+    const partes = [];
+    if (nivelReferenciaVaria && student.ultimoCursoSauce) partes.push(student.ultimoCursoSauce);
+    if (grupoReferenciaVaria && student.ultimaUnidadSauce) partes.push(student.ultimaUnidadSauce);
+    return partes.length > 0 ? partes.join(' ') : null;
+  };
 
   // Nivel/grupo REALES de cada alumno (de sus matrículas de verdad en
   // otras clases), no solo lo que trajera SAUCE -- mismo criterio y mismo
@@ -1077,21 +1089,21 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                         >
                             <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
                             <AcneaeTag tags={student.acneae}/>
+                            <span className="truncate min-w-0 flex-1" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                             {student.haRepetidoCurso && (
                                 <span title="Repite curso" className="flex-shrink-0 text-amber-600"><ArrowPathIcon className="w-3.5 h-3.5" /></span>
                             )}
                             {student.programaBilingue && (
                                 <span title="Programa bilingüe" className="flex-shrink-0 text-blue-600"><GlobeIcon className="w-3.5 h-3.5" /></span>
                             )}
-                            {grupoReferenciaDifiere(student) && (
+                            {grupoReferenciaTexto(student) && (
                                 <span
-                                    title={`Grupo de referencia real: ${student.ultimoCursoSauce || '?'} ${student.ultimaUnidadSauce || ''}`.trim()}
+                                    title={`Grupo de referencia real: ${grupoReferenciaTexto(student)}`}
                                     className="flex-shrink-0 text-[9px] font-bold leading-none text-white bg-slate-500 rounded px-1 py-0.5"
                                 >
-                                    {student.ultimaUnidadSauce || student.ultimoCursoSauce || '?'}
+                                    {grupoReferenciaTexto(student)}
                                 </span>
                             )}
-                            <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                         </button>
                     </div>
                 </td>
@@ -1297,21 +1309,21 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                           >
                               <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
                               <AcneaeTag tags={student.acneae}/>
+                              <span className="truncate min-w-0 flex-1" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                               {student.haRepetidoCurso && (
                                   <span title="Repite curso" className="flex-shrink-0 text-amber-600"><ArrowPathIcon className="w-3.5 h-3.5" /></span>
                               )}
                               {student.programaBilingue && (
                                   <span title="Programa bilingüe" className="flex-shrink-0 text-blue-600"><GlobeIcon className="w-3.5 h-3.5" /></span>
                               )}
-                              {grupoReferenciaDifiere(student) && (
+                              {grupoReferenciaTexto(student) && (
                                   <span
-                                      title={`Grupo de referencia real: ${student.ultimoCursoSauce || '?'} ${student.ultimaUnidadSauce || ''}`.trim()}
+                                      title={`Grupo de referencia real: ${grupoReferenciaTexto(student)}`}
                                       className="flex-shrink-0 text-[9px] font-bold leading-none text-white bg-slate-500 rounded px-1 py-0.5"
                                   >
-                                      {student.ultimaUnidadSauce || student.ultimoCursoSauce || '?'}
+                                      {grupoReferenciaTexto(student)}
                                   </span>
                               )}
-                              <span className="truncate" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                           </button>
                       </div>
                   </td>
