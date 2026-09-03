@@ -27,6 +27,13 @@ services:
     env_file:
       - .env
 
+    # Copias que el servidor se hace a sí mismo justo antes de una
+    # restauración automática desde escritorio (ver
+    # /root/scripts/restore_from_desktop.sh) -- expuestas aquí para que
+    # los endpoints /backup/pending-restores puedan listarlas/borrarlas.
+    volumes:
+      - /root/backups/pre_restore:/pre_restore_backups
+
     networks:
       - profe-internal
       - db-shared
