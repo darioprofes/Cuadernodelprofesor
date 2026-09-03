@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { ChevronDownIcon } from '../Icons';
 import { runHealthCheck, type HealthCheckIssue } from '../../services/healthCheck';
 import Card from '../Card';
@@ -8,6 +8,13 @@ import Badge from '../Badge';
 import { TYPOGRAPHY } from '../../theme/typography';
 import type { SettingsModalProps } from '../SettingsModal';
 import { openExternalLink } from '../../utils';
+import { api } from '../../services/api';
+
+interface PendingRestore {
+    filename: string;
+    created_at: string;
+    size_bytes: number;
+}
 
 type BackupManagerProps = Pick<SettingsModalProps,
     | 'importDatabase' | 'exportDatabase' | 'resetDatabase' | 'onOpenExportModal'
@@ -20,6 +27,31 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
     const { importDatabase, exportDatabase, resetDatabase, onOpenExportModal } = props;
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [healthIssues, setHealthIssues] = useState<HealthCheckIssue[] | null>(null);
+
+    // Copias que el servidor se hizo a sí mismo justo antes de una
+    // restauración automática desde escritorio (ver /root/scripts/
+    // restore_from_desktop.sh) -- se quedan pendientes de que el profesor
+    // confirme que todo está bien y las borre, o las use para deshacer.
+    const [pendingRestores, setPendingRestores] = useState<PendingRestore[]>([]);
+    const [deletingFile, setDeletingFile] = useState<string | null>(null);
+
+    useEffect(() => {
+        api.get<PendingRestore[]>('/backup/pending-restores')
+            .then(setPendingRestores)
+            .catch(() => {});
+    }, []);
+
+    const handleDismissPendingRestore = async (filename: string) => {
+        setDeletingFile(filename);
+        try {
+            await api.delete(`/backup/pending-restores/${encodeURIComponent(filename)}`);
+            setPendingRestores(prev => prev.filter(p => p.filename !== filename));
+        } catch (e) {
+            alert(`No se pudo borrar: ${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setDeletingFile(null);
+        }
+    };
 
     const handleImportClick = () => fileInputRef.current?.click();
 
@@ -150,6 +182,36 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
                     )
                 )}
             </div>
+
+            {pendingRestores.length > 0 && (
+                <div className="pt-6 border-t border-amber-200 mt-8">
+                    <h4 className="text-lg font-semibold text-amber-800 mb-2">Copias pendientes de confirmar</h4>
+                    <p className="text-sm text-slate-600 mb-3">
+                        El servidor se restauró automáticamente desde la app de escritorio y se guardó a sí mismo antes de
+                        sustituir sus datos, por si algo saliera mal. Comprueba que todo está bien y bórralas cuando ya no las necesites.
+                    </p>
+                    <div className="space-y-2">
+                        {pendingRestores.map(p => (
+                            <Alert key={p.filename} variant="warning">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <p className="font-bold">{p.filename}</p>
+                                        <p className="text-xs">{new Date(p.created_at).toLocaleString('es-ES')} · {(p.size_bytes / 1024).toFixed(0)} KB</p>
+                                    </div>
+                                    <Button
+                                        variant="secondary"
+                                        onClick={() => handleDismissPendingRestore(p.filename)}
+                                        disabled={deletingFile === p.filename}
+                                        className="flex-shrink-0"
+                                    >
+                                        {deletingFile === p.filename ? 'Borrando...' : 'Confirmar y borrar'}
+                                    </Button>
+                                </div>
+                            </Alert>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <div className="pt-6 border-t border-red-200 mt-8">
                 <h4 className="text-lg font-semibold text-red-800 mb-2">Zona de Peligro</h4>

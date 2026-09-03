@@ -1,4 +1,5 @@
 import base64
+import os
 import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -7,6 +8,15 @@ from typing import Any
 from psycopg.types.json import Json
 
 from services.db import get_conn
+
+# Carpeta del servidor (/root/backups/pre_restore en el host) donde
+# restore_from_desktop.sh deja una copia del estado del servidor justo
+# antes de sustituirlo por una restauración desde escritorio -- montada
+# como volumen en compose.yaml, no es parte del SQLite/Postgres de
+# dominio. Sin montar, esta carpeta simplemente no existe dentro del
+# contenedor y list_pending_restores() devuelve una lista vacía en vez de
+# fallar.
+_PRE_RESTORE_DIR = "/pre_restore_backups"
 
 # Todas las tablas "reales" del sistema (todo lo que sobrevivió a la Fase 6 —
 # app_db/app_db_history/student_photos, forma vieja, ya no existen). Orden
@@ -215,3 +225,43 @@ def import_all(dump: dict[str, list[Any]]) -> None:
                     ]
 
                     cur.execute(f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})", values)
+
+
+def list_pending_restores() -> list[dict[str, Any]]:
+
+    if not os.path.isdir(_PRE_RESTORE_DIR):
+        return []
+
+    items = []
+
+    for filename in sorted(os.listdir(_PRE_RESTORE_DIR)):
+
+        if filename == "PENDING" or not filename.endswith(".json"):
+            continue
+
+        path = os.path.join(_PRE_RESTORE_DIR, filename)
+
+        items.append({
+            "filename": filename,
+            "created_at": datetime.fromtimestamp(os.path.getmtime(path)).isoformat(),
+            "size_bytes": os.path.getsize(path),
+        })
+
+    return items
+
+
+def delete_pending_restore(filename: str) -> bool:
+
+    # Evita cualquier salida de la carpeta vía "../" en el nombre -- solo
+    # se aceptan nombres de archivo simples, nunca rutas.
+    if "/" in filename or "\\" in filename or filename in ("", ".", ".."):
+        return False
+
+    path = os.path.join(_PRE_RESTORE_DIR, filename)
+
+    if not os.path.isfile(path):
+        return False
+
+    os.remove(path)
+
+    return True

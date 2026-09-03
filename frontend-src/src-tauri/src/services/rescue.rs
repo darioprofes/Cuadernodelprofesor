@@ -12,7 +12,7 @@
 // SQLite de dominio -- así nunca viaja dentro de un export_all()/
 // import_all() de backup.rs, ni por accidente.
 
-use std::io::Read;
+use std::io::{Read, Write};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -110,7 +110,7 @@ fn fetch_encrypted(repo: &str, token: &str) -> Result<Vec<u8>, ApiError> {
     base64::engine::general_purpose::STANDARD.decode(cleaned).map_err(ApiError::internal)
 }
 
-fn decrypt(encrypted: &[u8], key_path: &str) -> Result<Vec<u8>, ApiError> {
+fn load_identity(key_path: &str) -> Result<age::x25519::Identity, ApiError> {
     let key_file = std::fs::read_to_string(key_path)
         .map_err(|e| ApiError::bad_request(format!("No se pudo leer la clave privada en '{key_path}': {e}")))?;
 
@@ -119,9 +119,13 @@ fn decrypt(encrypted: &[u8], key_path: &str) -> Result<Vec<u8>, ApiError> {
         .find(|line| line.starts_with("AGE-SECRET-KEY-1"))
         .ok_or_else(|| ApiError::bad_request("Ese archivo no contiene una clave privada age válida (se esperaba una línea AGE-SECRET-KEY-1...)."))?;
 
-    let identity: age::x25519::Identity = identity_line
+    identity_line
         .parse()
-        .map_err(|e| ApiError::bad_request(format!("Clave privada age inválida: {e}")))?;
+        .map_err(|e: &str| ApiError::bad_request(format!("Clave privada age inválida: {e}")))
+}
+
+fn decrypt(encrypted: &[u8], key_path: &str) -> Result<Vec<u8>, ApiError> {
+    let identity = load_identity(key_path)?;
 
     let decryptor = match age::Decryptor::new(encrypted)
         .map_err(|e| ApiError::internal(format!("El archivo descargado no es un volcado age válido: {e}")))?
@@ -187,11 +191,116 @@ pub fn confirm_import(app: &tauri::AppHandle, conn: &mut rusqlite::Connection) -
     crate::services::backup::import_all(conn, &dump)
 }
 
+// El nombre del archivo que recoge el servidor (ver .github/workflows/
+// restore.yml + /root/scripts/restore_from_desktop.sh) -- fijo a
+// propósito, el flujo de trabajo se dispara por ESTE path exacto.
+const UPLOAD_FILE_PATH: &str = "restore-from-desktop.json.age";
+
+fn encrypt_for_upload(plaintext: &[u8], key_path: &str) -> Result<Vec<u8>, ApiError> {
+    // Cifra con la clave pública derivada de la MISMA clave privada que ya
+    // usas para descifrar las copias del servidor -- una sola clave sirve
+    // en los dos sentidos (el servidor guarda una copia de esta misma
+    // clave privada para poder descifrar lo que subas). Ver el porqué de
+    // esta decisión en la conversación de diseño: un servidor comprometido
+    // ya tendría acceso directo a la base de datos real de todos modos,
+    // así que no protege nada tener dos claves separadas.
+    let identity = load_identity(key_path)?;
+    let recipient = identity.to_public();
+
+    let encryptor = age::Encryptor::with_recipients(vec![Box::new(recipient)])
+        .ok_or_else(|| ApiError::internal("No se pudo preparar el cifrado."))?;
+
+    let mut encrypted = Vec::new();
+    {
+        let mut writer = encryptor.wrap_output(&mut encrypted).map_err(ApiError::internal)?;
+        writer.write_all(plaintext).map_err(ApiError::internal)?;
+        writer.finish().map_err(ApiError::internal)?;
+    }
+    Ok(encrypted)
+}
+
+// PUT /repos/{repo}/contents/{path}: crea el archivo si no existe, o lo
+// sustituye si ya existe -- para sustituirlo, la API de GitHub exige el
+// sha del contenido actual (si no lo tenía, GitHub confunde la petición
+// con un intento de crear un archivo que ya existe y la rechaza), así que
+// primero se comprueba si ya hay uno.
+fn upload_encrypted(repo: &str, token: &str, encrypted: &[u8]) -> Result<(), ApiError> {
+    let url = format!("https://api.github.com/repos/{repo}/contents/{UPLOAD_FILE_PATH}");
+
+    let existing_sha = match github_get(&url, token) {
+        Ok(meta) => meta["sha"].as_str().map(|s| s.to_string()),
+        Err(_) => None,
+    };
+
+    let content_b64 = base64::engine::general_purpose::STANDARD.encode(encrypted);
+
+    let mut body = serde_json::json!({
+        "message": "Restauración pendiente desde escritorio",
+        "content": content_b64,
+    });
+    if let Some(sha) = existing_sha {
+        body["sha"] = serde_json::Value::String(sha);
+    }
+
+    ureq::put(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Accept", "application/vnd.github+json")
+        .set("User-Agent", "FaroDocente-modo-rescate")
+        .send_json(body)
+        .map_err(|e| match e {
+            ureq::Error::Status(401, _) | ureq::Error::Status(403, _) => ApiError::bad_request(
+                "GitHub rechaza el token -- revisa que tenga permiso de ESCRITURA en Contents para este repositorio, no solo lectura."
+            ),
+            other => ApiError::internal(other),
+        })?;
+
+    Ok(())
+}
+
+// "Volver al servidor": exporta lo que hay en esta copia de escritorio,
+// lo cifra con la misma clave y lo sube al repo -- el runner auto-alojado
+// del servidor recoge el archivo al instante (dispara por el propio
+// evento de push, no por sondeo) y hace el resto (copia de seguridad
+// previa del servidor + importación) sin que haga falta nada más aquí.
+pub fn upload_to_server(app: &tauri::AppHandle, conn: &rusqlite::Connection) -> Result<(), ApiError> {
+    let config = get_config(app)?;
+    let (repo, token, key_path) = require_config(&config)?;
+
+    let dump = crate::services::backup::export_all(conn)?;
+    let plaintext = serde_json::to_vec(&dump).map_err(ApiError::internal)?;
+
+    let encrypted = encrypt_for_upload(&plaintext, key_path)?;
+
+    upload_encrypted(repo, token, &encrypted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use age::secrecy::ExposeSecret;
-    use std::io::Write;
+
+    // encrypt_for_upload (usada por "Volver al servidor") + decrypt (la
+    // misma que usa el servidor real con el binario age -i) deben
+    // entenderse entre sí: cifra con la pública derivada de una identidad
+    // y comprueba que esa misma identidad la descifra de vuelta al texto
+    // exacto -- sin esto, un fallo de compatibilidad entre cómo esta app
+    // cifra y cómo `age -d -i` del servidor descifra no se detectaría
+    // hasta probarlo con el runner real.
+    #[test]
+    fn encrypt_for_upload_round_trip() {
+        let identity = age::x25519::Identity::generate();
+        let key_file_content = format!("{}\n", identity.to_string().expose_secret());
+        let tmp = std::env::temp_dir().join(format!("rescue_test_upload_key_{}.txt", uuid::Uuid::new_v4()));
+        std::fs::write(&tmp, key_file_content).unwrap();
+
+        let plaintext = br#"{"students":[{"id":"s1","nombre":"Ana"}]}"#;
+        let encrypted = encrypt_for_upload(plaintext, tmp.to_str().unwrap()).unwrap();
+        let decrypted = decrypt(&encrypted, tmp.to_str().unwrap()).unwrap();
+
+        std::fs::remove_file(&tmp).ok();
+
+        assert_eq!(decrypted, plaintext.to_vec());
+    }
 
     // Cifra con age (misma librería, sin depender del binario externo) y
     // comprueba que decrypt() reconstruye el texto exacto -- cubre el

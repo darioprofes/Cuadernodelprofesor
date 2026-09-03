@@ -56,6 +56,11 @@ const RescueSettings: React.FC = () => {
     const [importError, setImportError] = useState<string | null>(null);
     const [importedOk, setImportedOk] = useState(false);
 
+    const [isUploadConfirmOpen, setIsUploadConfirmOpen] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const [uploadedOk, setUploadedOk] = useState(false);
+
     useEffect(() => {
         invoke<RescueConfig>('rescue_get_config')
             .then(setConfig)
@@ -107,6 +112,20 @@ const RescueSettings: React.FC = () => {
         }
     };
 
+    const handleUploadToServer = async () => {
+        setUploading(true);
+        setUploadError(null);
+        try {
+            await invoke('rescue_upload_to_server');
+            setUploadedOk(true);
+            setIsUploadConfirmOpen(false);
+        } catch (e) {
+            setUploadError(describeError(e));
+        } finally {
+            setUploading(false);
+        }
+    };
+
     if (loading) return <p className="text-sm text-slate-500">Cargando...</p>;
 
     return (
@@ -132,7 +151,7 @@ const RescueSettings: React.FC = () => {
                         />
                     </div>
                     <div>
-                        <label className="text-xs font-medium text-slate-600">Token de acceso de GitHub (lectura del repo)</label>
+                        <label className="text-xs font-medium text-slate-600">Token de acceso de GitHub (lectura y escritura del repo)</label>
                         <Input
                             type="password"
                             value={config.github_token ?? ''}
@@ -205,6 +224,42 @@ const RescueSettings: React.FC = () => {
                     )}
                 </div>
             </Card>
+
+            <Card>
+                <div className="space-y-3">
+                    <p className="font-bold text-slate-800">Volver al servidor</p>
+                    <p className="text-sm text-slate-600">
+                        Cuando el servidor web vuelva a funcionar y hayas terminado de trabajar aquí en modo rescate, sube esta
+                        copia de escritorio para que sustituya lo que haya en el servidor. Se cifra y se sube a tu repositorio
+                        privado de GitHub; el servidor se hace su propia copia de seguridad antes de sustituir nada, por si acaso.
+                    </p>
+                    <Button variant="secondary" onClick={() => setIsUploadConfirmOpen(true)}>
+                        Subir esta copia al servidor
+                    </Button>
+                    {uploadedOk && (
+                        <Alert variant="success">
+                            Copia subida. El servidor la recogerá y la aplicará él solo en unos instantes -- comprueba luego en
+                            Ajustes → Copia de seguridad si ha quedado alguna copia previa pendiente de confirmar.
+                        </Alert>
+                    )}
+                </div>
+            </Card>
+
+            <Modal isOpen={isUploadConfirmOpen} onClose={() => setIsUploadConfirmOpen(false)} title="Confirmar subida al servidor" size="md">
+                <div className="space-y-4">
+                    <Alert variant="danger" title="Esto sustituirá TODO lo que hay en el servidor">
+                        No se puede deshacer desde aquí (el servidor se hace una copia de seguridad propia antes, pero recuperarla
+                        exige entrar a mano). Solo hazlo si esta copia de escritorio es la versión buena y más reciente.
+                    </Alert>
+                    {uploadError && <Alert variant="danger">{uploadError}</Alert>}
+                    <div className="flex justify-end gap-2">
+                        <Button variant="secondary" onClick={() => setIsUploadConfirmOpen(false)}>Cancelar</Button>
+                        <Button variant="danger" onClick={handleUploadToServer} disabled={uploading}>
+                            {uploading ? 'Subiendo...' : 'Sí, subir y sustituir el servidor'}
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
 
             <Modal isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} title="Confirmar restauración" size="md">
                 <div className="space-y-4">

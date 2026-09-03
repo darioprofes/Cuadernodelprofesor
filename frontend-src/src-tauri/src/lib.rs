@@ -141,6 +141,15 @@ fn rescue_confirm_import(app: tauri::AppHandle, state: tauri::State<db::DbState>
   services::rescue::confirm_import(&app, &mut conn)
 }
 
+// "Volver al servidor": exporta esta copia de escritorio, la cifra y la
+// sube -- el runner auto-alojado del servidor la recoge y hace el resto
+// (copia de seguridad previa del servidor + importación) por su cuenta.
+#[tauri::command]
+fn rescue_upload_to_server(app: tauri::AppHandle, state: tauri::State<db::DbState>) -> Result<(), error::ApiError> {
+  let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::rescue::upload_to_server(&app, &conn)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -212,7 +221,8 @@ pub fn run() {
       rescue_set_config,
       rescue_check,
       rescue_summarize_local,
-      rescue_confirm_import
+      rescue_confirm_import,
+      rescue_upload_to_server
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
