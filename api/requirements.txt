@@ -3,6 +3,10 @@ uvicorn[standard]==0.35.0
 psycopg[binary]==3.2.3
 python-multipart
 pdfplumber==0.11.4
+# Renderiza páginas de PDF a imagen (necesita el binario `pdftoppm` de
+# poppler-utils, instalado en el Dockerfile) -- usado solo por
+# services/fotos_pdf.py para recortar las fotos del alumnado.
+pdf2image==1.17.0
 requests==2.32.3
 # NER en español para el anonimizador de Herramientas IA (services/anonimizador.py).
 # El modelo se instala como wheel directo en vez de "spacy download" para no

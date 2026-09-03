@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+
 from fastapi.responses import Response
 
 from services.auth import require_auth
+from services.fotos_pdf import extraer_y_emparejar
 from services.photos import get_photo, set_photo, delete_photo
 
 router = APIRouter(prefix="/photos", tags=["Fotos de alumnado"], dependencies=[Depends(require_auth)])
@@ -55,3 +57,16 @@ def remove_photo(student_id: str):
         raise HTTPException(status_code=404, detail="Alumno no encontrado.")
 
     return {"ok": True}
+
+
+@router.post("/importar-pdf")
+async def importar_pdf(archivo: UploadFile = File(...)):
+
+    contenido_bytes = await archivo.read()
+
+    try:
+        resultado = extraer_y_emparejar(contenido_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"No se ha podido leer el PDF: {exc}")
+
+    return resultado

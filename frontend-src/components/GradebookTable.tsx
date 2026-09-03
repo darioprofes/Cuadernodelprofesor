@@ -25,6 +25,7 @@ import BulkAddStudentModal from './BulkAddStudentModal';
 import StudentSummaryModal from './StudentSummaryModal';
 import StudentPersonalDataModal from './StudentPersonalDataModal';
 import StudentFlagsModal from './StudentFlagsModal';
+import ImportPhotosModal from './ImportPhotosModal';
 import PlanoClaseModal from './PlanoClaseModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ImportarDesdeSAModal from './ImportarDesdeSAModal';
@@ -218,6 +219,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [studentContextMenu, setStudentContextMenu] = useState<{ x: number; y: number; student: Student } | null>(null);
   const [fichaEditTarget, setFichaEditTarget] = useState<Student | null>(null);
   const [flagsEditTargetId, setFlagsEditTargetId] = useState<string | null>(null);
+  const [isImportPhotosOpen, setIsImportPhotosOpen] = useState(false);
   const [isPlanoOpen, setIsPlanoOpen] = useState(false);
   const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
   const [isEnrollExistingOpen, setIsEnrollExistingOpen] = useState(false);
@@ -1161,6 +1163,11 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                   Editar datos rápidos (repetidor, bilingüe, NEAE...)
               </button>
           )}
+          {!isTauri() && (
+              <button onClick={() => setIsImportPhotosOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 bg-white rounded-md border border-slate-200 shadow-sm">
+                  Importar fotos desde PDF
+              </button>
+          )}
       </div>
        {activePeriodId !== 'final' && (
           <div className="p-4 border-t flex justify-start items-center bg-slate-200 rounded-b-xl">
@@ -1429,6 +1436,10 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           students={classData.students}
           initialStudentId={flagsEditTargetId}
           onSave={handleSaveFichaEdit}
+      />
+      <ImportPhotosModal
+          isOpen={isImportPhotosOpen}
+          onClose={() => setIsImportPhotosOpen(false)}
       />
       {isPlanoOpen && (
           <PlanoClaseModal
