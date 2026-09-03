@@ -488,13 +488,13 @@ const App = () => {
     // solo en memoria (activeView/activeClassId), así que "atrás" sacaba de
     // la app entera y refrescar volvía siempre a "Hoy". Sin librería de
     // rutas: la History API nativa basta para lo que se pide (solo qué
-    // sección, y de paso qué clase). Un cambio de SECCIÓN empuja una
-    // entrada nueva al historial; cambiar de CLASE sin cambiar de sección
-    // (el desplegable del Cuaderno) sustituye la entrada actual en vez de
-    // apilar una por cada clase que se mire de pasada.
+    // sección, y de paso qué clase). Cada cambio real (de sección O de
+    // clase dentro del Cuaderno) apila una entrada -- "atrás" tiene que
+    // poder volver clase a clase, no solo sección a sección (probado en
+    // real: sustituir la entrada al cambiar de clase hacía que "atrás" se
+    // saltara la clase anterior directo a la página de antes).
     const isSyncingFromPopstate = useRef(false);
     const isFirstUrlSync = useRef(true);
-    const lastSyncedView = useRef<View | null>(null);
     useEffect(() => {
         if (!initialized) return;
 
@@ -502,24 +502,19 @@ const App = () => {
 
         if (isSyncingFromPopstate.current) {
             isSyncingFromPopstate.current = false;
-            lastSyncedView.current = activeView;
             return;
         }
 
-        if (path === window.location.pathname) {
-            lastSyncedView.current = activeView;
-            return;
-        }
+        if (path === window.location.pathname) return;
 
-        if (isFirstUrlSync.current || lastSyncedView.current === activeView) {
-            // Primera sincronización tras cargar, o solo cambió la clase
-            // dentro de la misma sección: no apila una entrada nueva.
+        if (isFirstUrlSync.current) {
+            // Primera sincronización tras cargar: no apila una entrada
+            // nueva, solo deja la URL en sitio (p.ej. "/" -> "/hoy").
             history.replaceState(null, '', path);
         } else {
             history.pushState(null, '', path);
         }
         isFirstUrlSync.current = false;
-        lastSyncedView.current = activeView;
     }, [activeView, activeClassId, initialized]);
 
     useEffect(() => {
