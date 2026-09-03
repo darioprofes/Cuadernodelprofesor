@@ -8,7 +8,7 @@ use super::merge_object;
 
 const COLUMNS: &str = "id, student_id, class_id, acneae, centro_procedencia, ha_repetido_curso, \
     programa_bilingue, materias_pendientes, programa_especifico, neae, neae_detalle, medidas_educativas, \
-    indicaciones_pti, observaciones_tutor, plano_x, plano_y, plano_color, created_at, updated_at";
+    indicaciones_pti, observaciones_tutor, plano_x, plano_y, plano_color, orden, created_at, updated_at";
 
 fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
     let acneae: String = row.get(3)?;
@@ -30,8 +30,9 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
         "planoX": row.get::<_, Option<f64>>(14)?,
         "planoY": row.get::<_, Option<f64>>(15)?,
         "planoColor": row.get::<_, Option<String>>(16)?,
-        "createdAt": row.get::<_, String>(17)?,
-        "updatedAt": row.get::<_, String>(18)?,
+        "orden": row.get::<_, Option<i64>>(17)?,
+        "createdAt": row.get::<_, String>(18)?,
+        "updatedAt": row.get::<_, String>(19)?,
     }))
 }
 
@@ -61,18 +62,19 @@ pub fn create(conn: &Connection, class_id: &str, student_id: &str, body: &Value)
     let s = |k: &str| body.get(k).and_then(Value::as_str);
     let b = |k: &str| body.get(k).and_then(Value::as_bool);
     let f = |k: &str| body.get(k).and_then(Value::as_f64);
+    let i = |k: &str| body.get(k).and_then(Value::as_i64);
 
     let id = db::new_uuid();
     let now = db::now_iso();
     conn.execute(
-        "INSERT INTO enrollments (id, student_id, class_id, acneae, centro_procedencia, ha_repetido_curso, programa_bilingue, materias_pendientes, programa_especifico, neae, neae_detalle, medidas_educativas, indicaciones_pti, observaciones_tutor, plano_x, plano_y, plano_color, created_at, updated_at) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO enrollments (id, student_id, class_id, acneae, centro_procedencia, ha_repetido_curso, programa_bilingue, materias_pendientes, programa_especifico, neae, neae_detalle, medidas_educativas, indicaciones_pti, observaciones_tutor, plano_x, plano_y, plano_color, orden, created_at, updated_at) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params![
             id, student_id, class_id,
             serde_json::to_string(&acneae).map_err(ApiError::internal)?,
             s("centroProcedencia"), b("haRepetidoCurso"), b("programaBilingue"), s("materiasPendientes"), s("programaEspecifico"),
             b("neae"), s("neaeDetalle"), s("medidasEducativas"), s("indicacionesPti"), s("observacionesTutor"),
-            f("planoX"), f("planoY"), s("planoColor"), now.clone(), now,
+            f("planoX"), f("planoY"), s("planoColor"), i("orden"), now.clone(), now,
         ],
     )?;
     get_one(conn, &id)?.ok_or_else(|| ApiError::internal("no se pudo releer la matrícula recién creada"))
@@ -85,14 +87,15 @@ pub fn update(conn: &Connection, id: &str, body: Value) -> Result<Value, ApiErro
     let s = |k: &str| merged.get(k).and_then(Value::as_str);
     let b = |k: &str| merged.get(k).and_then(Value::as_bool);
     let f = |k: &str| merged.get(k).and_then(Value::as_f64);
+    let i = |k: &str| merged.get(k).and_then(Value::as_i64);
 
     conn.execute(
-        "UPDATE enrollments SET acneae = ?, centro_procedencia = ?, ha_repetido_curso = ?, programa_bilingue = ?, materias_pendientes = ?, programa_especifico = ?, neae = ?, neae_detalle = ?, medidas_educativas = ?, indicaciones_pti = ?, observaciones_tutor = ?, plano_x = ?, plano_y = ?, plano_color = ?, updated_at = ? WHERE id = ?",
+        "UPDATE enrollments SET acneae = ?, centro_procedencia = ?, ha_repetido_curso = ?, programa_bilingue = ?, materias_pendientes = ?, programa_especifico = ?, neae = ?, neae_detalle = ?, medidas_educativas = ?, indicaciones_pti = ?, observaciones_tutor = ?, plano_x = ?, plano_y = ?, plano_color = ?, orden = ?, updated_at = ? WHERE id = ?",
         params![
             serde_json::to_string(&acneae).map_err(ApiError::internal)?,
             s("centroProcedencia"), b("haRepetidoCurso"), b("programaBilingue"), s("materiasPendientes"), s("programaEspecifico"),
             b("neae"), s("neaeDetalle"), s("medidasEducativas"), s("indicacionesPti"), s("observacionesTutor"),
-            f("planoX"), f("planoY"), s("planoColor"), db::now_iso(), id,
+            f("planoX"), f("planoY"), s("planoColor"), i("orden"), db::now_iso(), id,
         ],
     )?;
     get_one(conn, id)?.ok_or_else(|| ApiError::internal("no se pudo releer la matrícula tras actualizar"))

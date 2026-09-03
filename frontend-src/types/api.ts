@@ -314,6 +314,7 @@ export interface Enrollment {
     planoX?: number;
     planoY?: number;
     planoColor?: string;
+    orden?: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -340,6 +341,7 @@ interface EnrollmentFields {
     planoX?: number;
     planoY?: number;
     planoColor?: string;
+    orden?: number;
 }
 
 export interface EnrollmentPatch extends Partial<EnrollmentFields> {

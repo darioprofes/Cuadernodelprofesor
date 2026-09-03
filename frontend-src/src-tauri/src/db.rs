@@ -52,6 +52,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0010_reuniones_tipo_otras.sql",
         include_str!("migrations/0010_reuniones_tipo_otras.sql"),
     ),
+    (
+        "0011_enrollment_orden.sql",
+        include_str!("migrations/0011_enrollment_orden.sql"),
+    ),
 ];
 
 // Sin la feature "portable" (build normal, el que empaqueta el instalador
@@ -153,7 +157,7 @@ mod tests {
         let migration_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(migration_count, 10);
+        assert_eq!(migration_count, 11);
 
         let table_count: i64 = conn
             .query_row(

@@ -10,7 +10,7 @@ _COLUMNS = """
     id, student_id, class_id, acneae, centro_procedencia, ha_repetido_curso,
     programa_bilingue, materias_pendientes, programa_especifico, neae, neae_detalle,
     medidas_educativas, indicaciones_pti, observaciones_tutor, plano_x,
-    plano_y, plano_color, created_at, updated_at
+    plano_y, plano_color, orden, created_at, updated_at
 """
 
 
@@ -31,6 +31,7 @@ class EnrollmentInput(ApiModel):
     plano_x: Optional[float] = None
     plano_y: Optional[float] = None
     plano_color: Optional[str] = None
+    orden: Optional[int] = None
 
 
 class EnrollmentPatch(ApiModel):
@@ -48,6 +49,7 @@ class EnrollmentPatch(ApiModel):
     plano_x: Optional[float] = None
     plano_y: Optional[float] = None
     plano_color: Optional[str] = None
+    orden: Optional[int] = None
     expected_updated_at: Optional[str] = None
 
 
@@ -69,6 +71,7 @@ class Enrollment(ApiModel):
     plano_x: Optional[float] = None
     plano_y: Optional[float] = None
     plano_color: Optional[str] = None
+    orden: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

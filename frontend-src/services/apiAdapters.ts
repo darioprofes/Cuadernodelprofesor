@@ -99,6 +99,7 @@ export const joinStudentEnrollment = (student: ApiStudent, enrollment: ApiEnroll
     planoX: enrollment.planoX,
     planoY: enrollment.planoY,
     planoColor: enrollment.planoColor as Student['planoColor'],
+    orden: enrollment.orden,
 });
 
 // La foto viaja aparte de studentPatch/enrollmentPatch (bytes crudos, no
@@ -176,6 +177,7 @@ export const splitStudentPatch = (data: Partial<Student>): { studentPatch: ApiSt
     if ('planoX' in data) enrollmentPatch.planoX = data.planoX;
     if ('planoY' in data) enrollmentPatch.planoY = data.planoY;
     if ('planoColor' in data) enrollmentPatch.planoColor = data.planoColor;
+    if ('orden' in data) enrollmentPatch.orden = data.orden ?? undefined;
 
     return { studentPatch, enrollmentPatch };
 };

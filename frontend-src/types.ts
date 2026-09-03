@@ -115,6 +115,11 @@ export interface Student {
   autorizacionImagen?: boolean | null;
   autorizacionSalidas?: boolean | null;
 
+  // Orden manual en la lista de alumnado de esta clase (drag & drop en
+  // GradebookTable.tsx) -- null/undefined mientras no se haya reordenado
+  // nunca a mano, en cuyo caso se cae a orden alfabético/por grupo.
+  orden?: number | null;
+
   observacionesTutor?: string; // notas libres del profesor/a-tutor/a
 
   // Posición en el Plano de la Clase (% del lienzo, 0-100). Ausente = todavía

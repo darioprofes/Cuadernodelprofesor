@@ -30,7 +30,7 @@ import PlanoClaseModal from './PlanoClaseModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ImportarDesdeSAModal from './ImportarDesdeSAModal';
 import ClassLabel from './ClassLabel';
-import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getDayOfWeek1a7, parsePeriodRange, periodoActivoEn, getSiglas } from '../utils';
+import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getNombreOrden, getDayOfWeek1a7, parsePeriodRange, periodoActivoEn, getSiglas } from '../utils';
 import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
 import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '../hooks/useAssignments';
 import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
@@ -121,6 +121,80 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   useEffect(() => { localStorage.setItem('gradebookMostrarFotos', mostrarFotos ? '1' : '0'); }, [mostrarFotos]);
   useEffect(() => { localStorage.setItem('gradebookMostrarIconos', mostrarIconos ? '1' : '0'); }, [mostrarIconos]);
   useEffect(() => { localStorage.setItem('gradebookMostrarBadges', mostrarBadges ? '1' : '0'); }, [mostrarBadges]);
+
+  // Orden del alumnado en la lista -- preferencia de este navegador, no dato
+  // de dominio (mismo criterio que mostrarFotos/Iconos/Badges de arriba),
+  // salvo "manual" que sí persiste de verdad: usa Enrollment.orden (backend),
+  // arrastrando filas -- ver handleDropStudent más abajo.
+  const [ordenAlumnado, setOrdenAlumnado] = useState<'alfabetico' | 'grupoReferencia' | 'manual'>(
+      () => (localStorage.getItem('gradebookOrdenAlumnado') as 'alfabetico' | 'grupoReferencia' | 'manual' | null) || 'alfabetico'
+  );
+  useEffect(() => { localStorage.setItem('gradebookOrdenAlumnado', ordenAlumnado); }, [ordenAlumnado]);
+
+  const sortedStudents = useMemo(() => {
+      const porNombre = (a: Student, b: Student) => getNombreOrden(a).localeCompare(getNombreOrden(b), 'es', { sensitivity: 'base' });
+      const arr = [...classData.students];
+      if (ordenAlumnado === 'alfabetico') {
+          arr.sort(porNombre);
+      } else if (ordenAlumnado === 'grupoReferencia') {
+          arr.sort((a, b) => {
+              const cmp = [a.ultimoCursoSauce || '', a.ultimaUnidadSauce || ''].join(' ')
+                  .localeCompare([b.ultimoCursoSauce || '', b.ultimaUnidadSauce || ''].join(' '), 'es', { sensitivity: 'base', numeric: true });
+              return cmp !== 0 ? cmp : porNombre(a, b);
+          });
+      } else {
+          // manual: por Enrollment.orden -- quien todavía no tenga (nunca se
+          // ha arrastrado) va al final, por orden alfabético entre sí.
+          arr.sort((a, b) => {
+              const oa = a.orden ?? Infinity;
+              const ob = b.orden ?? Infinity;
+              return oa !== ob ? oa - ob : porNombre(a, b);
+          });
+      }
+      return arr;
+  }, [classData.students, ordenAlumnado]);
+
+  // Arrastrar una fila a la posición de otra (solo en modo "manual"):
+  // renumera TODO el alumnado de la clase en el nuevo orden (0..N-1) y
+  // guarda cada matrícula que de verdad haya cambiado -- más simple y
+  // robusto que calcular huecos entre los dos valores vecinos, y con el
+  // tamaño real de una clase (~20-30) sale barato.
+  const draggedStudentIdRef = useRef<string | null>(null);
+  const handleDropStudent = async (targetStudentId: string) => {
+      const draggedId = draggedStudentIdRef.current;
+      draggedStudentIdRef.current = null;
+      if (!draggedId || draggedId === targetStudentId) return;
+
+      const reordered = [...sortedStudents];
+      const fromIndex = reordered.findIndex(s => s.id === draggedId);
+      const toIndex = reordered.findIndex(s => s.id === targetStudentId);
+      if (fromIndex === -1 || toIndex === -1) return;
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(toIndex, 0, moved);
+
+      await Promise.all(reordered.map((student, index) => {
+          if (student.orden === index || !student.enrollmentId) return null;
+          return updateEnrollmentMutation.mutateAsync({ id: student.enrollmentId, classId: classData.id, data: { orden: index } });
+      }));
+  };
+
+  // Props de arrastre para la fila de un alumno -- vacío fuera del modo
+  // "manual" (las filas no son arrastrables en los otros dos órdenes).
+  // Compartido entre la tabla de Calificaciones y la de Asistencia, que
+  // repiten esta misma columna de alumnado. El arrastre en sí solo se
+  // activa desde la celda de nombre (rowHandlerProps), no desde toda la
+  // fila -- si no, empezar a arrastrar desde una celda de nota cualquiera
+  // se confundiría con clicar para introducirla.
+  const rowDropHandlersFor = (student: Student): React.HTMLAttributes<HTMLTableRowElement> =>
+      ordenAlumnado !== 'manual' ? {} : {
+          onDragOver: e => e.preventDefault(),
+          onDrop: e => { e.preventDefault(); handleDropStudent(student.id); },
+      };
+  const nameCellDragHandlersFor = (student: Student): React.HTMLAttributes<HTMLTableCellElement> =>
+      ordenAlumnado !== 'manual' ? {} : {
+          draggable: true,
+          onDragStart: () => { draggedStudentIdRef.current = student.id; },
+      };
   // Vista cómoda: avatar más grande que el tamaño por defecto de
   // StudentAvatar (pensado para la vista compacta, donde está bien tal
   // cual) -- petición explícita, "en la versión relajada debería ser mayor".
@@ -284,9 +358,9 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
   const visibleStudents = useMemo(() => {
       const q = studentSearch.trim().toLowerCase();
-      if (!q) return classData.students;
-      return classData.students.filter(s => getNombreCompleto(s).toLowerCase().includes(q));
-  }, [classData.students, studentSearch]);
+      if (!q) return sortedStudents;
+      return sortedStudents.filter(s => getNombreCompleto(s).toLowerCase().includes(q));
+  }, [sortedStudents, studentSearch]);
 
   const handleDeleteStudentFromClass = async (student: Student) => {
       if (!window.confirm(`¿Seguro que quieres eliminar a ${getNombreCompleto(student)} de esta clase? Se perderán todas sus calificaciones.`)) {
@@ -1127,13 +1201,15 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           </thead>
           <tbody>
             {visibleStudents.map((student, index) => (
-              <tr key={student.id} className="bg-white border-b hover:bg-slate-50/50">
+              <tr key={student.id} className="bg-white border-b hover:bg-slate-50/50" {...rowDropHandlersFor(student)}>
                 {/* Fix: Ensure student cell has z-10 to slide UNDER the sticky header (z-30) but over standard cells if scrolling horizontal */}
                 <td
                     className={`${studentCellPad} font-medium text-slate-900 sticky left-0 bg-white hover:bg-slate-50/50 z-10 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group`}
                     onContextMenu={e => openStudentContextMenu(e, student)}
+                    {...nameCellDragHandlersFor(student)}
                 >
                     <div className="flex items-center gap-1 w-full">
+                        {ordenAlumnado === 'manual' && <Bars3Icon className="w-3.5 h-3.5 text-slate-300 shrink-0 cursor-move" />}
                         <span className="text-xs text-slate-400 w-5 text-right font-mono shrink-0 mr-1">{index + 1}</span>
                         <button
                             onClick={() => { setSummaryOpensOnFullFicha(false); setSelectedStudentForSummary(student); }}
@@ -1216,6 +1292,16 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
         </table>
       </div>
       <div className="p-3 border-t bg-slate-50/50 space-y-2">
+          {classData.students.length > 1 && (
+              <div className="flex items-center gap-2 text-sm">
+                  <label className="text-slate-500 flex-shrink-0">Orden:</label>
+                  <Select value={ordenAlumnado} onChange={e => setOrdenAlumnado(e.target.value as typeof ordenAlumnado)} className="flex-1">
+                      <option value="alfabetico">Alfabético</option>
+                      <option value="grupoReferencia">Grupo de referencia</option>
+                      <option value="manual">Manual (arrastrar filas)</option>
+                  </Select>
+              </div>
+          )}
           <button onClick={() => setIsBulkAddOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-green-600 hover:bg-green-100 bg-white rounded-md border border-slate-200 shadow-sm">
               + Añadir alumn@
           </button>
@@ -1348,7 +1434,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             </thead>
             <tbody>
               {visibleStudents.map((student, index) => (
-                <tr key={student.id} className="bg-white border-b hover:bg-slate-50/50">
+                <tr key={student.id} className="bg-white border-b hover:bg-slate-50/50" {...rowDropHandlersFor(student)}>
                   <td
                       className={`${studentCellPad} font-medium text-slate-900 sticky left-0 bg-white hover:bg-slate-50/50 z-10 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] group`}
                       onContextMenu={e => openStudentContextMenu(e, student)}
@@ -1497,7 +1583,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       <StudentFlagsModal
           isOpen={!!flagsEditTargetId}
           onClose={() => setFlagsEditTargetId(null)}
-          students={classData.students}
+          students={sortedStudents}
           initialStudentId={flagsEditTargetId}
           onSave={handleSaveFichaEdit}
       />
