@@ -1,3 +1,4 @@
+use base64::Engine;
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::Connection;
 use serde_json::{json, Map, Value};
@@ -94,9 +95,15 @@ fn sqlite_ref_to_json(v: ValueRef) -> Value {
         ValueRef::Integer(i) => json!(i),
         ValueRef::Real(f) => json!(f),
         ValueRef::Text(t) => Value::String(String::from_utf8_lossy(t).to_string()),
-        // No debería darse salvo "foto" (BYTEA/BLOB), ya excluida por
-        // nombre de columna -- igual que memoryview -> None en backup.py.
-        ValueRef::Blob(_) => Value::Null,
+        // BLOB (fotos): igual que memoryview -> base64 en backup.py -- se
+        // quedaba fuera a propósito para no hinchar el backup, pero eso
+        // rompía la promesa de que Exportar + Restablecer + Importar deja
+        // todo como estaba (el alumnado volvía sin fotos). Sin ambigüedad
+        // posible aquí (a diferencia de boolean/integer): cualquier valor
+        // BLOB se codifica en base64, no hace falta una lista de columnas
+        // para la exportación -- solo insert_row (más abajo) necesita
+        // saber cuáles decodificar de vuelta, ver blob_columns.
+        ValueRef::Blob(b) => Value::String(base64::engine::general_purpose::STANDARD.encode(b)),
     }
 }
 
@@ -112,9 +119,6 @@ pub fn export_all(conn: &Connection) -> Result<Value, ApiError> {
         let rows = stmt.query_map([], |row| {
             let mut obj = Map::new();
             for (i, col) in column_names.iter().enumerate() {
-                if col == "foto" {
-                    continue;
-                }
                 let value_ref = row.get_ref(i)?;
                 let json_val = if json_cols.contains(&col.as_str()) {
                     match value_ref {
@@ -159,10 +163,26 @@ fn json_value_to_sql(val: &Value) -> SqlValue {
     }
 }
 
+// Columnas BLOB (fotos) -- solo dos en todo el esquema (students.foto,
+// app_preferences.teacher_photo). Igual que json_columns/bool_columns: se
+// declaran a mano en vez de vía introspección (SQLite sí distinguiría BLOB
+// de TEXT con PRAGMA table_info, a diferencia de boolean, pero se mantiene
+// el mismo criterio que el resto de este fichero). Una columna BLOB nueva
+// tiene que añadirse aquí también, o se insertará como texto en vez de
+// decodificarse de vuelta a bytes.
+fn blob_columns(table: &str) -> &'static [&'static str] {
+    match table {
+        "students" => &["foto"],
+        "app_preferences" => &["teacher_photo"],
+        _ => &[],
+    }
+}
+
 fn insert_row(conn: &Connection, table: &str, row: &Value) -> Result<(), ApiError> {
     let obj = row.as_object()
         .ok_or_else(|| ApiError::bad_request(format!("Fila inválida en la tabla {table}.")))?;
     let json_cols = json_columns(table);
+    let blob_cols = blob_columns(table);
 
     let mut columns: Vec<String> = Vec::with_capacity(obj.len());
     let mut values: Vec<SqlValue> = Vec::with_capacity(obj.len());
@@ -172,6 +192,13 @@ fn insert_row(conn: &Connection, table: &str, row: &Value) -> Result<(), ApiErro
             let s = serde_json::to_string(val).map_err(ApiError::internal)?;
             values.push(SqlValue::Text(s));
         } else if json_cols.contains(&col.as_str()) {
+            values.push(SqlValue::Null);
+        } else if blob_cols.contains(&col.as_str()) && !val.is_null() {
+            let s = val.as_str()
+                .ok_or_else(|| ApiError::bad_request(format!("Columna BLOB {col} de {table} no es texto base64.")))?;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(s).map_err(ApiError::internal)?;
+            values.push(SqlValue::Blob(bytes));
+        } else if blob_cols.contains(&col.as_str()) {
             values.push(SqlValue::Null);
         } else {
             values.push(json_value_to_sql(val));
@@ -236,8 +263,8 @@ mod tests {
             [],
         ).unwrap();
         conn.execute(
-            "INSERT INTO students (id, nombre, tutor1, created_at, updated_at) VALUES ('s1','Ana', '{\"nombre\":\"Luis\"}', '2026-08-05T00:00:00Z', '2026-08-05T00:00:00Z')",
-            [],
+            "INSERT INTO students (id, nombre, tutor1, foto, created_at, updated_at) VALUES ('s1','Ana', '{\"nombre\":\"Luis\"}', ?1, '2026-08-05T00:00:00Z', '2026-08-05T00:00:00Z')",
+            [&[1u8, 2, 3, 255] as &[u8]],
         ).unwrap();
         conn.execute(
             "INSERT INTO academic_years (id, label, start_date, end_date, holidays, created_at, updated_at) VALUES ('y1','2026-2027','2026-09-01','2027-06-30','[{\"id\":\"h1\"}]','2026-08-05T00:00:00Z','2026-08-05T00:00:00Z')",
@@ -248,6 +275,9 @@ mod tests {
         assert_eq!(dump["shortcuts"].as_array().unwrap().len(), 1);
         assert_eq!(dump["students"][0]["tutor1"]["nombre"], "Luis");
         assert_eq!(dump["academic_years"][0]["holidays"][0]["id"], "h1");
+        // La foto viaja como base64 dentro del JSON, no se descarta -- ver
+        // el comentario de sqlite_ref_to_json/blob_columns más arriba.
+        assert_eq!(dump["students"][0]["foto"], "AQID/w==");
 
         let mut conn2 = db::test_connection();
         import_all(&mut conn2, &dump).unwrap();
@@ -255,6 +285,9 @@ mod tests {
         let shortcuts_after = crate::routers::dispatch(&conn2, "GET", "/shortcuts", None).unwrap();
         assert_eq!(shortcuts_after.as_array().unwrap().len(), 1);
         assert_eq!(shortcuts_after[0]["label"], "Aula");
+
+        let foto_after: Vec<u8> = conn2.query_row("SELECT foto FROM students WHERE id = 's1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(foto_after, vec![1u8, 2, 3, 255]);
 
         let students_after = crate::routers::dispatch(&conn2, "GET", "/students", None).unwrap();
         assert_eq!(students_after[0]["tutor1"]["nombre"], "Luis");

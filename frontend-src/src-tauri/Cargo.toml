@@ -44,3 +44,7 @@ chrono = "0.4"
 # _PERIOD_RANGE_RE en api/app/services/educastur_sync.py (Python), las
 # tres versiones tienen que coincidir en qué reconocen como rango válido.
 regex = "1"
+# Solo para services/backup.rs: las columnas BLOB (fotos) del volcado de
+# copia de seguridad viajan como texto base64 dentro del JSON, igual que
+# ya hace el backend web (Python, base64 de la librería estándar).
+base64 = "0.22"

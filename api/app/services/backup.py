@@ -1,3 +1,4 @@
+import base64
 import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -56,11 +57,15 @@ def _to_jsonable(value: Any) -> Any:
         return value.isoformat()
 
     if isinstance(value, memoryview):
-        # BYTEA (students.foto): no tiene sentido meterlo en un backup de
-        # texto — se pierde a propósito, igual que ya se advertía en el
-        # diálogo de "Restablecer Aplicación" del sistema viejo. El resto de
-        # la fila (foto_content_type incluido) sí viaja.
-        return None
+        # BYTEA (students.foto): se quedaba fuera a propósito para no
+        # hinchar el backup de texto -- pero eso rompía la promesa real de
+        # "Exportar" + "Restablecer Aplicación" + "Importar": el alumnado
+        # volvía sin fotos, no exactamente como estaba. A este tamaño de
+        # datos (sin fotos ya son unos cientos de KB; con fotos, unos pocos
+        # MB) no compensa el ahorro -- se codifica en base64 igual que
+        # cualquier otro campo, ver _bytea_columns/import_all más abajo
+        # para la reconstrucción a bytes reales al importar.
+        return base64.b64encode(bytes(value)).decode("ascii")
 
     return value
 
@@ -80,7 +85,7 @@ def export_all() -> dict[str, list[dict[str, Any]]]:
                 rows = cur.fetchall()
 
                 dump[table] = [
-                    {col: _to_jsonable(val) for col, val in row.items() if col != "foto"}
+                    {col: _to_jsonable(val) for col, val in row.items()}
                     for row in rows
                 ]
 
@@ -101,6 +106,16 @@ def _boolean_columns(cur, table: str) -> set[str]:
 
     cur.execute(
         "SELECT column_name FROM information_schema.columns WHERE table_name = %s AND data_type = 'boolean'",
+        [table]
+    )
+
+    return {row["column_name"] for row in cur.fetchall()}
+
+
+def _bytea_columns(cur, table: str) -> set[str]:
+
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s AND data_type = 'bytea'",
         [table]
     )
 
@@ -173,6 +188,7 @@ def import_all(dump: dict[str, list[Any]]) -> None:
 
                 jsonb_cols = _jsonb_columns(cur, table)
                 bool_cols = _boolean_columns(cur, table)
+                bytea_cols = _bytea_columns(cur, table)
                 columnas_reales = _real_columns(cur, table)
 
                 columns = [c for c in rows[0].keys() if c in columnas_reales]
@@ -189,6 +205,7 @@ def import_all(dump: dict[str, list[Any]]) -> None:
                     values = [
                         Json(row[col]) if col in jsonb_cols and row[col] is not None
                         else _coerce_bool(row.get(col)) if col in bool_cols
+                        else base64.b64decode(row[col]) if col in bytea_cols and row[col] is not None
                         else row.get(col)
                         for col in columns
                     ]
