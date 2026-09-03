@@ -13,6 +13,7 @@ import AcademicConfigManager from './settings/AcademicConfigManager';
 import AcademicYearManager from './settings/AcademicYearManager';
 import BackupManager from './settings/BackupManager';
 import EducasturSyncSettings from './settings/EducasturSyncSettings';
+import RescueSettings from './settings/RescueSettings';
 import Select from './Select';
 import { SEMANTIC } from '../theme/palette';
 import { isTauri } from '@tauri-apps/api/core';
@@ -50,7 +51,7 @@ export interface SettingsModalProps {
     onDeleteEvaluationTool: (id: string) => void;
 }
 
-type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup' | 'educastur';
+type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup' | 'educastur' | 'rescue';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const {
@@ -170,6 +171,8 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                 return <BackupManager {...props} onOpenExportModal={onOpenExportModal} />;
             case 'educastur':
                 return <EducasturSyncSettings />;
+            case 'rescue':
+                return <RescueSettings />;
             default:
                 return null;
         }
@@ -216,6 +219,13 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                                 este aviso, ver EducasturSyncSettings.tsx. */}
                             {isTauri() && (
                                 <SettingsNavItem icon={<ExclamationTriangleIcon />} label="Sincronización Educastur" view="educastur" activeView={activeView} setActiveView={setActiveView} />
+                            )}
+                            {/* Solo escritorio -- en web no hace falta un
+                                "modo rescate" que traiga una copia de
+                                emergencia, si el servidor falla la web ya
+                                no funciona igualmente. Ver RescueSettings.tsx. */}
+                            {isTauri() && (
+                                <SettingsNavItem icon={<ExclamationTriangleIcon />} label="Modo rescate" view="rescue" activeView={activeView} setActiveView={setActiveView} />
                             )}
                         </ul>
                     </div>

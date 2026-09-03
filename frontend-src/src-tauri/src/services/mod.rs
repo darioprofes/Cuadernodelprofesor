@@ -24,6 +24,7 @@ pub mod prompts;
 pub mod backup;
 pub mod python_helper;
 pub mod educastur;
+pub mod rescue;
 
 use serde_json::Value;
 

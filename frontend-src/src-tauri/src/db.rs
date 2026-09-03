@@ -58,7 +58,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
 // NSIS): %APPDATA%\es.lamarejada.farodocente\ -- comportamiento estándar de
 // una app instalada en Windows, sobrevive a mover/reinstalar el .exe.
 #[cfg(not(feature = "portable"))]
-fn data_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
+pub(crate) fn data_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
     app.path()
         .app_data_dir()
         .expect("no se pudo resolver el directorio de datos de la app")
@@ -72,7 +72,7 @@ fn data_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
 // los recursos EMPAQUETADOS del bundle, no para "dónde está este .exe
 // ahora mismo") es lo que de verdad responde a esa pregunta.
 #[cfg(feature = "portable")]
-fn data_dir(_app: &tauri::AppHandle) -> std::path::PathBuf {
+pub(crate) fn data_dir(_app: &tauri::AppHandle) -> std::path::PathBuf {
     let exe = std::env::current_exe().expect("no se pudo resolver la ruta del propio ejecutable");
     exe.parent()
         .expect("el ejecutable no tiene carpeta contenedora")

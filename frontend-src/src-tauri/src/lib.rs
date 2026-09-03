@@ -105,6 +105,42 @@ fn educastur_sincronizar(
   services::educastur::sincronizar(&conn, &app, body)
 }
 
+// Modo rescate (ver services/rescue.rs): apagado por defecto, solo actúa
+// si el profesor lo configuró a mano en Ajustes. La configuración (token
+// de GitHub, ruta a la clave privada age) vive en un fichero propio fuera
+// del SQLite de dominio, para que nunca acabe dentro de un backup_export.
+#[tauri::command]
+fn rescue_get_config(app: tauri::AppHandle) -> Result<services::rescue::RescueConfig, error::ApiError> {
+  services::rescue::get_config(&app)
+}
+
+#[tauri::command]
+fn rescue_set_config(app: tauri::AppHandle, config: services::rescue::RescueConfig) -> Result<(), error::ApiError> {
+  services::rescue::set_config(&app, &config)
+}
+
+// Trae y descifra la copia, pero NO la importa -- solo un resumen (nº de
+// alumnos/clases/...) para poder confirmar antes de sobrescribir nada.
+#[tauri::command]
+fn rescue_check(app: tauri::AppHandle) -> Result<serde_json::Value, error::ApiError> {
+  services::rescue::check(&app)
+}
+
+#[tauri::command]
+fn rescue_summarize_local(state: tauri::State<db::DbState>) -> Result<serde_json::Value, error::ApiError> {
+  let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::rescue::summarize_local(&conn)
+}
+
+// Vuelve a traer y descifrar (no reutiliza lo de rescue_check, para no
+// tener que guardar varios MB de vuelta cifrados en el estado de React
+// solo por si el usuario confirma) y esta vez sí importa de verdad.
+#[tauri::command]
+fn rescue_confirm_import(app: tauri::AppHandle, state: tauri::State<db::DbState>) -> Result<(), error::ApiError> {
+  let mut conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+  services::rescue::confirm_import(&app, &mut conn)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -171,7 +207,12 @@ pub fn run() {
       backup_import,
       importar_horario_pdf,
       importar_calendario_pdf,
-      educastur_sincronizar
+      educastur_sincronizar,
+      rescue_get_config,
+      rescue_set_config,
+      rescue_check,
+      rescue_summarize_local,
+      rescue_confirm_import
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
