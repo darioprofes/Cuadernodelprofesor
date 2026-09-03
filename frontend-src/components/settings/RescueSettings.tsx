@@ -12,6 +12,17 @@ interface RescueConfig {
     age_key_path?: string;
 }
 
+// invoke() rechaza con el propio objeto ApiError ({status, detail}) del
+// lado Rust, no con una instancia de Error -- mismo criterio que
+// ImportScheduleModal.tsx. Sin esto, cualquier error se veía como
+// "[object Object]" en vez del mensaje real.
+const describeError = (e: unknown): string => {
+    if (e && typeof e === 'object' && 'detail' in e) {
+        return String((e as { detail: unknown }).detail);
+    }
+    return e instanceof Error ? e.message : String(e);
+};
+
 const TABLA_LABEL: Record<string, string> = {
     students: 'Alumnado',
     classes: 'Clases',
@@ -57,7 +68,7 @@ const RescueSettings: React.FC = () => {
         try {
             await invoke('rescue_set_config', { config });
         } catch (e) {
-            setSaveError(e instanceof Error ? e.message : String(e));
+            setSaveError(describeError(e));
         } finally {
             setSaving(false);
         }
@@ -76,7 +87,7 @@ const RescueSettings: React.FC = () => {
             setRemoteSummary(remote);
             setLocalSummary(local);
         } catch (e) {
-            setCheckError(e instanceof Error ? e.message : String(e));
+            setCheckError(describeError(e));
         } finally {
             setChecking(false);
         }
@@ -90,7 +101,7 @@ const RescueSettings: React.FC = () => {
             setImportedOk(true);
             setIsConfirmOpen(false);
         } catch (e) {
-            setImportError(e instanceof Error ? e.message : String(e));
+            setImportError(describeError(e));
         } finally {
             setImporting(false);
         }
