@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon, ArrowPathIcon, GlobeIcon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon, ArrowPathIcon, GlobeIcon, PhotoIcon, TagIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
 import Input from './Input';
@@ -108,6 +108,19 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const headerPad = isCompact ? 'p-2' : 'p-3';
   const studentCellPad = isCompact ? 'px-3 py-1' : 'px-3 py-2';
   const studentHeaderPad = isCompact ? 'px-4 py-2' : 'px-4 py-3';
+
+  // Modo privacidad: ocultar fotos/iconos/badges cuando alguien mira la
+  // pantalla por encima del hombro (otro alumno, otro profesor...). Pura
+  // preferencia visual de este navegador, no dato de dominio -- mismo
+  // criterio que la densidad de arriba. Los 3 se guardan y aplican por
+  // separado (fotos / iconos de repetidor-bilingüe-ACNEAE / badge de
+  // grupo de referencia).
+  const [mostrarFotos, setMostrarFotos] = useState<boolean>(() => localStorage.getItem('gradebookMostrarFotos') !== '0');
+  const [mostrarIconos, setMostrarIconos] = useState<boolean>(() => localStorage.getItem('gradebookMostrarIconos') !== '0');
+  const [mostrarBadges, setMostrarBadges] = useState<boolean>(() => localStorage.getItem('gradebookMostrarBadges') !== '0');
+  useEffect(() => { localStorage.setItem('gradebookMostrarFotos', mostrarFotos ? '1' : '0'); }, [mostrarFotos]);
+  useEffect(() => { localStorage.setItem('gradebookMostrarIconos', mostrarIconos ? '1' : '0'); }, [mostrarIconos]);
+  useEffect(() => { localStorage.setItem('gradebookMostrarBadges', mostrarBadges ? '1' : '0'); }, [mostrarBadges]);
   // Vista cómoda: avatar más grande que el tamaño por defecto de
   // StudentAvatar (pensado para la vista compacta, donde está bien tal
   // cual) -- petición explícita, "en la versión relajada debería ser mayor".
@@ -997,22 +1010,40 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             <tr>
               {/* Alumno Header Top Half: No bottom border, align bottom */}
               <th scope="col" className={`${studentHeaderPad} font-semibold sticky left-0 bg-white text-slate-700 z-30 w-52 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] ${activePeriodId !== 'final' ? 'border-b-0 align-bottom' : 'align-middle'}`}>
-                  {classData.students.length > 6 ? (
-                      <div className="flex items-center gap-1 normal-case font-normal">
-                          <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                          <input
-                              type="text"
-                              value={studentSearch}
-                              onChange={e => setStudentSearch(e.target.value)}
-                              placeholder="Buscar…"
-                              className="w-full text-xs border-none focus:ring-0 p-0 bg-transparent"
-                          />
-                      </div>
-                  ) : (
-                      <div className="flex items-center justify-between gap-1">
+                  <div className="flex flex-col gap-1 normal-case font-normal">
+                      {classData.students.length > 6 ? (
+                          <div className="flex items-center gap-1">
+                              <MagnifyingGlassIcon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                              <input
+                                  type="text"
+                                  value={studentSearch}
+                                  onChange={e => setStudentSearch(e.target.value)}
+                                  placeholder="Buscar…"
+                                  className="w-full text-xs border-none focus:ring-0 p-0 bg-transparent"
+                              />
+                          </div>
+                      ) : (
                           <span>Alumn@</span>
+                      )}
+                      <div className="flex items-center gap-2">
+                          {([
+                              [mostrarFotos, setMostrarFotos, PhotoIcon, 'Mostrar/ocultar fotos'],
+                              [mostrarIconos, setMostrarIconos, ArrowPathIcon, 'Mostrar/ocultar iconos (repetidor, bilingüe, ACNEAE)'],
+                              [mostrarBadges, setMostrarBadges, TagIcon, 'Mostrar/ocultar grupo de referencia'],
+                          ] as const).map(([activo, setActivo, Icono, titulo], i) => (
+                              <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => setActivo(v => !v)}
+                                  title={titulo}
+                                  style={activo ? { color: getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg } : undefined}
+                                  className={activo ? '' : 'text-slate-400'}
+                              >
+                                  <Icono className="w-3.5 h-3.5" />
+                              </button>
+                          ))}
                       </div>
-                  )}
+                  </div>
               </th>
               {activePeriodId === 'final' ? (
                 <>
@@ -1097,16 +1128,16 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             onClick={() => { setSummaryOpensOnFullFicha(false); setSelectedStudentForSummary(student); }}
                             className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                         >
-                            <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
+                            <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} hideFoto={!mostrarFotos} />
                             <span className="truncate min-w-0 flex-1" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
-                            <AcneaeTag tags={student.acneae}/>
-                            {student.haRepetidoCurso && (
+                            {mostrarIconos && <AcneaeTag tags={student.acneae}/>}
+                            {mostrarIconos && student.haRepetidoCurso && (
                                 <span title="Repite curso" className="flex-shrink-0 text-amber-600"><ArrowPathIcon className="w-3.5 h-3.5" /></span>
                             )}
-                            {student.programaBilingue && (
+                            {mostrarIconos && student.programaBilingue && (
                                 <span title="Programa bilingüe" className="flex-shrink-0 text-blue-600"><GlobeIcon className="w-3.5 h-3.5" /></span>
                             )}
-                            {grupoReferenciaTexto(student) && (
+                            {mostrarBadges && grupoReferenciaTexto(student) && (
                                 <span
                                     title={`Grupo de referencia real: ${grupoReferenciaTexto(student)}`}
                                     className="flex-shrink-0 text-[9px] font-bold leading-none text-white bg-slate-500 rounded px-1 py-0.5"
@@ -1317,16 +1348,16 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                               onClick={() => { setSummaryOpensOnFullFicha(false); setSelectedStudentForSummary(student); }}
                               className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                           >
-                              <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
+                              <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} hideFoto={!mostrarFotos} />
                               <span className="truncate min-w-0 flex-1" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
-                              <AcneaeTag tags={student.acneae}/>
-                              {student.haRepetidoCurso && (
+                              {mostrarIconos && <AcneaeTag tags={student.acneae}/>}
+                              {mostrarIconos && student.haRepetidoCurso && (
                                   <span title="Repite curso" className="flex-shrink-0 text-amber-600"><ArrowPathIcon className="w-3.5 h-3.5" /></span>
                               )}
-                              {student.programaBilingue && (
+                              {mostrarIconos && student.programaBilingue && (
                                   <span title="Programa bilingüe" className="flex-shrink-0 text-blue-600"><GlobeIcon className="w-3.5 h-3.5" /></span>
                               )}
-                              {grupoReferenciaTexto(student) && (
+                              {mostrarBadges && grupoReferenciaTexto(student) && (
                                   <span
                                       title={`Grupo de referencia real: ${grupoReferenciaTexto(student)}`}
                                       className="flex-shrink-0 text-[9px] font-bold leading-none text-white bg-slate-500 rounded px-1 py-0.5"

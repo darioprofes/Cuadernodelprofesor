@@ -13,10 +13,12 @@ const getInitials = (student: Student): string => {
 };
 
 // Foto si la tiene, si no iniciales sobre un color de fondo — compartido
-// entre el panel de alumnado del Cuaderno y (antes) ClasesView.
-const StudentAvatar: React.FC<{ student: Student; bgColor: string; className?: string }> = ({ student, bgColor, className = 'w-6 h-6 text-[10px]' }) => (
+// entre el panel de alumnado del Cuaderno y (antes) ClasesView. hideFoto
+// fuerza las iniciales aunque haya foto -- modo privacidad del Cuaderno,
+// para cuando alguien mira la pantalla por encima del hombro.
+const StudentAvatar: React.FC<{ student: Student; bgColor: string; className?: string; hideFoto?: boolean }> = ({ student, bgColor, className = 'w-6 h-6 text-[10px]', hideFoto = false }) => (
     <span className={`${className} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 overflow-hidden`} style={{ backgroundColor: bgColor }}>
-        {student.foto ? <img src={student.foto} alt="" className="w-full h-full object-cover" /> : getInitials(student)}
+        {student.foto && !hideFoto ? <img src={student.foto} alt="" className="w-full h-full object-cover" /> : getInitials(student)}
     </span>
 );
 
