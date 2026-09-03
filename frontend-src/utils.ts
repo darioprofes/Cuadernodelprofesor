@@ -174,10 +174,11 @@ export const getClassAccentColor = (materia: string, hueOverride?: number): Clas
 const CONECTORES = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'y', 'en', 'a', 'para', 'con', 'al']);
 
 // Siglas calculadas solo para mostrar en sitios muy justos de espacio (la
-// cuadrícula del Horario Semanal): no se guarda ni sustituye el nombre real
-// de la materia en ningún otro sitio de la app. Si el nombre ya es corto
-// (p.ej. "CHL", "G" en las ocupaciones sin grupo importadas del PDF), no
-// hace falta abreviarlo más: se deja tal cual.
+// cuadrícula del Horario Semanal, o el aviso de grupo/nivel de referencia
+// del Cuaderno): no se guarda ni sustituye el texto real en ningún otro
+// sitio de la app. Si el nombre ya es corto (p.ej. "CHL", "G" en las
+// ocupaciones sin grupo importadas del PDF), no hace falta abreviarlo más:
+// se deja tal cual.
 export const getSiglas = (materia: string): string => {
     const limpio = materia.trim();
 
@@ -185,6 +186,11 @@ export const getSiglas = (materia: string): string => {
 
     const palabras = limpio
         .split(/[\s-]+/)
+        // quita paréntesis/puntuación inicial de cada palabra (p.ej.
+        // "(Ciencias" -> "Ciencias") antes de coger la primera letra --
+        // si no, un nivel de referencia como "1º Bachillerato (Ciencias y
+        // Tecnología)" sacaba siglas con un "(" suelto en medio.
+        .map(w => w.replace(/^[^\p{L}\p{N}]+/u, ''))
         .filter(w => w.length > 0 && !CONECTORES.has(w.toLowerCase()));
 
     const siglas = palabras.map(w => w[0].toUpperCase()).join('');

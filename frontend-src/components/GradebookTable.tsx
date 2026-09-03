@@ -30,7 +30,7 @@ import PlanoClaseModal from './PlanoClaseModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
 import ImportarDesdeSAModal from './ImportarDesdeSAModal';
 import ClassLabel from './ClassLabel';
-import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getDayOfWeek1a7, parsePeriodRange, periodoActivoEn } from '../utils';
+import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getDayOfWeek1a7, parsePeriodRange, periodoActivoEn, getSiglas } from '../utils';
 import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
 import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '../hooks/useAssignments';
 import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
@@ -162,6 +162,16 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     const partes = [];
     if (nivelReferenciaVaria && student.ultimoCursoSauce) partes.push(student.ultimoCursoSauce);
     if (grupoReferenciaVaria && student.ultimaUnidadSauce) partes.push(student.ultimaUnidadSauce);
+    return partes.length > 0 ? partes.join(' ') : null;
+  };
+
+  // Versión abreviada para la insignia (poco espacio en la fila) -- el
+  // texto completo se queda en el title del tooltip. Mismo helper que ya
+  // usa el Horario Semanal para el nombre de la materia (getSiglas).
+  const grupoReferenciaSiglas = (student: Student): string | null => {
+    const partes = [];
+    if (nivelReferenciaVaria && student.ultimoCursoSauce) partes.push(getSiglas(student.ultimoCursoSauce));
+    if (grupoReferenciaVaria && student.ultimaUnidadSauce) partes.push(getSiglas(student.ultimaUnidadSauce));
     return partes.length > 0 ? partes.join(' ') : null;
   };
 
@@ -1088,8 +1098,8 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                         >
                             <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
-                            <AcneaeTag tags={student.acneae}/>
                             <span className="truncate min-w-0 flex-1" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
+                            <AcneaeTag tags={student.acneae}/>
                             {student.haRepetidoCurso && (
                                 <span title="Repite curso" className="flex-shrink-0 text-amber-600"><ArrowPathIcon className="w-3.5 h-3.5" /></span>
                             )}
@@ -1101,7 +1111,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                                     title={`Grupo de referencia real: ${grupoReferenciaTexto(student)}`}
                                     className="flex-shrink-0 text-[9px] font-bold leading-none text-white bg-slate-500 rounded px-1 py-0.5"
                                 >
-                                    {grupoReferenciaTexto(student)}
+                                    {grupoReferenciaSiglas(student)}
                                 </span>
                             )}
                         </button>
@@ -1308,8 +1318,8 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                               className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                           >
                               <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />
-                              <AcneaeTag tags={student.acneae}/>
                               <span className="truncate min-w-0 flex-1" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
+                              <AcneaeTag tags={student.acneae}/>
                               {student.haRepetidoCurso && (
                                   <span title="Repite curso" className="flex-shrink-0 text-amber-600"><ArrowPathIcon className="w-3.5 h-3.5" /></span>
                               )}
@@ -1321,7 +1331,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                                       title={`Grupo de referencia real: ${grupoReferenciaTexto(student)}`}
                                       className="flex-shrink-0 text-[9px] font-bold leading-none text-white bg-slate-500 rounded px-1 py-0.5"
                                   >
-                                      {grupoReferenciaTexto(student)}
+                                      {grupoReferenciaSiglas(student)}
                                   </span>
                               )}
                           </button>
