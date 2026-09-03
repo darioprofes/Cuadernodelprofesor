@@ -97,6 +97,43 @@ def _jsonb_columns(cur, table: str) -> set[str]:
     return {row["column_name"] for row in cur.fetchall()}
 
 
+def _boolean_columns(cur, table: str) -> set[str]:
+
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = %s AND data_type = 'boolean'",
+        [table]
+    )
+
+    return {row["column_name"] for row in cur.fetchall()}
+
+
+def _coerce_bool(value: Any) -> Any:
+    """El JSON de origen puede representar una columna lógicamente booleana
+    de formas distintas según qué la generó -- un booleano real (web, o un
+    export de escritorio ya corregido), un entero 0/1 (SQLite no distingue
+    boolean de integer -- ver el bug real de 2026-09-03 que dejó copias de
+    escritorio con 0/1 en vez de true/false) o, por si algún día hay un
+    tercer origen, un texto "true"/"false"/"0"/"1". None se deja tal cual
+    (columna nullable). Cualquier otra cosa se deja pasar sin tocar --
+    Postgres dará su propio error si de verdad es basura, mejor que
+    inventarnos una conversión rara."""
+
+    if value is None or isinstance(value, bool):
+        return value
+
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in ("true", "1"):
+            return True
+        if low in ("false", "0"):
+            return False
+
+    return value
+
+
 def _real_columns(cur, table: str) -> set[str]:
     """Columnas REALES de la tabla, según el propio esquema -- import_all()
     construye el INSERT a partir de las claves del JSON subido, así que sin
@@ -135,6 +172,7 @@ def import_all(dump: dict[str, list[Any]]) -> None:
                     continue
 
                 jsonb_cols = _jsonb_columns(cur, table)
+                bool_cols = _boolean_columns(cur, table)
                 columnas_reales = _real_columns(cur, table)
 
                 columns = [c for c in rows[0].keys() if c in columnas_reales]
@@ -148,6 +186,11 @@ def import_all(dump: dict[str, list[Any]]) -> None:
 
                 for row in rows:
 
-                    values = [Json(row[col]) if col in jsonb_cols and row[col] is not None else row.get(col) for col in columns]
+                    values = [
+                        Json(row[col]) if col in jsonb_cols and row[col] is not None
+                        else _coerce_bool(row.get(col)) if col in bool_cols
+                        else row.get(col)
+                        for col in columns
+                    ]
 
                     cur.execute(f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})", values)
