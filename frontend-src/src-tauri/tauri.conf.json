@@ -43,8 +43,7 @@
       "nsis": {
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
-        "languages": ["Spanish"],
-        "deleteAppDataOnUninstall": true
+        "languages": ["Spanish"]
       }
     }
   }
