@@ -13,7 +13,7 @@ import AcademicConfigManager from './settings/AcademicConfigManager';
 import AcademicYearManager from './settings/AcademicYearManager';
 import BackupManager from './settings/BackupManager';
 import EducasturSyncSettings from './settings/EducasturSyncSettings';
-import RescueSettings from './settings/RescueSettings';
+import ServerSyncSettings from './settings/ServerSyncSettings';
 import Select from './Select';
 import { SEMANTIC } from '../theme/palette';
 import { isTauri } from '@tauri-apps/api/core';
@@ -51,7 +51,7 @@ export interface SettingsModalProps {
     onDeleteEvaluationTool: (id: string) => void;
 }
 
-type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup' | 'educastur' | 'rescue';
+type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup' | 'educastur' | 'serverSync';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const {
@@ -171,8 +171,8 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                 return <BackupManager {...props} onOpenExportModal={onOpenExportModal} />;
             case 'educastur':
                 return <EducasturSyncSettings />;
-            case 'rescue':
-                return <RescueSettings />;
+            case 'serverSync':
+                return <ServerSyncSettings />;
             default:
                 return null;
         }
@@ -220,12 +220,12 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
                             {isTauri() && (
                                 <SettingsNavItem icon={<ExclamationTriangleIcon />} label="Sincronización Educastur" view="educastur" activeView={activeView} setActiveView={setActiveView} />
                             )}
-                            {/* Solo escritorio -- en web no hace falta un
-                                "modo rescate" que traiga una copia de
-                                emergencia, si el servidor falla la web ya
-                                no funciona igualmente. Ver RescueSettings.tsx. */}
+                            {/* Solo escritorio -- en web no hace falta traer
+                                una copia de emergencia, si el servidor falla
+                                la web ya no funciona igualmente. Ver
+                                ServerSyncSettings.tsx. */}
                             {isTauri() && (
-                                <SettingsNavItem icon={<ExclamationTriangleIcon />} label="Modo rescate" view="rescue" activeView={activeView} setActiveView={setActiveView} />
+                                <SettingsNavItem icon={<ExclamationTriangleIcon />} label="Sincronización con el servidor" view="serverSync" activeView={activeView} setActiveView={setActiveView} />
                             )}
                         </ul>
                     </div>

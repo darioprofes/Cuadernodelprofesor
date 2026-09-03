@@ -105,49 +105,50 @@ fn educastur_sincronizar(
   services::educastur::sincronizar(&conn, &app, body)
 }
 
-// Modo rescate (ver services/rescue.rs): apagado por defecto, solo actúa
-// si el profesor lo configuró a mano en Ajustes. La configuración (token
-// de GitHub, ruta a la clave privada age) vive en un fichero propio fuera
-// del SQLite de dominio, para que nunca acabe dentro de un backup_export.
+// Sincronización con el servidor (ver services/server_sync.rs): apagada
+// por defecto, solo actúa si el profesor la configuró a mano en Ajustes.
+// La configuración (token de GitHub, ruta a la clave privada age) vive
+// en un fichero propio fuera del SQLite de dominio, para que nunca acabe
+// dentro de un backup_export.
 #[tauri::command]
-fn rescue_get_config(app: tauri::AppHandle) -> Result<services::rescue::RescueConfig, error::ApiError> {
-  services::rescue::get_config(&app)
+fn server_sync_get_config(app: tauri::AppHandle) -> Result<services::server_sync::ServerSyncConfig, error::ApiError> {
+  services::server_sync::get_config(&app)
 }
 
 #[tauri::command]
-fn rescue_set_config(app: tauri::AppHandle, config: services::rescue::RescueConfig) -> Result<(), error::ApiError> {
-  services::rescue::set_config(&app, &config)
+fn server_sync_set_config(app: tauri::AppHandle, config: services::server_sync::ServerSyncConfig) -> Result<(), error::ApiError> {
+  services::server_sync::set_config(&app, &config)
 }
 
 // Trae y descifra la copia, pero NO la importa -- solo un resumen (nº de
 // alumnos/clases/...) para poder confirmar antes de sobrescribir nada.
 #[tauri::command]
-fn rescue_check(app: tauri::AppHandle) -> Result<serde_json::Value, error::ApiError> {
-  services::rescue::check(&app)
+fn server_sync_check(app: tauri::AppHandle) -> Result<serde_json::Value, error::ApiError> {
+  services::server_sync::check(&app)
 }
 
 #[tauri::command]
-fn rescue_summarize_local(state: tauri::State<db::DbState>) -> Result<serde_json::Value, error::ApiError> {
+fn server_sync_summarize_local(state: tauri::State<db::DbState>) -> Result<serde_json::Value, error::ApiError> {
   let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
-  services::rescue::summarize_local(&conn)
+  services::server_sync::summarize_local(&conn)
 }
 
-// Vuelve a traer y descifrar (no reutiliza lo de rescue_check, para no
-// tener que guardar varios MB de vuelta cifrados en el estado de React
+// Vuelve a traer y descifrar (no reutiliza lo de server_sync_check, para
+// no tener que guardar varios MB de vuelta cifrados en el estado de React
 // solo por si el usuario confirma) y esta vez sí importa de verdad.
 #[tauri::command]
-fn rescue_confirm_import(app: tauri::AppHandle, state: tauri::State<db::DbState>) -> Result<(), error::ApiError> {
+fn server_sync_confirm_import(app: tauri::AppHandle, state: tauri::State<db::DbState>) -> Result<(), error::ApiError> {
   let mut conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
-  services::rescue::confirm_import(&app, &mut conn)
+  services::server_sync::confirm_import(&app, &mut conn)
 }
 
 // "Volver al servidor": exporta esta copia de escritorio, la cifra y la
 // sube -- el runner auto-alojado del servidor la recoge y hace el resto
 // (copia de seguridad previa del servidor + importación) por su cuenta.
 #[tauri::command]
-fn rescue_upload_to_server(app: tauri::AppHandle, state: tauri::State<db::DbState>) -> Result<(), error::ApiError> {
+fn server_sync_upload_to_server(app: tauri::AppHandle, state: tauri::State<db::DbState>) -> Result<(), error::ApiError> {
   let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
-  services::rescue::upload_to_server(&app, &conn)
+  services::server_sync::upload_to_server(&app, &conn)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -217,12 +218,12 @@ pub fn run() {
       importar_horario_pdf,
       importar_calendario_pdf,
       educastur_sincronizar,
-      rescue_get_config,
-      rescue_set_config,
-      rescue_check,
-      rescue_summarize_local,
-      rescue_confirm_import,
-      rescue_upload_to_server
+      server_sync_get_config,
+      server_sync_set_config,
+      server_sync_check,
+      server_sync_summarize_local,
+      server_sync_confirm_import,
+      server_sync_upload_to_server
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

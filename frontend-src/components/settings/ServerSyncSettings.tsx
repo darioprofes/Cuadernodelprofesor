@@ -6,7 +6,7 @@ import Alert from '../Alert';
 import Input from '../Input';
 import Modal from '../Modal';
 
-interface RescueConfig {
+interface ServerSyncConfig {
     repo?: string;
     github_token?: string;
     age_key_path?: string;
@@ -33,15 +33,16 @@ const TABLA_LABEL: Record<string, string> = {
     tasks: 'Tareas',
 };
 
-// Apagado por defecto -- esta app no habla con GitHub para nada salvo que
-// el profesor configure esto a mano. Pensado para cuando el servidor web
+// Apagada por defecto -- esta app no habla con GitHub para nada salvo que
+// el profesor configure esto a mano. Pensada para cuando el servidor web
 // falla: trae la última copia automática cifrada (ver el cron del
 // servidor, farodocente-backups) y la restaura aquí para poder seguir
-// trabajando esos días. El token de GitHub y la ruta a la clave privada
-// viven en un fichero propio fuera del SQLite de dominio (services/
-// rescue.rs), nunca dentro de un backup normal.
-const RescueSettings: React.FC = () => {
-    const [config, setConfig] = useState<RescueConfig>({});
+// trabajando esos días, y para volver a subirla cuando la web vuelva a
+// funcionar. El token de GitHub y la ruta a la clave privada viven en un
+// fichero propio fuera del SQLite de dominio (services/server_sync.rs),
+// nunca dentro de un backup normal.
+const ServerSyncSettings: React.FC = () => {
+    const [config, setConfig] = useState<ServerSyncConfig>({});
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
@@ -62,7 +63,7 @@ const RescueSettings: React.FC = () => {
     const [uploadedOk, setUploadedOk] = useState(false);
 
     useEffect(() => {
-        invoke<RescueConfig>('rescue_get_config')
+        invoke<ServerSyncConfig>('server_sync_get_config')
             .then(setConfig)
             .finally(() => setLoading(false));
     }, []);
@@ -71,7 +72,7 @@ const RescueSettings: React.FC = () => {
         setSaving(true);
         setSaveError(null);
         try {
-            await invoke('rescue_set_config', { config });
+            await invoke('server_sync_set_config', { config });
         } catch (e) {
             setSaveError(describeError(e));
         } finally {
@@ -86,8 +87,8 @@ const RescueSettings: React.FC = () => {
         setLocalSummary(null);
         try {
             const [remote, local] = await Promise.all([
-                invoke<Record<string, number>>('rescue_check'),
-                invoke<Record<string, number>>('rescue_summarize_local'),
+                invoke<Record<string, number>>('server_sync_check'),
+                invoke<Record<string, number>>('server_sync_summarize_local'),
             ]);
             setRemoteSummary(remote);
             setLocalSummary(local);
@@ -102,7 +103,7 @@ const RescueSettings: React.FC = () => {
         setImporting(true);
         setImportError(null);
         try {
-            await invoke('rescue_confirm_import');
+            await invoke('server_sync_confirm_import');
             setImportedOk(true);
             setIsConfirmOpen(false);
         } catch (e) {
@@ -116,7 +117,7 @@ const RescueSettings: React.FC = () => {
         setUploading(true);
         setUploadError(null);
         try {
-            await invoke('rescue_upload_to_server');
+            await invoke('server_sync_upload_to_server');
             setUploadedOk(true);
             setIsUploadConfirmOpen(false);
         } catch (e) {
@@ -130,12 +131,13 @@ const RescueSettings: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <h3 className="text-xl font-bold text-slate-800">Modo rescate</h3>
+            <h3 className="text-xl font-bold text-slate-800">Sincronización con el servidor</h3>
 
             <Alert variant="warning" title="Solo para cuando el servidor web falla">
                 Trae la última copia de seguridad automática (cifrada) desde tu repositorio privado de GitHub y la
-                restaura aquí, sustituyendo TODO lo que haya en esta copia de escritorio. Mientras no lo uses, esta
-                app no contacta con GitHub para nada.
+                restaura aquí, sustituyendo TODO lo que haya en esta copia de escritorio; o, al terminar, sube esta
+                copia de vuelta al servidor. Mientras no uses ninguna de las dos, esta app no contacta con GitHub
+                para nada.
             </Alert>
 
             <Card>
@@ -181,12 +183,12 @@ const RescueSettings: React.FC = () => {
 
             <Card>
                 <div className="space-y-3">
-                    <p className="font-bold text-slate-800">Comprobar copia de rescate</p>
+                    <p className="font-bold text-slate-800">Comprobar copia del servidor</p>
                     <p className="text-sm text-slate-600">
                         Descarga y descifra la última copia sin tocar nada todavía -- solo para ver qué trae antes de decidir.
                     </p>
                     <Button variant="secondary" onClick={handleCheck} disabled={checking}>
-                        {checking ? 'Comprobando...' : 'Comprobar copia de rescate'}
+                        {checking ? 'Comprobando...' : 'Comprobar copia del servidor'}
                     </Button>
 
                     {checkError && <Alert variant="danger">{checkError}</Alert>}
@@ -198,7 +200,7 @@ const RescueSettings: React.FC = () => {
                                     <tr className="text-left text-slate-500">
                                         <th className="font-medium">Tabla</th>
                                         <th className="font-medium text-right">Ahora tienes</th>
-                                        <th className="font-medium text-right">La copia de rescate trae</th>
+                                        <th className="font-medium text-right">El servidor trae</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -220,7 +222,7 @@ const RescueSettings: React.FC = () => {
                     )}
 
                     {importedOk && (
-                        <Alert variant="success">Copia de rescate restaurada. Reinicia la aplicación para verla reflejada en todas las pantallas.</Alert>
+                        <Alert variant="success">Copia restaurada. Reinicia la aplicación para verla reflejada en todas las pantallas.</Alert>
                     )}
                 </div>
             </Card>
@@ -229,8 +231,8 @@ const RescueSettings: React.FC = () => {
                 <div className="space-y-3">
                     <p className="font-bold text-slate-800">Volver al servidor</p>
                     <p className="text-sm text-slate-600">
-                        Cuando el servidor web vuelva a funcionar y hayas terminado de trabajar aquí en modo rescate, sube esta
-                        copia de escritorio para que sustituya lo que haya en el servidor. Se cifra y se sube a tu repositorio
+                        Cuando el servidor web vuelva a funcionar y hayas terminado de trabajar aquí, sube esta copia de
+                        escritorio para que sustituya lo que haya en el servidor. Se cifra y se sube a tu repositorio
                         privado de GitHub; el servidor se hace su propia copia de seguridad antes de sustituir nada, por si acaso.
                     </p>
                     <Button variant="secondary" onClick={() => setIsUploadConfirmOpen(true)}>
@@ -265,7 +267,7 @@ const RescueSettings: React.FC = () => {
                 <div className="space-y-4">
                     <Alert variant="danger" title="Esto sustituye TODO lo que hay en esta copia de escritorio">
                         No se puede deshacer. Compara bien los números de arriba antes de continuar -- si "Ahora tienes" ya
-                        parece más completo que "La copia de rescate trae", probablemente no necesitas restaurar nada.
+                        parece más completo que "El servidor trae", probablemente no necesitas restaurar nada.
                     </Alert>
                     {importError && <Alert variant="danger">{importError}</Alert>}
                     <div className="flex justify-end gap-2">
@@ -280,4 +282,4 @@ const RescueSettings: React.FC = () => {
     );
 };
 
-export default RescueSettings;
+export default ServerSyncSettings;

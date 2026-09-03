@@ -48,7 +48,7 @@ regex = "1"
 # copia de seguridad viajan como texto base64 dentro del JSON, igual que
 # ya hace el backend web (Python, base64 de la librería estándar).
 base64 = "0.22"
-# Modo rescate (services/rescue.rs): traer el backup cifrado desde la API
+# Sincronización con el servidor (services/server_sync.rs): traer el backup cifrado desde la API
 # de GitHub (ureq, cliente HTTP síncrono -- no hace falta un runtime async
 # para una sola petición puntual) y descifrarlo con la clave privada age
 # del usuario (mismo formato X25519 que genera `age-keygen`).

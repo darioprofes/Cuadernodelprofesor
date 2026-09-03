@@ -1,15 +1,21 @@
-// Modo rescate: si el servidor web falla, traer la última copia de
-// seguridad automática (cifrada, subida por el servidor a un repo privado
-// de GitHub -- ver el cron del servidor, farodocente-backups) y
-// restaurarla aquí, en escritorio, para poder seguir trabajando esos
-// días. Apagado por defecto -- solo actúa si el profesor lo ha
-// configurado a mano en Ajustes (repo, token de GitHub, ruta a su clave
-// privada age). La app de escritorio normal, sin configurar esto, no
-// habla con GitHub en ningún momento.
+// Sincronización con el servidor: dos sentidos, ambos apagados por
+// defecto y solo activos si el profesor los ha configurado a mano en
+// Ajustes (repo, token de GitHub, ruta a su clave privada age). La app
+// de escritorio normal, sin configurar esto, no habla con GitHub en
+// ningún momento.
+//
+// - Traer del servidor: si la web falla, trae la última copia de
+//   seguridad automática (cifrada, subida por el servidor a un repo
+//   privado de GitHub -- ver el cron del servidor, farodocente-backups)
+//   y la restaura aquí, en escritorio, para poder seguir trabajando esos
+//   días.
+// - Volver al servidor: cuando la web vuelva a funcionar, sube esta
+//   copia de escritorio de vuelta -- el runner auto-alojado del
+//   servidor la recoge y la aplica él solo.
 //
 // La configuración (token de GitHub, ruta a la clave privada) vive en un
-// fichero JSON propio (rescue_config.json), separado a propósito del
-// SQLite de dominio -- así nunca viaja dentro de un export_all()/
+// fichero JSON propio (server_sync_config.json), separado a propósito
+// del SQLite de dominio -- así nunca viaja dentro de un export_all()/
 // import_all() de backup.rs, ni por accidente.
 
 use std::io::{Read, Write};
@@ -20,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::ApiError;
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
-pub struct RescueConfig {
+pub struct ServerSyncConfig {
     // "usuario/repositorio", p.ej. "darioprofes/farodocente-backups"
     pub repo: Option<String>,
     pub github_token: Option<String>,
@@ -30,19 +36,19 @@ pub struct RescueConfig {
 }
 
 fn config_path(app: &tauri::AppHandle) -> std::path::PathBuf {
-    crate::db::data_dir(app).join("rescue_config.json")
+    crate::db::data_dir(app).join("server_sync_config.json")
 }
 
-pub fn get_config(app: &tauri::AppHandle) -> Result<RescueConfig, ApiError> {
+pub fn get_config(app: &tauri::AppHandle) -> Result<ServerSyncConfig, ApiError> {
     let path = config_path(app);
     if !path.exists() {
-        return Ok(RescueConfig::default());
+        return Ok(ServerSyncConfig::default());
     }
     let raw = std::fs::read_to_string(&path).map_err(ApiError::internal)?;
     serde_json::from_str(&raw).map_err(ApiError::internal)
 }
 
-pub fn set_config(app: &tauri::AppHandle, config: &RescueConfig) -> Result<(), ApiError> {
+pub fn set_config(app: &tauri::AppHandle, config: &ServerSyncConfig) -> Result<(), ApiError> {
     let path = config_path(app);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(ApiError::internal)?;
@@ -51,13 +57,13 @@ pub fn set_config(app: &tauri::AppHandle, config: &RescueConfig) -> Result<(), A
     std::fs::write(&path, raw).map_err(ApiError::internal)
 }
 
-fn require_config(config: &RescueConfig) -> Result<(&str, &str, &str), ApiError> {
+fn require_config(config: &ServerSyncConfig) -> Result<(&str, &str, &str), ApiError> {
     let repo = config.repo.as_deref().filter(|s| !s.is_empty())
-        .ok_or_else(|| ApiError::bad_request("Modo rescate sin configurar: falta el repositorio."))?;
+        .ok_or_else(|| ApiError::bad_request("Sincronización sin configurar: falta el repositorio."))?;
     let token = config.github_token.as_deref().filter(|s| !s.is_empty())
-        .ok_or_else(|| ApiError::bad_request("Modo rescate sin configurar: falta el token de GitHub."))?;
+        .ok_or_else(|| ApiError::bad_request("Sincronización sin configurar: falta el token de GitHub."))?;
     let key_path = config.age_key_path.as_deref().filter(|s| !s.is_empty())
-        .ok_or_else(|| ApiError::bad_request("Modo rescate sin configurar: falta la ruta a la clave privada."))?;
+        .ok_or_else(|| ApiError::bad_request("Sincronización sin configurar: falta la ruta a la clave privada."))?;
     Ok((repo, token, key_path))
 }
 
@@ -70,7 +76,7 @@ fn github_get(url: &str, token: &str) -> Result<serde_json::Value, ApiError> {
     let response = ureq::get(url)
         .set("Authorization", &format!("Bearer {token}"))
         .set("Accept", "application/vnd.github+json")
-        .set("User-Agent", "FaroDocente-modo-rescate")
+        .set("User-Agent", "FaroDocente-sincronizacion-servidor")
         .call()
         .map_err(|e| match e {
             ureq::Error::Status(404, _) => ApiError::bad_request(
@@ -145,7 +151,7 @@ fn decrypt(encrypted: &[u8], key_path: &str) -> Result<Vec<u8>, ApiError> {
     Ok(plaintext)
 }
 
-fn fetch_and_decrypt(config: &RescueConfig) -> Result<serde_json::Value, ApiError> {
+fn fetch_and_decrypt(config: &ServerSyncConfig) -> Result<serde_json::Value, ApiError> {
     let (repo, token, key_path) = require_config(config)?;
     let encrypted = fetch_encrypted(repo, token)?;
     let plaintext = decrypt(&encrypted, key_path)?;
@@ -168,8 +174,8 @@ fn summarize(dump: &serde_json::Value) -> serde_json::Value {
 }
 
 // Compara contra lo que YA hay en este SQLite -- para poder avisar antes
-// de sobrescribir si la copia de rescate parece más vieja/pequeña de lo
-// que ya tienes (p.ej. abriste el modo rescate sin que hiciera falta).
+// de sobrescribir si la copia del servidor parece más vieja/pequeña de lo
+// que ya tienes (p.ej. la abriste sin que hiciera falta).
 pub fn summarize_local(conn: &rusqlite::Connection) -> Result<serde_json::Value, ApiError> {
     let mut resumen = serde_json::Map::new();
     for tabla in TABLAS_RESUMEN {
@@ -245,7 +251,7 @@ fn upload_encrypted(repo: &str, token: &str, encrypted: &[u8]) -> Result<(), Api
     ureq::put(&url)
         .set("Authorization", &format!("Bearer {token}"))
         .set("Accept", "application/vnd.github+json")
-        .set("User-Agent", "FaroDocente-modo-rescate")
+        .set("User-Agent", "FaroDocente-sincronizacion-servidor")
         .send_json(body)
         .map_err(|e| match e {
             ureq::Error::Status(401, _) | ureq::Error::Status(403, _) => ApiError::bad_request(
@@ -290,7 +296,7 @@ mod tests {
     fn encrypt_for_upload_round_trip() {
         let identity = age::x25519::Identity::generate();
         let key_file_content = format!("{}\n", identity.to_string().expose_secret());
-        let tmp = std::env::temp_dir().join(format!("rescue_test_upload_key_{}.txt", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("sync_test_upload_key_{}.txt", uuid::Uuid::new_v4()));
         std::fs::write(&tmp, key_file_content).unwrap();
 
         let plaintext = br#"{"students":[{"id":"s1","nombre":"Ana"}]}"#;
@@ -322,7 +328,7 @@ mod tests {
         }
 
         let key_file_content = format!("# comentario\n{}\n", identity.to_string().expose_secret());
-        let tmp = std::env::temp_dir().join(format!("rescue_test_key_{}.txt", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("sync_test_key_{}.txt", uuid::Uuid::new_v4()));
         std::fs::write(&tmp, key_file_content).unwrap();
 
         let result = decrypt(&encrypted, tmp.to_str().unwrap()).unwrap();
@@ -346,7 +352,7 @@ mod tests {
         }
 
         let key_file_content = format!("{}\n", wrong_identity.to_string().expose_secret());
-        let tmp = std::env::temp_dir().join(format!("rescue_test_wrongkey_{}.txt", uuid::Uuid::new_v4()));
+        let tmp = std::env::temp_dir().join(format!("sync_test_wrongkey_{}.txt", uuid::Uuid::new_v4()));
         std::fs::write(&tmp, key_file_content).unwrap();
 
         let result = decrypt(&encrypted, tmp.to_str().unwrap());
