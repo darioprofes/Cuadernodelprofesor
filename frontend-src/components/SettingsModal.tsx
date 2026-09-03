@@ -21,6 +21,10 @@ import { isTauri } from '@tauri-apps/api/core';
 export interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
+    // Para abrir directamente en una pantalla concreta -- p.ej. el aviso de
+    // "copia pendiente" en HoyView.tsx lleva a 'backup'. Sin especificar,
+    // abre en la pantalla de siempre ('academicConfig').
+    initialView?: SettingsView;
     onOpenExportModal: () => void;
     // courses: solo lectura, para el chequeo de integridad de BackupManager
     // (healthCheck) — CurriculumManager/ProgrammingManager/etc. ya hablan
@@ -51,7 +55,7 @@ export interface SettingsModalProps {
     onDeleteEvaluationTool: (id: string) => void;
 }
 
-type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup' | 'educastur' | 'serverSync';
+export type SettingsView = 'schedule' | 'courses' | 'academicConfig' | 'curriculum' | 'planner' | 'evaluationTools' | 'evaluationInfo' | 'backup' | 'educastur' | 'serverSync';
 
 const SettingsModal: React.FC<SettingsModalProps> = (props) => {
     const {
@@ -60,9 +64,9 @@ const SettingsModal: React.FC<SettingsModalProps> = (props) => {
         onCreateEvaluationTool, onUpdateEvaluationTool, onDeleteEvaluationTool, evaluationCriteria,
         keyCompetences, onCreateKeyCompetence, onUpdateKeyCompetence, onDeleteKeyCompetence,
         onCreateDescriptor, onUpdateDescriptor, onDeleteDescriptor,
-        basicKnowledge, programmingUnits,
+        basicKnowledge, programmingUnits, initialView,
     } = props;
-    const [activeView, setActiveView] = useState<SettingsView>('academicConfig');
+    const [activeView, setActiveView] = useState<SettingsView>(initialView ?? 'academicConfig');
     // "Clases y Alumnado" abre en su propia ventana en vez de compartir el
     // panel de contenido de Ajustes: es la pantalla con más información de
     // toda la app (doble columna alumnado/clase) y el nav de 224px de ancho

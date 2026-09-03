@@ -64,6 +64,7 @@ import { Cog8ToothIcon, UserCircleIcon, BookOpenIcon, UsersIcon, ClipboardDocume
 import PageHeader from './components/PageHeader';
 import { PAGE_ACCENT, SIDEBAR_BG } from './theme/palette';
 const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
+import type { SettingsView } from './components/SettingsModal';
 const TeacherProfileModal = React.lazy(() => import('./components/TeacherProfileModal'));
 import ExportModal from './components/ExportModal';
 import Modal from './components/Modal';
@@ -414,6 +415,20 @@ const App = () => {
         mainRef.current?.scrollTo(0, 0);
     }, [activeView]);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    // Pantalla con la que se abre Ajustes -- undefined = la de siempre
+    // (academicConfig). Se resetea cada vez que se cierra para que el botón
+    // de cabecera (sin pantalla concreta) no herede la última usada por un
+    // aviso (ver openSettingsAtView, usado por el aviso de "copia
+    // pendiente" en HoyView.tsx).
+    const [settingsInitialView, setSettingsInitialView] = useState<SettingsView | undefined>(undefined);
+    const openSettingsAtView = (view: SettingsView) => {
+        setSettingsInitialView(view);
+        setIsSettingsModalOpen(true);
+    };
+    const closeSettingsModal = () => {
+        setIsSettingsModalOpen(false);
+        setSettingsInitialView(undefined);
+    };
     const [isTeacherProfileModalOpen, setIsTeacherProfileModalOpen] = useState(false);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isFavoritosOpen, setIsFavoritosOpen] = useState(false);
@@ -782,6 +797,7 @@ const App = () => {
                 absencesByClassId={absencesByClassId}
                 setActiveView={setActiveView}
                 setActiveClassId={setActiveClassId}
+                onOpenSettings={() => openSettingsAtView('backup')}
                 onOpenDay={(dateStr) => { setCalendarJumpDate(dateStr); setActiveView('calendar'); }}
                 onAbrirBorradorSA={(courseId, resultado) => {
                     setPendingSAResultado({ courseId, resultado });
@@ -1149,8 +1165,9 @@ const App = () => {
                 <React.Suspense fallback={<ViewLoadingFallback />}>
                     <SettingsModal
                         isOpen={isSettingsModalOpen}
-                        onClose={() => setIsSettingsModalOpen(false)}
-                        onOpenExportModal={() => { setIsSettingsModalOpen(false); setIsExportModalOpen(true); }}
+                        initialView={settingsInitialView}
+                        onClose={closeSettingsModal}
+                        onOpenExportModal={() => { closeSettingsModal(); setIsExportModalOpen(true); }}
                         classes={hydratedClasses}
                         courses={curriculumCourses}
                         curriculumCourses={curriculumCourses}

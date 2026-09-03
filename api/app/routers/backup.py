@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from services.auth import require_auth
-from services.backup import export_all, import_all, list_pending_restores, delete_pending_restore
+from services.backup import export_all, import_all, list_pending_restores, delete_pending_restore, restore_pending_restore
 
 router = APIRouter(prefix="/backup", tags=["Copia de seguridad"], dependencies=[Depends(require_auth)])
 
@@ -42,6 +42,18 @@ def get_pending_restores() -> list[dict[str, Any]]:
 def delete_pending_restore_route(filename: str):
 
     if not delete_pending_restore(filename):
+        raise HTTPException(status_code=404, detail="No se encuentra esa copia pendiente.")
+
+    return {"ok": True}
+
+
+# Deshace la restauración automática desde escritorio: vuelve a dejar la
+# base de datos como estaba justo antes de esa restauración. Mismo
+# criterio de "todo o nada, sin confirmación de conflicto" que /import.
+@router.post("/pending-restores/{filename}/restore")
+def restore_pending_restore_route(filename: str):
+
+    if not restore_pending_restore(filename):
         raise HTTPException(status_code=404, detail="No se encuentra esa copia pendiente.")
 
     return {"ok": True}

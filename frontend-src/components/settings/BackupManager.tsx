@@ -1,20 +1,15 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { ChevronDownIcon } from '../Icons';
 import { runHealthCheck, type HealthCheckIssue } from '../../services/healthCheck';
 import Card from '../Card';
 import Button from '../Button';
 import Alert from '../Alert';
 import Badge from '../Badge';
+import Modal from '../Modal';
 import { TYPOGRAPHY } from '../../theme/typography';
 import type { SettingsModalProps } from '../SettingsModal';
 import { openExternalLink } from '../../utils';
-import { api } from '../../services/api';
-
-interface PendingRestore {
-    filename: string;
-    created_at: string;
-    size_bytes: number;
-}
+import { usePendingRestores, useDismissPendingRestore, useRestorePendingRestore } from '../../hooks/usePendingRestores';
 
 type BackupManagerProps = Pick<SettingsModalProps,
     | 'importDatabase' | 'exportDatabase' | 'resetDatabase' | 'onOpenExportModal'
@@ -31,25 +26,32 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
     // Copias que el servidor se hizo a sí mismo justo antes de una
     // restauración automática desde escritorio (ver /root/scripts/
     // restore_from_desktop.sh) -- se quedan pendientes de que el profesor
-    // confirme que todo está bien y las borre, o las use para deshacer.
-    const [pendingRestores, setPendingRestores] = useState<PendingRestore[]>([]);
-    const [deletingFile, setDeletingFile] = useState<string | null>(null);
-
-    useEffect(() => {
-        api.get<PendingRestore[]>('/backup/pending-restores')
-            .then(setPendingRestores)
-            .catch(() => {});
-    }, []);
+    // confirme que todo está bien y las borre, o las use para deshacer si
+    // algo salió mal. Mismo aviso que la chip de "Avisos" en HoyView.tsx.
+    const { data: pendingRestores = [] } = usePendingRestores();
+    const dismissMutation = useDismissPendingRestore();
+    const restoreMutation = useRestorePendingRestore();
+    const [confirmRestoreFilename, setConfirmRestoreFilename] = useState<string | null>(null);
+    const [restoreError, setRestoreError] = useState<string | null>(null);
+    const [restoredOk, setRestoredOk] = useState(false);
 
     const handleDismissPendingRestore = async (filename: string) => {
-        setDeletingFile(filename);
         try {
-            await api.delete(`/backup/pending-restores/${encodeURIComponent(filename)}`);
-            setPendingRestores(prev => prev.filter(p => p.filename !== filename));
+            await dismissMutation.mutateAsync(filename);
         } catch (e) {
             alert(`No se pudo borrar: ${e instanceof Error ? e.message : String(e)}`);
-        } finally {
-            setDeletingFile(null);
+        }
+    };
+
+    const handleConfirmRestore = async () => {
+        if (!confirmRestoreFilename) return;
+        setRestoreError(null);
+        try {
+            await restoreMutation.mutateAsync(confirmRestoreFilename);
+            setConfirmRestoreFilename(null);
+            setRestoredOk(true);
+        } catch (e) {
+            setRestoreError(e instanceof Error ? e.message : String(e));
         }
     };
 
@@ -188,8 +190,10 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
                     <h4 className="text-lg font-semibold text-amber-800 mb-2">Copias pendientes de confirmar</h4>
                     <p className="text-sm text-slate-600 mb-3">
                         El servidor se restauró automáticamente desde la app de escritorio y se guardó a sí mismo antes de
-                        sustituir sus datos, por si algo saliera mal. Comprueba que todo está bien y bórralas cuando ya no las necesites.
+                        sustituir sus datos, por si algo saliera mal. Comprueba que todo está bien; si no lo está, puedes
+                        volver a esta copia. Bórrala cuando ya no la necesites.
                     </p>
+                    {restoredOk && <Alert variant="success">Restaurado. El servidor vuelve a tener los datos de justo antes de la restauración automática.</Alert>}
                     <div className="space-y-2">
                         {pendingRestores.map(p => (
                             <Alert key={p.filename} variant="warning">
@@ -198,20 +202,40 @@ const BackupManager: React.FC<BackupManagerProps> = (props) => {
                                         <p className="font-bold">{p.filename}</p>
                                         <p className="text-xs">{new Date(p.created_at).toLocaleString('es-ES')} · {(p.size_bytes / 1024).toFixed(0)} KB</p>
                                     </div>
-                                    <Button
-                                        variant="secondary"
-                                        onClick={() => handleDismissPendingRestore(p.filename)}
-                                        disabled={deletingFile === p.filename}
-                                        className="flex-shrink-0"
-                                    >
-                                        {deletingFile === p.filename ? 'Borrando...' : 'Confirmar y borrar'}
-                                    </Button>
+                                    <div className="flex gap-2 flex-shrink-0">
+                                        <Button variant="danger" onClick={() => setConfirmRestoreFilename(p.filename)}>
+                                            Restaurar esta copia
+                                        </Button>
+                                        <Button
+                                            variant="secondary"
+                                            onClick={() => handleDismissPendingRestore(p.filename)}
+                                            disabled={dismissMutation.isPending}
+                                        >
+                                            {dismissMutation.isPending ? 'Borrando...' : 'Confirmar y borrar'}
+                                        </Button>
+                                    </div>
                                 </div>
                             </Alert>
                         ))}
                     </div>
                 </div>
             )}
+
+            <Modal isOpen={confirmRestoreFilename !== null} onClose={() => setConfirmRestoreFilename(null)} title="Confirmar vuelta atrás" size="md">
+                <div className="space-y-4">
+                    <Alert variant="danger" title="Esto sustituirá TODO lo que hay ahora en el servidor">
+                        Vuelve a dejar la base de datos como estaba justo antes de la restauración automática desde
+                        escritorio -- lo que se importó entonces se pierde. Solo hazlo si esa restauración salió mal.
+                    </Alert>
+                    {restoreError && <Alert variant="danger">{restoreError}</Alert>}
+                    <div className="flex justify-end gap-2">
+                        <Button variant="secondary" onClick={() => setConfirmRestoreFilename(null)}>Cancelar</Button>
+                        <Button variant="danger" onClick={handleConfirmRestore} disabled={restoreMutation.isPending}>
+                            {restoreMutation.isPending ? 'Restaurando...' : 'Sí, volver a esta copia'}
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
 
             <div className="pt-6 border-t border-red-200 mt-8">
                 <h4 className="text-lg font-semibold text-red-800 mb-2">Zona de Peligro</h4>

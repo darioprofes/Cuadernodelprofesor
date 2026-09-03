@@ -11,6 +11,7 @@ import { PALETTE } from '../theme/palette';
 import DateNavButton from './DateNavButton';
 import { computeDashboardNotices, type DashboardNoticeKind } from '../services/dashboardNotices';
 import { useTrabajosIA, type ResultadoTrabajoSA, type ResultadoTrabajoInstrumento } from '../hooks/useTrabajosIA';
+import { usePendingRestores } from '../hooks/usePendingRestores';
 import TrabajosIAPanel from './TrabajosIAPanel';
 
 // Trabajos de IA descartados por el usuario (ver TrabajosIAPanel) -- solo
@@ -68,6 +69,9 @@ interface HoyViewProps {
     absencesByClassId: Record<string, Absence[]>;
     setActiveView: (view: View) => void;
     setActiveClassId: (id: string) => void;
+    // Abre Ajustes en la pantalla de Copia de Seguridad -- lo usa el aviso
+    // de "copia pendiente de confirmar" (ver usePendingRestores).
+    onOpenSettings: () => void;
     // Mismo callback que ya usa AnnualCalendarView -- salta a ese día en la
     // Agenda (App.tsx: setCalendarJumpDate + setActiveView('calendar')).
     onOpenDay?: (dateStr: string) => void;
@@ -88,7 +92,7 @@ interface SlotHoy {
     aula?: string;
 }
 
-const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfiguration, tasks, setTasks, meetings, agendaNotes, absencesByClassId, setActiveView, setActiveClassId, onOpenDay, onAbrirBorradorSA, onAbrirBorradorInstrumento }) => {
+const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfiguration, tasks, setTasks, meetings, agendaNotes, absencesByClassId, setActiveView, setActiveClassId, onOpenSettings, onOpenDay, onAbrirBorradorSA, onAbrirBorradorInstrumento }) => {
     // `new Date()` solo se recalcularía en cada render: sin este tick, si no
     // hay ninguna otra interacción la vista se queda con la hora congelada
     // en el momento en que se montó (p.ej. tras cambiar la hora del sistema
@@ -253,6 +257,13 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     // Cola de trabajos de IA en segundo plano (SA por partes, instrumentos)
     // -- mismo sitio que el resto de avisos accionables, ver nota de cabecera.
     const trabajosIAQuery = useTrabajosIA();
+
+    // Copia que el servidor se hizo a sí mismo antes de una restauración
+    // automática desde escritorio, pendiente de confirmar (ver
+    // usePendingRestores) -- solo existe en web, la query viene vacía y
+    // deshabilitada en escritorio.
+    const pendingRestoresQuery = usePendingRestores();
+    const pendingRestoresCount = (pendingRestoresQuery.data ?? []).length;
     const [descartados, setDescartados] = useState<Set<string>>(leerDescartados);
     const [panelTrabajosAbierto, setPanelTrabajosAbierto] = useState(false);
     const trabajosVisibles = (trabajosIAQuery.data ?? []).filter(t => !descartados.has(t.jobId));
@@ -333,6 +344,16 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                         </button>
                     );
                 })}
+                {pendingRestoresCount > 0 && (
+                    <button
+                        type="button"
+                        onClick={onOpenSettings}
+                        className="flex items-center gap-1.5 bg-white shadow-sm rounded-full pl-3 pr-4 py-1.5 text-sm font-semibold transition-opacity hover:opacity-70 text-red-700"
+                    >
+                        <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                        Copia previa del servidor pendiente de confirmar
+                    </button>
+                )}
                 {(trabajosEnCurso > 0 || trabajosConProblema > 0 || trabajosListosSinGuardar > 0) && (
                     <button
                         type="button"

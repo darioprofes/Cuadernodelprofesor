@@ -1,4 +1,5 @@
 import base64
+import json
 import os
 import uuid
 from datetime import date, datetime, time
@@ -250,18 +251,48 @@ def list_pending_restores() -> list[dict[str, Any]]:
     return items
 
 
-def delete_pending_restore(filename: str) -> bool:
+def _pre_restore_path(filename: str) -> str | None:
 
     # Evita cualquier salida de la carpeta vía "../" en el nombre -- solo
     # se aceptan nombres de archivo simples, nunca rutas.
     if "/" in filename or "\\" in filename or filename in ("", ".", ".."):
-        return False
+        return None
 
     path = os.path.join(_PRE_RESTORE_DIR, filename)
 
     if not os.path.isfile(path):
+        return None
+
+    return path
+
+
+def delete_pending_restore(filename: str) -> bool:
+
+    path = _pre_restore_path(filename)
+
+    if path is None:
         return False
 
     os.remove(path)
+
+    return True
+
+
+# Deshace una restauración automática desde escritorio que resultó no ser
+# lo que hacía falta -- vuelve a importar el estado del servidor justo
+# antes de esa restauración (mismo import_all() de siempre, todo o nada).
+# El archivo NO se borra solo (el profesor decide con "Confirmar y
+# borrar" cuando ya no lo necesite, por si hiciera falta repetir esto).
+def restore_pending_restore(filename: str) -> bool:
+
+    path = _pre_restore_path(filename)
+
+    if path is None:
+        return False
+
+    with open(path, encoding="utf-8") as f:
+        dump = json.load(f)
+
+    import_all(dump)
 
     return True
