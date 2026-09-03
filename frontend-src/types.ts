@@ -472,23 +472,30 @@ export interface AcademicConfiguration {
   teacherHasPhoto?: boolean;
 }
 
-export type View =
-  | 'hoy'
-  | 'horario'
-  | 'gradebook'
-  | 'journal'
-  | 'meetings'
-  | 'exams'
-  | 'calendar'
-  | 'annual-calendar'
-  | 'criteria'
-  | 'competences'
-  | 'key-competences'
-  | 'descriptors'
-  | 'curriculum'
-  | 'planner'
-  | 'evaluation-tools'
-  | 'ai-tools'
-  | 'adaptar-material'
-  | 'deteccion-curricular';
+// Lista real (no solo el tipo) para poder validar en tiempo de ejecución un
+// segmento de la URL al sincronizar la navegación con el historial del
+// navegador (ver App.tsx, sincronización de URL) -- un tipo TS solo no
+// sirve para eso, no existe en el JS compilado.
+export const ALL_VIEWS = [
+  'hoy',
+  'horario',
+  'gradebook',
+  'journal',
+  'meetings',
+  'exams',
+  'calendar',
+  'annual-calendar',
+  'criteria',
+  'competences',
+  'key-competences',
+  'descriptors',
+  'curriculum',
+  'planner',
+  'evaluation-tools',
+  'ai-tools',
+  'adaptar-material',
+  'deteccion-curricular',
+] as const;
+
+export type View = typeof ALL_VIEWS[number];
 

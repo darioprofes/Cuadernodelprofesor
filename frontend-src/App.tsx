@@ -32,6 +32,7 @@ import { usePreferences, useUpdatePreferences } from './hooks/usePreferences';
 import { hydrateClassData, diffAndSyncList } from './services/apiAdapters';
 import { INITIAL_ACADEMIC_CONFIGURATION, getInitialShortcuts, getInitialEvaluationTools } from './constants';
 import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, OperationalDescriptor, JournalEntry, ProgrammingUnit, BasicKnowledge, AcademicConfiguration, EvaluationTool, Assignment, Task, Meeting, AgendaNote, Shortcut, View } from './types';
+import { ALL_VIEWS } from './types';
 import ShortcutsBar from './components/ShortcutsBar';
 import Select from './components/Select';
 import IconButton from './components/IconButton';
@@ -453,15 +454,27 @@ const App = () => {
         // no haya clases de verdad.
         if (initialized || currentYear.isLoading || remoteClasses.isLoading) return;
 
-        // La app siempre arranca en "Hoy" (no hay ajuste en la UI para
-        // cambiarlo; ignora academicConfiguration.defaultStartView, que
-        // en bases de datos ya existentes puede seguir siendo 'calendar').
-        setActiveView('hoy');
+        // La app siempre arrancaba en "Hoy" sin importar nada más -- ahora
+        // respeta la sección (y, si es el Cuaderno, la clase) que venga en
+        // la URL, para que refrescar la página no te devuelva siempre al
+        // principio (ver sincronización de URL más abajo). Sin URL previa
+        // (primera visita, o una sección no reconocida), sigue arrancando
+        // en "Hoy" igual que antes -- ignora academicConfiguration.
+        // defaultStartView, que en bases de datos ya existentes puede
+        // seguir siendo 'calendar'.
+        const [, urlView, urlClassId] = window.location.pathname.split('/');
+        const startView: View = (ALL_VIEWS as readonly string[]).includes(urlView) ? (urlView as View) : 'hoy';
+        setActiveView(startView);
 
         if (hydratedClasses.length > 0) {
-            const academicCourseIds = new Set((remoteCourses.data ?? []).filter(c => c.type !== 'other').map(c => c.id));
-            const firstAcademicClass = hydratedClasses.find(c => academicCourseIds.has(c.courseId));
-            setActiveClassId(firstAcademicClass?.id ?? hydratedClasses[0].id);
+            const urlClassValid = startView === 'gradebook' && !!urlClassId && hydratedClasses.some(c => c.id === urlClassId);
+            if (urlClassValid) {
+                setActiveClassId(urlClassId);
+            } else {
+                const academicCourseIds = new Set((remoteCourses.data ?? []).filter(c => c.type !== 'other').map(c => c.id));
+                const firstAcademicClass = hydratedClasses.find(c => academicCourseIds.has(c.courseId));
+                setActiveClassId(firstAcademicClass?.id ?? hydratedClasses[0].id);
+            }
         }
         setInitialized(true);
         // setActiveView is intentionally excluded: it's a stable useCallback
@@ -469,6 +482,57 @@ const App = () => {
         // exactly once anyway (guarded by !initialized).
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialized, currentYear.isLoading, remoteClasses.isLoading, hydratedClasses, remoteCourses.data]);
+
+    // Sincroniza la sección activa (y, en el Cuaderno, la clase) con la URL
+    // y el historial del navegador -- toda la navegación de la app vivía
+    // solo en memoria (activeView/activeClassId), así que "atrás" sacaba de
+    // la app entera y refrescar volvía siempre a "Hoy". Sin librería de
+    // rutas: la History API nativa basta para lo que se pide (solo qué
+    // sección, y de paso qué clase). Un cambio de SECCIÓN empuja una
+    // entrada nueva al historial; cambiar de CLASE sin cambiar de sección
+    // (el desplegable del Cuaderno) sustituye la entrada actual en vez de
+    // apilar una por cada clase que se mire de pasada.
+    const isSyncingFromPopstate = useRef(false);
+    const isFirstUrlSync = useRef(true);
+    const lastSyncedView = useRef<View | null>(null);
+    useEffect(() => {
+        if (!initialized) return;
+
+        const path = activeView === 'gradebook' && activeClassId ? `/gradebook/${activeClassId}` : `/${activeView}`;
+
+        if (isSyncingFromPopstate.current) {
+            isSyncingFromPopstate.current = false;
+            lastSyncedView.current = activeView;
+            return;
+        }
+
+        if (path === window.location.pathname) {
+            lastSyncedView.current = activeView;
+            return;
+        }
+
+        if (isFirstUrlSync.current || lastSyncedView.current === activeView) {
+            // Primera sincronización tras cargar, o solo cambió la clase
+            // dentro de la misma sección: no apila una entrada nueva.
+            history.replaceState(null, '', path);
+        } else {
+            history.pushState(null, '', path);
+        }
+        isFirstUrlSync.current = false;
+        lastSyncedView.current = activeView;
+    }, [activeView, activeClassId, initialized]);
+
+    useEffect(() => {
+        const handlePopState = () => {
+            isSyncingFromPopstate.current = true;
+            const [, urlView, urlClassId] = window.location.pathname.split('/');
+            const view: View = (ALL_VIEWS as readonly string[]).includes(urlView) ? (urlView as View) : 'hoy';
+            setActiveView(view);
+            if (view === 'gradebook' && urlClassId) setActiveClassId(urlClassId);
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, [setActiveView]);
 
     const activeClass = useMemo(() => (
         hydratedClasses.find(c => c.id === activeClassId)
