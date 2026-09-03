@@ -56,7 +56,7 @@ def _to_jsonable(value: Any) -> Any:
     if isinstance(value, (datetime, date, time)):
         return value.isoformat()
 
-    if isinstance(value, memoryview):
+    if isinstance(value, (memoryview, bytes)):
         # BYTEA (students.foto): se quedaba fuera a propósito para no
         # hinchar el backup de texto -- pero eso rompía la promesa real de
         # "Exportar" + "Restablecer Aplicación" + "Importar": el alumnado
@@ -64,7 +64,11 @@ def _to_jsonable(value: Any) -> Any:
         # datos (sin fotos ya son unos cientos de KB; con fotos, unos pocos
         # MB) no compensa el ahorro -- se codifica en base64 igual que
         # cualquier otro campo, ver _bytea_columns/import_all más abajo
-        # para la reconstrucción a bytes reales al importar.
+        # para la reconstrucción a bytes reales al importar. psycopg puede
+        # devolver un BYTEA como memoryview o como bytes según el contexto
+        # -- confirmado en real: aquí llegaba como bytes y el isinstance
+        # solo cubría memoryview, así que se colaba sin codificar y
+        # reventaba la serialización de FastAPI con UnicodeDecodeError.
         return base64.b64encode(bytes(value)).decode("ascii")
 
     return value
