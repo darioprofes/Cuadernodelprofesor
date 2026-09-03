@@ -1291,7 +1291,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           </tbody>
         </table>
       </div>
-      <div className="p-4 border-t bg-slate-50/50 space-y-4">
+      <div className="p-4 border-t border-slate-200 bg-slate-50/50 space-y-4">
           {classData.students.length > 1 && (
               <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">Ordenar por</span>
@@ -1319,7 +1319,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                   <FooterActionCard icon={<UserCircleIcon className="w-5 h-5" />} label="En lote" color="text-green-600" onClick={() => setIsBulkAddOpen(true)} />
                   <FooterActionCard icon={<UserPlusIcon className="w-5 h-5" />} label="Matricular existente" color="text-blue-600" onClick={() => setIsEnrollExistingOpen(true)} />
               </FooterActionGroup>
-              <FooterActionGroup icon={<PencilIcon className="w-5 h-5" />} title="Editar alumnado" className="md:border-l md:pl-4">
+              <FooterActionGroup icon={<PencilIcon className="w-5 h-5" />} title="Editar alumnado" className="md:border-l md:border-slate-200 md:pl-4">
                   {classData.students.length > 0 && (
                       <FooterActionCard icon={<PencilIcon className="w-5 h-5" />} label="Edición rápida" color="text-slate-600" onClick={() => setFlagsEditTargetId(classData.students[0].id)} />
                   )}
@@ -1330,7 +1330,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           </div>
       </div>
        {activePeriodId !== 'final' && (
-          <div className="p-2 border-t bg-slate-50/50 rounded-b-xl">
+          <div className="p-2 border-t border-slate-200 bg-slate-50/50 rounded-b-xl">
             <div className="relative" ref={copyCatRef}>
               <button
                 type="button"
