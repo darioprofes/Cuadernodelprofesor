@@ -1291,33 +1291,47 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           </tbody>
         </table>
       </div>
-      <div className="p-3 border-t bg-slate-50/50 space-y-2">
+      <div className="p-3 border-t bg-slate-50/50 space-y-3">
           {classData.students.length > 1 && (
-              <div className="flex items-center gap-2 text-sm">
-                  <label className="text-slate-500 flex-shrink-0">Orden:</label>
-                  <Select value={ordenAlumnado} onChange={e => setOrdenAlumnado(e.target.value as typeof ordenAlumnado)} className="flex-1">
-                      <option value="alfabetico">Alfabético</option>
-                      <option value="grupoReferencia">Grupo de referencia</option>
-                      <option value="manual">Manual (arrastrar filas)</option>
-                  </Select>
+              <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">Orden</span>
+                  <div className="inline-flex items-center gap-0.5 bg-slate-200/70 rounded-lg p-0.5">
+                      {([
+                          ['alfabetico', 'A-Z'],
+                          ['grupoReferencia', 'Grupo'],
+                          ['manual', 'Manual'],
+                      ] as const).map(([modo, label]) => (
+                          <button
+                              key={modo}
+                              type="button"
+                              onClick={() => setOrdenAlumnado(modo)}
+                              title={modo === 'manual' ? 'Arrastra una fila por su nombre para reordenar' : undefined}
+                              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${ordenAlumnado === modo ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                              {label}
+                          </button>
+                      ))}
+                  </div>
               </div>
           )}
-          <button onClick={() => setIsBulkAddOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-green-600 hover:bg-green-100 bg-white rounded-md border border-slate-200 shadow-sm">
-              + Añadir alumn@
-          </button>
-          <button onClick={() => setIsEnrollExistingOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-blue-600 hover:bg-blue-100 bg-white rounded-md border border-slate-200 shadow-sm">
-              + Matricular alumn@ ya existente
-          </button>
-          {classData.students.length > 0 && (
-              <button onClick={() => setFlagsEditTargetId(classData.students[0].id)} className="w-full text-center py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 bg-white rounded-md border border-slate-200 shadow-sm">
-                  Editar datos rápidos (repetidor, bilingüe, NEAE...)
+          <div className="flex flex-wrap gap-2">
+              <button onClick={() => setIsBulkAddOpen(true)} className="flex-1 min-w-[10rem] text-center py-2 px-3 text-sm font-semibold text-green-600 hover:bg-green-100 bg-white rounded-md border border-slate-200 shadow-sm">
+                  + Añadir alumn@
               </button>
-          )}
-          {!isTauri() && (
-              <button onClick={() => setIsImportPhotosOpen(true)} className="w-full text-center py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 bg-white rounded-md border border-slate-200 shadow-sm">
-                  Importar fotos desde PDF
+              <button onClick={() => setIsEnrollExistingOpen(true)} className="flex-1 min-w-[10rem] text-center py-2 px-3 text-sm font-semibold text-blue-600 hover:bg-blue-100 bg-white rounded-md border border-slate-200 shadow-sm">
+                  + Matricular alumn@ ya existente
               </button>
-          )}
+              {classData.students.length > 0 && (
+                  <button onClick={() => setFlagsEditTargetId(classData.students[0].id)} className="flex-1 min-w-[10rem] text-center py-2 px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 bg-white rounded-md border border-slate-200 shadow-sm">
+                      Editar datos rápidos (repetidor, bilingüe, NEAE...)
+                  </button>
+              )}
+              {!isTauri() && (
+                  <button onClick={() => setIsImportPhotosOpen(true)} className="flex-1 min-w-[10rem] text-center py-2 px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 bg-white rounded-md border border-slate-200 shadow-sm">
+                      Importar fotos desde PDF
+                  </button>
+              )}
+          </div>
       </div>
        {activePeriodId !== 'final' && (
           <div className="p-4 border-t flex justify-start items-center bg-slate-200 rounded-b-xl">
