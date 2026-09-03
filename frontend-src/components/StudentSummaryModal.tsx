@@ -17,7 +17,7 @@ import {
     calculatePeriodGradeCriterial,
     getGradeColorClass
 } from '../services/gradeCalculations';
-import { ChevronDownIcon, ChevronRightIcon, ClipboardDocumentIcon } from './Icons';
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClipboardDocumentIcon } from './Icons';
 import { TYPOGRAPHY } from '../theme/typography';
 import { linkClassName } from '../theme/components/Link';
 import StudentPhotoAvatar from './StudentPhotoAvatar';
@@ -38,10 +38,16 @@ interface StudentSummaryModalProps {
     specificCompetences: SpecificCompetence[];
     keyCompetences: KeyCompetence[];
     repartoIgualCriterios: boolean;
+    // Anterior/Siguiente en la ficha completa de solo lectura (visor rápido
+    // "como la edición rápida, pero de solo lectura") -- solo ahí, no en las
+    // pestañas de calificaciones/evolución, que no se pidieron navegables.
+    // `students` es el mismo roster que ya usa StudentFlagsModal.
+    students: Student[];
+    onChangeStudent: (student: Student) => void;
 }
 
 const StudentSummaryModal: React.FC<StudentSummaryModalProps> = ({
-    isOpen, onClose, initialShowFullFicha = false, student, classData, courses, academicConfiguration, criteria, specificCompetences, keyCompetences, repartoIgualCriterios
+    isOpen, onClose, initialShowFullFicha = false, student, classData, courses, academicConfiguration, criteria, specificCompetences, keyCompetences, repartoIgualCriterios, students, onChangeStudent
 }) => {
     const [activeTab, setActiveTab] = useState<'personal' | 'evolution' | 'competences' | 'criteria'>('personal');
     const [showFullFicha, setShowFullFicha] = useState(initialShowFullFicha);
@@ -79,9 +85,40 @@ const StudentSummaryModal: React.FC<StudentSummaryModalProps> = ({
         }
     };
 
+    // Anterior/Siguiente sobre el mismo roster que ya usa StudentFlagsModal
+    // -- vale para las 4 pestañas (Datos Personales incluida la ficha
+    // completa, Evolución, Competencial, Criterios): todas dependen de
+    // `student`/`student.id` vía props, así que cambiarlo aquí arriba ya
+    // recalcula el resto sin más cambios.
+    const studentIndex = students.findIndex(s => s.id === student.id);
+    const goToStudent = (newIndex: number) => onChangeStudent(students[newIndex]);
+
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Seguimiento" size="4xl">
             <div className="flex flex-col h-full max-h-[80vh]">
+                {students.length > 1 && (
+                    <div className="flex items-center justify-end gap-1 mb-2 flex-shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => goToStudent(studentIndex - 1)}
+                            disabled={studentIndex <= 0}
+                            className="p-1 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Alumno/a anterior"
+                        >
+                            <ChevronLeftIcon className="w-4 h-4" />
+                        </button>
+                        <span className="text-xs text-slate-400 px-1">{studentIndex + 1} de {students.length}</span>
+                        <button
+                            type="button"
+                            onClick={() => goToStudent(studentIndex + 1)}
+                            disabled={studentIndex < 0 || studentIndex >= students.length - 1}
+                            className="p-1 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Siguiente alumno/a"
+                        >
+                            <ChevronRightIcon className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
                 {showFullFicha ? (
                     <div className="flex-1 overflow-y-auto min-h-0 pr-2">
                         <FullFichaScreen student={student} classData={classData} courses={courses} onBack={() => setShowFullFicha(false)} />

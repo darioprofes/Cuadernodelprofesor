@@ -1559,6 +1559,8 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             onClose={() => setSelectedStudentForSummary(null)}
             initialShowFullFicha={summaryOpensOnFullFicha}
             student={selectedStudentForSummary}
+            students={classData.students}
+            onChangeStudent={setSelectedStudentForSummary}
             classData={classData}
             courses={allCourses}
             academicConfiguration={academicConfiguration}
