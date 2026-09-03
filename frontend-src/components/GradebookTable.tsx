@@ -1139,7 +1139,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             onClick={() => { setSummaryOpensOnFullFicha(false); setSelectedStudentForSummary(student); }}
                             className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                         >
-                            <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} hideFoto={!mostrarFotos} />
+                            {mostrarFotos && <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />}
                             <span className="truncate min-w-0 flex-1" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                             {mostrarIconos && <AcneaeTag tags={student.acneae}/>}
                             {mostrarIconos && student.haRepetidoCurso && (
@@ -1359,7 +1359,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                               onClick={() => { setSummaryOpensOnFullFicha(false); setSelectedStudentForSummary(student); }}
                               className={`flex items-center gap-2 text-left w-full transition-colors group-hover:underline truncate ${linkHoverClassName}`}
                           >
-                              <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} hideFoto={!mostrarFotos} />
+                              {mostrarFotos && <StudentAvatar student={student} bgColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg} className={avatarClassName} />}
                               <span className="truncate min-w-0 flex-1" title={getNombreCompleto(student)}>{getNombreCompleto(student)}</span>
                               {mostrarIconos && <AcneaeTag tags={student.acneae}/>}
                               {mostrarIconos && student.haRepetidoCurso && (
