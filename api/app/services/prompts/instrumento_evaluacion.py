@@ -133,6 +133,23 @@ def construir_prompt(course_id, criterion_ids, tool_type, contexto=None, num_niv
     instruccion_tipo = _INSTRUCCIONES_TIPO[tool_type].format(n=n) if necesita_niveles else _INSTRUCCIONES_TIPO[tool_type]
 
     seccion_contexto = f"\nLo que se va a evaluar con este instrumento: {contexto}\n" if contexto else ""
+    # Sin esto, "contexto" solo servía de encabezado decorativo -- la IA lo
+    # leía pero nada la obligaba a basarse en él, así que con un contexto
+    # largo (p.ej. el enunciado real de un examen pegado tal cual, en vez de
+    # una frase corta) el instrumento podía acabar siendo una elaboración
+    # genérica de la descripción de cada criterio, ignorando lo pegado.
+    # Misma instrucción que instruccion_documento un poco más abajo, pero
+    # aplicada a `contexto` -- los dos campos pueden traer el mismo texto
+    # (p.ej. desde una actividad de una Situación de Aprendizaje, ver
+    # EvaluationToolManager.tsx/ProgrammingManager.tsx) y ambos deben pesar
+    # igual como base real del instrumento, no solo como descripción.
+    instruccion_contexto = (
+        "\nBasa el instrumento en lo descrito arriba (\"Lo que se va a evaluar con este instrumento\") -- si "
+        "ahí se ha pegado contenido real (el enunciado de un examen, la descripción de un producto...), las "
+        "preguntas/ítems tienen que ajustarse a eso concretamente, no ser una elaboración genérica de la "
+        "descripción de cada criterio."
+        if contexto else ""
+    )
 
     seccion_documento = (
         f"\n<contenido_visto_en_clase>\n{documento_clase}\n</contenido_visto_en_clase>\n"
@@ -186,7 +203,7 @@ evaluación de tipo {_ETIQUETAS_TIPO[tool_type]}.
 {instruccion_tipo}
 
 {instruccion_cobertura} No inventes criterios fuera de la lista dada -- si lo haces, esos \
-códigos se descartarán al procesar la respuesta.{instruccion_documento}
+códigos se descartarán al procesar la respuesta.{instruccion_contexto}{instruccion_documento}
 </tarea>
 
 <formato_de_salida>

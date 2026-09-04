@@ -1,5 +1,5 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { EvaluationTool } from '../types';
 import Modal from './Modal';
 import Button from './Button';
@@ -105,6 +105,20 @@ const GenerarInstrumentoIAModal: React.FC<GenerarInstrumentoIAModalProps> = ({
         setPromptGenerado(null);
         setRespuestaPegada('');
     };
+
+    // El elemento <GenerarInstrumentoIAModal> de los componentes que lo abren
+    // (EvaluationToolManager.tsx, ProgrammingManager.tsx) NUNCA se desmonta
+    // entre dos usos (solo cambia `isOpen`) -- sin este efecto, `contexto`/
+    // `documentoClaseInicial` solo se leían una vez, en el useState inicial
+    // de arriba, así que la SEGUNDA vez que se abría este modal (para otra
+    // actividad/producto/examen) seguía mostrando la aportación de la
+    // PRIMERA vez, no la nueva -- confirmado en real (2026-09-04): el
+    // profesor describía qué evaluar, generaba un instrumento, y al volver
+    // a abrir el modal para otro seguía viendo el texto anterior.
+    useEffect(() => {
+        if (isOpen) reset();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     const handleSubirDocumento = async (file: File) => {
         setSubiendoDocumento(true);

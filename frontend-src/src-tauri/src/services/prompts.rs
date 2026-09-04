@@ -842,6 +842,17 @@ la lista, elige los que encajen con lo descrito arriba, no fuerces relaciones qu
     let _ = necesita_niveles;
 
     let seccion_contexto = contexto.as_deref().map(|c| format!("\nLo que se va a evaluar con este instrumento: {c}\n")).unwrap_or_default();
+    // Mismo criterio que api/app/services/prompts/instrumento_evaluacion.py:
+    // sin esto, "contexto" era decorativo -- nada obligaba a la IA a
+    // basarse en él, así que un contexto largo (el enunciado real de un
+    // examen pegado tal cual) podía acabar ignorado en favor de una
+    // elaboración genérica de la descripción de cada criterio.
+    let instruccion_contexto = if contexto.is_some() {
+        "\nBasa el instrumento en lo descrito arriba (\"Lo que se va a evaluar con este instrumento\") -- si \
+ahí se ha pegado contenido real (el enunciado de un examen, la descripción de un producto...), las \
+preguntas/ítems tienen que ajustarse a eso concretamente, no ser una elaboración genérica de la descripción \
+de cada criterio."
+    } else { "" };
     let seccion_documento = documento_clase.as_deref().map(|d| format!("\n<contenido_visto_en_clase>\n{d}\n</contenido_visto_en_clase>\n")).unwrap_or_default();
     let instruccion_documento = if documento_clase.is_some() {
         "\nBasa el instrumento en el contenido de <contenido_visto_en_clase> -- las preguntas/ítems tienen que \
@@ -873,7 +884,7 @@ evaluación de tipo {etiqueta_tipo}.
 {instruccion_tipo}
 
 {instruccion_cobertura} No inventes criterios fuera de la lista dada -- si lo haces, esos \
-códigos se descartarán al procesar la respuesta.{instruccion_documento}
+códigos se descartarán al procesar la respuesta.{instruccion_contexto}{instruccion_documento}
 </tarea>
 
 <formato_de_salida>
@@ -1348,6 +1359,36 @@ mod tests {
         let level_descs = instrumento["items"][0]["levelDescriptions"].as_object().unwrap();
         assert_eq!(level_descs.len(), 2); // "Inexistente" descartado por no ser un nivel real
         assert_eq!(validado["codigosDescartados"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn generar_prompt_instrumento_basa_en_contexto_cuando_se_da() {
+        // La aportación inicial del profesor (p.ej. el enunciado de un
+        // examen pegado en "¿Qué quieres evaluar?") llega como `contexto` --
+        // sin la instrucción de basarse en ella, la IA podía tratarla como
+        // decorativa y generar ítems genéricos a partir solo de la
+        // descripción de cada criterio (confirmado como bug real 2026-09-04).
+        let conn = db::test_connection();
+        let course_id = seed_curso_con_curriculo(&conn);
+        let criterios = dispatch(&conn, "GET", &format!("/courses/{course_id}/criteria"), None).unwrap();
+        let criterion_id = criterios[0]["id"].as_str().unwrap().to_string();
+
+        let generado = dispatch(&conn, "POST", "/prompts/instrumento-evaluacion/prompt", Some(json!({
+            "course_id": course_id, "criterion_ids": [criterion_id], "tool_type": "rubric", "num_niveles": 3,
+            "contexto": "Examen con las preguntas: 1) ¿Qué es el ciclo del agua? 2) Dibuja sus fases.",
+        }))).unwrap();
+        let prompt = generado["prompt"].as_str().unwrap();
+        assert!(prompt.contains("Examen con las preguntas"));
+        assert!(prompt.contains("Basa el instrumento en lo descrito arriba"));
+
+        // Sin contexto ni documento_clase (solo criterios elegidos a mano),
+        // no debe aparecer ninguna de las dos instrucciones de "basa el
+        // instrumento en..." -- no hay nada real que citar.
+        let generado_sin_contexto = dispatch(&conn, "POST", "/prompts/instrumento-evaluacion/prompt", Some(json!({
+            "course_id": course_id, "criterion_ids": [criterion_id], "tool_type": "rubric", "num_niveles": 3,
+        }))).unwrap();
+        let prompt_sin_contexto = generado_sin_contexto["prompt"].as_str().unwrap();
+        assert!(!prompt_sin_contexto.contains("Basa el instrumento en"));
     }
 
     #[test]
