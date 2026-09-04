@@ -1,4 +1,5 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Row};
+use serde_json::{json, Value};
 
 use crate::error::ApiError;
 
@@ -50,6 +51,34 @@ pub fn delete(conn: &Connection, student_id: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+// Para importar-fotos-pdf (ver services/python_helper.rs): el sidecar
+// Python no toca la base de datos (mismo criterio que
+// educastur_orchestrator.py), así que Rust resuelve aquí el listado de
+// alumnado con exactamente los campos que hace falta para emparejar por
+// NIE, antes de invocarlo -- mismo formato que ya usa fotos_pdf.py, en
+// camelCase para no tener que traducir nada en el sidecar aparte de leer
+// las claves tal cual.
+fn row_to_match_json(row: &Row) -> rusqlite::Result<Value> {
+    let foto_content_type: Option<String> = row.get(5)?;
+    Ok(json!({
+        "id": row.get::<_, String>(0)?,
+        "nie": row.get::<_, Option<String>>(1)?,
+        "nombre": row.get::<_, Option<String>>(2)?,
+        "primerApellido": row.get::<_, Option<String>>(3)?,
+        "segundoApellido": row.get::<_, Option<String>>(4)?,
+        "yaTieneFoto": foto_content_type.is_some(),
+    }))
+}
+
+pub fn list_for_pdf_match(conn: &Connection) -> Result<Value, ApiError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, nie, nombre, primer_apellido, segundo_apellido, foto_content_type FROM students",
+    )?;
+    let rows = stmt.query_map([], row_to_match_json)?;
+    let items: Result<Vec<Value>, _> = rows.collect();
+    Ok(Value::Array(items?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,5 +106,33 @@ mod tests {
         assert_eq!(err.status, 404);
         let err = delete(&conn, "no-existe").unwrap_err();
         assert_eq!(err.status, 404);
+    }
+
+    #[test]
+    fn list_for_pdf_match_reports_nie_and_ya_tiene_foto() {
+        let conn = db::test_connection();
+        conn.execute(
+            "INSERT INTO students (id, nombre, primer_apellido, nie, created_at, updated_at) \
+             VALUES ('s1', 'Ana', 'Garcia', '12345678', '2026-08-05T00:00:00Z', '2026-08-05T00:00:00Z')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO students (id, nombre, created_at, updated_at) \
+             VALUES ('s2', 'Luis', '2026-08-05T00:00:00Z', '2026-08-05T00:00:00Z')",
+            [],
+        ).unwrap();
+        set(&conn, "s2", vec![1, 2, 3], "image/png").unwrap();
+
+        let items = list_for_pdf_match(&conn).unwrap();
+        let items = items.as_array().unwrap();
+        assert_eq!(items.len(), 2);
+
+        let s1 = items.iter().find(|it| it["id"] == "s1").unwrap();
+        assert_eq!(s1["nie"], "12345678");
+        assert_eq!(s1["yaTieneFoto"], false);
+
+        let s2 = items.iter().find(|it| it["id"] == "s2").unwrap();
+        assert_eq!(s2["nie"], Value::Null);
+        assert_eq!(s2["yaTieneFoto"], true);
     }
 }

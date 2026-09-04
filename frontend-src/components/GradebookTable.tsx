@@ -1323,9 +1323,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                   {classData.students.length > 0 && (
                       <FooterActionCard icon={<PencilIcon className="w-5 h-5" />} label="Edición rápida" color="text-slate-600" onClick={() => setFlagsEditTargetId(classData.students[0].id)} />
                   )}
-                  {!isTauri() && (
-                      <FooterActionCard icon={<PhotoIcon className="w-5 h-5" />} label="Importar fotos" color="text-amber-600" onClick={() => setIsImportPhotosOpen(true)} />
-                  )}
+                  <FooterActionCard icon={<PhotoIcon className="w-5 h-5" />} label="Importar fotos" color="text-amber-600" onClick={() => setIsImportPhotosOpen(true)} />
               </FooterActionGroup>
           </div>
       </div>

@@ -17,6 +17,20 @@ fichero) y escribe un único JSON a stdout con código de salida 0, o
   por stdin → `{"filas": [...], "errores": [...]}`. Lógica en `src/horario_pdf.py`,
   copia manual de `api/app/services/horario_pdf.py` (mantener sincronizadas
   a mano si se toca la extracción en el backend web).
+- `importar-fotos-pdf` — JSON por stdin `{"pdf_base64": "...", "alumnos":
+  [{"id", "nie", "nombre", "primerApellido", "segundoApellido",
+  "yaTieneFoto"}, ...]}` → `{"items": [{"codigo", "imagen_base64",
+  "student_id", "nombre_completo", "ya_tiene_foto"}, ...], "sin_codigo": N}`,
+  mismo formato que `POST /photos/importar-pdf` en la web. El PDF viaja en
+  base64 (no bytes crudos) porque hace falta ir acompañado del listado de
+  alumnado -- este subcomando no toca la base de datos (mismo criterio que
+  `educastur-sincronizar`: Rust resuelve el listado antes de llamar, ver
+  `services::photos::list_for_pdf_match`). Lógica en `src/fotos_pdf.py`,
+  copia manual de `api/app/services/fotos_pdf.py` con una adaptación:
+  renderiza las páginas con `pypdfium2` en vez de `pdf2image` (que depende
+  de Poppler, un binario externo sin sentido distribuir aparte en Windows)
+  -- misma geometría de recorte, la librería nativa de PDFium viaja ya
+  empaquetada en el wheel.
 - `educastur-sincronizar` — JSON por stdin (`usuario`, `contrasena`,
   `id_empleado`/`id_centro`/`id_perfil` opcionales, `stored` con la
   configuración ya resuelta, `procesables` con las faltas ya filtradas por
@@ -81,5 +95,6 @@ recoger los datos de `es_core_news_md` y empaquetar los dos JSON del
 anonimizador (ver `python-helper.spec`), sin eso el modelo no carga
 congelado aunque compile sin errores (confirmado en real).
 
-Peso aproximado del `.exe` de escritorio final con esto añadido: ~86 MB
-comprimido (medido en real, no estimado) -- antes de spaCy rondaba los 32 MB.
+Peso aproximado del `.exe` de escritorio final con esto añadido: ~84 MB
+comprimido (medido en real, no estimado, incluye pypdfium2) -- antes de
+spaCy rondaba los 32 MB.

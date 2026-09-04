@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 # es_core_news_md (el modelo de spaCy, ver services/anonimizador.py) trae sus
 # propios pesos/config como archivos de datos junto al paquete -- el análisis
@@ -14,11 +14,20 @@ datas = [
     ('src/neae_terminos.json', '.'),
 ]
 datas += collect_data_files('es_core_news_md')
+# pypdfium2 (ver fotos_pdf.py) carga su librería nativa (pdfium.dll, dentro
+# del paquete pypdfium2_raw) con ctypes en tiempo de ejecución, no con un
+# import normal -- el análisis estático de PyInstaller no la detecta sola
+# como sí hace con una extensión .pyd importada de verdad, hay que
+# declararla a mano con collect_dynamic_libs(). version.json (en los dos
+# paquetes) es el mismo caso que los datos de es_core_news_md: lo lee el
+# propio paquete en tiempo de ejecución, no aparece en el análisis estático.
+datas += collect_data_files('pypdfium2') + collect_data_files('pypdfium2_raw')
+binaries = collect_dynamic_libs('pypdfium2_raw')
 
 a = Analysis(
     ['src/main.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=[],
     hookspath=[],

@@ -3,6 +3,11 @@ requests
 pyinstaller
 python-docx==1.1.2
 click
+# Renderizado de páginas PDF a imagen para importar-fotos-pdf: sustituye a
+# pdf2image (backend web), que depende de Poppler instalado aparte -- la
+# librería nativa de PDFium viaja ya empaquetada en el propio wheel de
+# pypdfium2, sin binario externo que distribuir en Windows.
+pypdfium2==5.13.0
 # Mismas versiones que api/requirements.txt (backend web) -- mismo NER, mismo
 # comportamiento de detección. El modelo se instala como wheel directo, no
 # con "spacy download", por la misma razón que en la web: pinning real, sin

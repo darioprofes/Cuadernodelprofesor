@@ -91,6 +91,20 @@ fn importar_calendario_pdf(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<serd
   services::python_helper::importar_calendario_pdf(&app, bytes)
 }
 
+// Importar fotos desde PDF (mismo PDF "Fotografías del alumnado por
+// unidad" de Educastur que en web) -- a diferencia de importar_horario_pdf
+// necesita el listado de alumnado (para emparejar por NIE, ver
+// services/photos.rs::list_for_pdf_match), así que aparte de bytes también
+// abre la conexión SQLite.
+#[tauri::command]
+fn importar_fotos_pdf(app: tauri::AppHandle, state: tauri::State<db::DbState>, bytes: Vec<u8>) -> Result<serde_json::Value, error::ApiError> {
+  let alumnos = {
+    let conn = state.0.lock().expect("mutex de la conexión SQLite envenenado");
+    services::photos::list_for_pdf_match(&conn)?
+  };
+  services::python_helper::importar_fotos_pdf(&app, bytes, alumnos)
+}
+
 // Anonimizador (Herramientas IA): mismo sidecar Python, mismo criterio que
 // importar_horario_pdf de arriba. El .docx viaja como bytes crudos en el
 // argumento del comando (igual que set_student_photo) pero se manda al
@@ -246,6 +260,7 @@ pub fn run() {
       backup_import,
       importar_horario_pdf,
       importar_calendario_pdf,
+      importar_fotos_pdf,
       anonimizar_texto,
       anonimizar_docx,
       reintegrar_docx,

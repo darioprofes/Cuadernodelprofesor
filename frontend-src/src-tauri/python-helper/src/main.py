@@ -18,7 +18,10 @@
 # no sabría interpretar.
 #
 # pdfplumber cubre tanto importar-horario como importar-calendario (el
-# calendario escolar oficial en PDF, ver calendario_pdf.py).
+# calendario escolar oficial en PDF, ver calendario_pdf.py) e
+# importar-fotos-pdf (recorte de fotos, ver fotos_pdf.py -- este último
+# usa además pypdfium2 para renderizar la página a imagen, en vez del
+# pdf2image+Poppler del backend web, ver fotos_pdf.py para el porqué).
 
 import json
 import sys
@@ -56,6 +59,26 @@ def cmd_importar_calendario(args):
     resultado, errores = extraer_calendario_pdf(contenido)
 
     return {**resultado, "errores": errores}
+
+
+def cmd_importar_fotos_pdf(args):
+    """importar-fotos-pdf -- stdin: {"pdf_base64": "...", "alumnos": [{"id",
+    "nie", "nombre", "primerApellido", "segundoApellido", "yaTieneFoto"},
+    ...]}. El PDF viaja en base64 (no bytes crudos como importar-horario)
+    porque aquí hace falta ir acompañado del listado de alumnado -- Rust lo
+    resuelve antes de llamar, este módulo no toca la base de datos (ver
+    fotos_pdf.py). Devuelve {"items": [...], "sin_codigo": N}, mismo
+    formato que POST /photos/importar-pdf en el backend web."""
+
+    import base64
+
+    from fotos_pdf import extraer_y_emparejar
+
+    datos = json.loads(sys.stdin.buffer.read())
+
+    contenido_bytes = base64.b64decode(datos["pdf_base64"])
+
+    return extraer_y_emparejar(contenido_bytes, datos.get("alumnos") or [])
 
 
 def cmd_educastur_sincronizar(args):
@@ -141,6 +164,7 @@ def cmd_reintegrar_docx(args):
 COMANDOS = {
     "importar-horario": cmd_importar_horario,
     "importar-calendario": cmd_importar_calendario,
+    "importar-fotos-pdf": cmd_importar_fotos_pdf,
     "educastur-sincronizar": cmd_educastur_sincronizar,
     "anonimizar-texto": cmd_anonimizar_texto,
     "anonimizar-docx": cmd_anonimizar_docx,

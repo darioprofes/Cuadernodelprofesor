@@ -62,6 +62,19 @@ pub fn importar_calendario_pdf(app: &tauri::AppHandle, bytes: Vec<u8>) -> Result
     ejecutar(app, "importar-calendario", &bytes)
 }
 
+// El PDF viaja en base64 dentro de un JSON (no bytes crudos como los dos
+// de arriba) porque aquí hace falta ir acompañado del listado de alumnado
+// -- ver services/photos.rs::list_for_pdf_match y
+// python-helper/src/fotos_pdf.py para el porqué (el sidecar no toca la
+// base de datos).
+pub fn importar_fotos_pdf(app: &tauri::AppHandle, pdf_bytes: Vec<u8>, alumnos: serde_json::Value) -> Result<serde_json::Value, ApiError> {
+    use base64::Engine;
+    let pdf_base64 = base64::engine::general_purpose::STANDARD.encode(&pdf_bytes);
+    let entrada = serde_json::to_vec(&serde_json::json!({ "pdf_base64": pdf_base64, "alumnos": alumnos }))
+        .map_err(ApiError::internal)?;
+    ejecutar(app, "importar-fotos-pdf", &entrada)
+}
+
 // Subcomandos cuya entrada es JSON (no bytes crudos como el PDF de arriba)
 // -- serializa y reutiliza el mismo mecanismo.
 pub fn educastur_sincronizar(app: &tauri::AppHandle, payload: serde_json::Value) -> Result<serde_json::Value, ApiError> {

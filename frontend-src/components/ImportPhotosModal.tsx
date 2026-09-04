@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { isTauri, invoke } from '@tauri-apps/api/core';
 import Modal from './Modal';
 import Button from './Button';
 import { ArrowUpTrayIcon, ArrowDownTrayIcon } from './Icons';
@@ -30,9 +31,20 @@ const downloadBase64 = (base64: string, filename: string) => {
 // (Educastur): el backend recorta cada foto y la empareja por NIE contra
 // el alumnado ya dado de alta (services/fotos_pdf.py), sin subir nada por
 // su cuenta -- aquí se revisa y se elige, foto a foto o por categoría
-// entera, antes de aplicar. Solo web: depende de poppler/pdf2image en el
-// backend Python, sin equivalente en escritorio (mismo motivo que excluye
-// la importación de horario en PDF de Tauri).
+// entera, antes de aplicar. En escritorio, el mismo sidecar Python del
+// resto de importaciones PDF hace el recorte (python-helper/src/
+// fotos_pdf.py), con pypdfium2 en vez de pdf2image+Poppler para no
+// depender de un binario externo instalado aparte en Windows.
+// ApiError del lado Rust llega al rechazo de invoke() como un objeto
+// { detail: "..." }, no como un Error de JS -- mismo criterio que
+// describeError en AiToolsView.tsx.
+const describeError = (e: unknown): string => {
+    if (e && typeof e === 'object' && 'detail' in e) {
+        return String((e as { detail: unknown }).detail);
+    }
+    return e instanceof Error ? e.message : 'No se ha podido procesar el PDF.';
+};
+
 const ImportPhotosModal: React.FC<ImportPhotosModalProps> = ({ isOpen, onClose }) => {
     const queryClient = useQueryClient();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,16 +79,23 @@ const ImportPhotosModal: React.FC<ImportPhotosModalProps> = ({ isOpen, onClose }
         setLoading(true);
 
         try {
-            const formData = new FormData();
-            formData.append('archivo', file);
-            const response = await fetch('/api/photos/importar-pdf', { method: 'POST', body: formData });
+            let data: any;
+            if (isTauri()) {
+                const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+                data = await invoke('importar_fotos_pdf', { bytes });
+            } else {
+                const formData = new FormData();
+                formData.append('archivo', file);
+                const response = await fetch('/api/photos/importar-pdf', { method: 'POST', body: formData });
 
-            if (!response.ok) {
-                const body = await response.json().catch(() => null);
-                throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+                if (!response.ok) {
+                    const body = await response.json().catch(() => null);
+                    throw new Error(body?.detail || `El servidor respondió con un error (HTTP ${response.status}).`);
+                }
+
+                data = await response.json();
             }
 
-            const data = await response.json();
             const nuevosItems: FotoDetectada[] = (data.items || []).map((it: any) => ({
                 codigo: it.codigo,
                 imagenBase64: it.imagen_base64,
@@ -95,7 +114,7 @@ const ImportPhotosModal: React.FC<ImportPhotosModalProps> = ({ isOpen, onClose }
             }
             setSelected(seleccionInicial);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'No se ha podido procesar el PDF.');
+            setError(describeError(err));
         } finally {
             setLoading(false);
         }
