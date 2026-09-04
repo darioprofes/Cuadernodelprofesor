@@ -31,18 +31,42 @@ fichero) y escribe un único JSON a stdout con código de salida 0, o
   Ajustes tras aceptar el aviso de responsabilidad (ver
   `EducasturSyncSettings.tsx`) -- el propio `educastur.rs` lo comprueba
   otra vez server-side, así que este subcomando en sí no necesita saberlo.
+- `anonimizar-texto` — JSON por stdin `{"texto": "..."}` →
+  `{"anonimizado": "...", "mapa": {...}}`. NER en español (spaCy +
+  `es_core_news_md`) + patrones regex para DNI/dirección/centro/nivel-grupo,
+  igual que `POST /ai-tools/anonimizar` en la web. Lógica en
+  `src/anonimizador.py`, copia manual de `api/app/services/anonimizador.py`
+  con dos adaptaciones necesarias por correr congelado (ver el comentario de
+  cabecera de ese fichero): carga el modelo por import directo en vez de por
+  nombre, y localiza `materias_oficiales.json`/`neae_terminos.json` (también
+  copias manuales, sin cambios) vía `sys._MEIPASS` en vez de
+  `Path(__file__).parent`.
+- `anonimizar-docx` — JSON por stdin `{"docx_base64": "..."}` →
+  `{"anonimizado_docx_base64", "anonimizado_texto", "mapa"}`. Anonimiza el
+  .docx entero conservando el formato (`anonimizar_docx` en
+  `anonimizador.py`) y extrae el resultado a Markdown (`extraccion_docx.py`,
+  copia manual sin cambios de `api/app/services/extraccion_docx.py`) para
+  poder copiarlo como texto además de descargar el .docx.
+- `reintegrar-docx` — JSON por stdin `{"docx_base64": "...", "mapa": {...}}`
+  (el .docx que ha devuelto la IA online, con los códigos PERS_/GRUPO_
+  intactos, más el mapa código→dato real que se guardó en memoria en el
+  paso de anonimizar) → `{"docx_base64", "sobrantes"}` (códigos que no se
+  pudieron resolver, normalmente por quedar partidos entre dos runs de
+  estilo distinto).
 
 ## Compilar
 
-Requiere Python 3.12+ (probado con 3.14 para este subcomando; el futuro
-subcomando `anonimizar`, con spaCy, probablemente necesite 3.12 exacto,
-igual que el backend web -- ver Dockerfile).
+Requiere **Python 3.12 exacto** -- spaCy (necesario para `anonimizar-*`) no
+tiene wheels precompilados para 3.13/3.14 todavía, así que instalar sus
+dependencias (numpy/thinc/blis) sin 3.12 intenta compilarlas desde cero. Sin
+`anonimizar-*` cualquier 3.12+ vale, pero usa siempre 3.12 para que un
+`pip install` no se ponga a compilar nada por sorpresa.
 
 ```bash
 cd frontend-src/src-tauri/python-helper
-python -m venv .venv
+py -3.12 -m venv .venv
 .venv/Scripts/pip install -r requirements.txt
-.venv/Scripts/pyinstaller --onedir --name python-helper --distpath dist --workpath build --noconfirm src/main.py
+.venv/Scripts/pyinstaller python-helper.spec --distpath dist --workpath build --noconfirm
 ```
 
 Esto deja `dist/python-helper/` (el `.exe` + sus dependencias ya
@@ -51,3 +75,11 @@ que `tauri.conf.json` (`bundle.resources`) referencia. Hay que
 recompilarlo antes de `npm run tauri:build`/`tauri:dev` cada vez que
 cambie algo en `src/` o `requirements.txt`; no se versiona (ver
 `.gitignore`).
+
+Usa el `.spec` (no `pyinstaller src/main.py` a pelo) -- es el que sabe
+recoger los datos de `es_core_news_md` y empaquetar los dos JSON del
+anonimizador (ver `python-helper.spec`), sin eso el modelo no carga
+congelado aunque compile sin errores (confirmado en real).
+
+Peso aproximado del `.exe` de escritorio final con esto añadido: ~86 MB
+comprimido (medido en real, no estimado) -- antes de spaCy rondaba los 32 MB.

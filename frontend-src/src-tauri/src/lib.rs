@@ -91,6 +91,35 @@ fn importar_calendario_pdf(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<serd
   services::python_helper::importar_calendario_pdf(&app, bytes)
 }
 
+// Anonimizador (Herramientas IA): mismo sidecar Python, mismo criterio que
+// importar_horario_pdf de arriba. El .docx viaja como bytes crudos en el
+// argumento del comando (igual que set_student_photo) pero se manda al
+// sidecar en base64 dentro de un JSON -- reintegrar_docx necesita ir
+// acompañado del mapa código->dato real, así que los tres subcomandos
+// comparten un único formato de entrada (ver
+// python-helper/README.md). La respuesta de anonimizar_docx/
+// reintegrar_docx ya trae el .docx resultante en base64 tal cual (mismo
+// campo, mismo formato que ya devuelve la web) -- no hace falta decodificar
+// aquí, el frontend ya sabe leerlo así.
+#[tauri::command]
+fn anonimizar_texto(app: tauri::AppHandle, texto: String) -> Result<serde_json::Value, error::ApiError> {
+  services::python_helper::anonimizar_texto(&app, serde_json::json!({ "texto": texto }))
+}
+
+#[tauri::command]
+fn anonimizar_docx(app: tauri::AppHandle, bytes: Vec<u8>) -> Result<serde_json::Value, error::ApiError> {
+  use base64::Engine;
+  let docx_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+  services::python_helper::anonimizar_docx(&app, serde_json::json!({ "docx_base64": docx_base64 }))
+}
+
+#[tauri::command]
+fn reintegrar_docx(app: tauri::AppHandle, bytes: Vec<u8>, mapa: serde_json::Value) -> Result<serde_json::Value, error::ApiError> {
+  use base64::Engine;
+  let docx_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+  services::python_helper::reintegrar_docx(&app, serde_json::json!({ "docx_base64": docx_base64, "mapa": mapa }))
+}
+
 // Igual criterio que backup_export/backup_import: aparte de api_request
 // porque necesita algo que el despachador genérico no recibe -- aquí, un
 // AppHandle para localizar y lanzar el sidecar Python (ver
@@ -217,6 +246,9 @@ pub fn run() {
       backup_import,
       importar_horario_pdf,
       importar_calendario_pdf,
+      anonimizar_texto,
+      anonimizar_docx,
+      reintegrar_docx,
       educastur_sincronizar,
       server_sync_get_config,
       server_sync_set_config,

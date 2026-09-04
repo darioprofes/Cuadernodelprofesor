@@ -68,3 +68,23 @@ pub fn educastur_sincronizar(app: &tauri::AppHandle, payload: serde_json::Value)
     let entrada = serde_json::to_vec(&payload).map_err(ApiError::internal)?;
     ejecutar(app, "educastur-sincronizar", &entrada)
 }
+
+// Anonimizador (services/anonimizador.py en el sidecar, copia manual del
+// backend web -- ver python-helper/README.md). Los tres subcomandos
+// comparten el mismo formato de entrada JSON (el .docx viaja en base64
+// dentro del JSON, no como bytes crudos, porque reintegrar-docx necesita
+// ir acompañado del mapa código->dato real).
+pub fn anonimizar_texto(app: &tauri::AppHandle, payload: serde_json::Value) -> Result<serde_json::Value, ApiError> {
+    let entrada = serde_json::to_vec(&payload).map_err(ApiError::internal)?;
+    ejecutar(app, "anonimizar-texto", &entrada)
+}
+
+pub fn anonimizar_docx(app: &tauri::AppHandle, payload: serde_json::Value) -> Result<serde_json::Value, ApiError> {
+    let entrada = serde_json::to_vec(&payload).map_err(ApiError::internal)?;
+    ejecutar(app, "anonimizar-docx", &entrada)
+}
+
+pub fn reintegrar_docx(app: &tauri::AppHandle, payload: serde_json::Value) -> Result<serde_json::Value, ApiError> {
+    let entrada = serde_json::to_vec(&payload).map_err(ApiError::internal)?;
+    ejecutar(app, "reintegrar-docx", &entrada)
+}

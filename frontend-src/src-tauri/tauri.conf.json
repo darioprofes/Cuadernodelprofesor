@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Faro Docente",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "es.lamarejada.farodocente",
   "build": {
     "frontendDist": "../dist",

@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { isTauri, invoke } from '@tauri-apps/api/core';
 import PageHeader from './PageHeader';
 import Button from './Button';
 import Textarea from './Textarea';
@@ -67,6 +68,16 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+// invoke() rechaza con el propio objeto ApiError ({status, detail}) del
+// lado Rust, no con una instancia de Error -- mismo criterio que
+// ImportScheduleModal.tsx.
+const describeError = (e: unknown): string => {
+    if (e && typeof e === 'object' && 'detail' in e) {
+        return String((e as { detail: unknown }).detail);
+    }
+    return e instanceof Error ? e.message : String(e);
+};
+
 // Anonimizador de documentos: pide el texto, lo anonimiza en el backend
 // (spaCy + regex, sin IA), espera a que el profesor pegue la respuesta de
 // una IA online (Claude, ChatGPT...) y reintegra los datos reales -- todo en
@@ -117,14 +128,23 @@ const AiToolsView: React.FC = () => {
         setAnonimizandoDocx(true);
         setErrorAnonimizacionDocx(null);
         try {
-            const formData = new FormData();
-            formData.append('archivo', file);
-            const response = await fetch('/api/ai-tools/anonimizar-docx', { method: 'POST', body: formData });
-            if (!response.ok) {
-                const body = await response.json().catch(() => ({}));
-                throw new Error(body.detail || `Error HTTP ${response.status}`);
+            let data: { anonimizado_docx_base64: string; anonimizado_texto: string; mapa: Record<string, string> };
+            if (isTauri()) {
+                // Mismo patrón que ImportScheduleModal.tsx con el horario en
+                // PDF -- bytes crudos al sidecar Python en vez de al backend
+                // web (ver services/python_helper.rs).
+                const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+                data = await invoke('anonimizar_docx', { bytes });
+            } else {
+                const formData = new FormData();
+                formData.append('archivo', file);
+                const response = await fetch('/api/ai-tools/anonimizar-docx', { method: 'POST', body: formData });
+                if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    throw new Error(body.detail || `Error HTTP ${response.status}`);
+                }
+                data = await response.json();
             }
-            const data: { anonimizado_docx_base64: string; anonimizado_texto: string; mapa: Record<string, string> } = await response.json();
             setResultado(null);
             setResultadoDocxOriginal({
                 blob: base64ToBlob(data.anonimizado_docx_base64, DOCX_MIME),
@@ -133,7 +153,7 @@ const AiToolsView: React.FC = () => {
             });
             setPaso(2);
         } catch (err) {
-            setErrorAnonimizacionDocx(err instanceof Error ? err.message : String(err));
+            setErrorAnonimizacionDocx(describeError(err));
         } finally {
             setAnonimizandoDocx(false);
         }
@@ -160,21 +180,31 @@ const AiToolsView: React.FC = () => {
         setRestituyendoDocx(true);
         setErrorRestitucionDocx(null);
         try {
-            const formData = new FormData();
-            formData.append('archivo', file);
-            formData.append('mapa', JSON.stringify(mapaActivo));
-            const response = await fetch('/api/ai-tools/reintegrar-docx', { method: 'POST', body: formData });
-            if (!response.ok) {
-                const body = await response.json().catch(() => ({}));
-                throw new Error(body.detail || `Error HTTP ${response.status}`);
+            if (isTauri()) {
+                // El sidecar no tiene HTTP de por medio (ver
+                // services/python_helper.rs), así que devuelve JSON con el
+                // .docx en base64 y los sobrantes en el propio JSON, no en
+                // una cabecera como hace la web.
+                const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+                const data: { docx_base64: string; sobrantes: string[] } = await invoke('reintegrar_docx', { bytes, mapa: mapaActivo });
+                setDocxFinal({ blob: base64ToBlob(data.docx_base64, DOCX_MIME), sobrantes: data.sobrantes });
+            } else {
+                const formData = new FormData();
+                formData.append('archivo', file);
+                formData.append('mapa', JSON.stringify(mapaActivo));
+                const response = await fetch('/api/ai-tools/reintegrar-docx', { method: 'POST', body: formData });
+                if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    throw new Error(body.detail || `Error HTTP ${response.status}`);
+                }
+                const sobrantesHeader = response.headers.get('X-Codigos-Sin-Resolver') ?? '';
+                const blob = await response.blob();
+                setDocxFinal({ blob, sobrantes: sobrantesHeader ? sobrantesHeader.split(',') : [] });
             }
-            const sobrantesHeader = response.headers.get('X-Codigos-Sin-Resolver') ?? '';
-            const blob = await response.blob();
-            setDocxFinal({ blob, sobrantes: sobrantesHeader ? sobrantesHeader.split(',') : [] });
             setDocumentoFinal('');
             setPaso(4);
         } catch (err) {
-            setErrorRestitucionDocx(err instanceof Error ? err.message : String(err));
+            setErrorRestitucionDocx(describeError(err));
         } finally {
             setRestituyendoDocx(false);
         }
@@ -261,7 +291,7 @@ const AiToolsView: React.FC = () => {
                         {anonimizarMutation.isError && (
                             <p className="text-sm text-red-600 flex items-center gap-1.5">
                                 <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
-                                {(anonimizarMutation.error as Error).message}
+                                {describeError(anonimizarMutation.error)}
                             </p>
                         )}
                         <div className="flex justify-end">

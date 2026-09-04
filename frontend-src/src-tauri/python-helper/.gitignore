@@ -9,7 +9,9 @@ build/
 dist/
 __pycache__/
 *.pyc
-# Autogenerado por el comando de PyInstaller del README -- versionar solo
-# si en algún momento hace falta tocarlo a mano (p.ej. hidden-imports para
-# spaCy en el futuro subcomando "anonimizar").
-*.spec
+# python-helper.spec SÍ se versiona (quitado de aquí a propósito): hace
+# falta a mano para anonimizar-* (collect_data_files de es_core_news_md +
+# los dos JSON del anonimizador como datos, ver el propio .spec) -- sin él,
+# "pyinstaller src/main.py" a pelo regenera un .spec por defecto sin eso y
+# el modelo no carga ya congelado, aunque compile sin errores (confirmado
+# en real).

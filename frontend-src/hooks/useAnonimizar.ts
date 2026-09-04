@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
+import { isTauri, invoke } from '@tauri-apps/api/core';
 import { api } from '../services/api';
 
 // Sin useQuery ni invalidación: no hay nada que cachear, es una operación
@@ -10,8 +11,14 @@ interface AnonimizarResponse {
     mapa: Record<string, string>;
 }
 
+// En escritorio va al sidecar Python (services/anonimizador.py, copia
+// manual del backend web -- ver python-helper/README.md) en vez de al
+// backend web -- mismo criterio que useAnonimizar aparte de api.ts para
+// ImportScheduleModal.tsx con el horario en PDF.
 export function useAnonimizar() {
     return useMutation({
-        mutationFn: (texto: string) => api.post<AnonimizarResponse>('/ai-tools/anonimizar', { texto }),
+        mutationFn: (texto: string) => isTauri()
+            ? invoke<AnonimizarResponse>('anonimizar_texto', { texto })
+            : api.post<AnonimizarResponse>('/ai-tools/anonimizar', { texto }),
     });
 }

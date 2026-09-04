@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
 import type { View } from '../types';
 import {
     HomeIcon, ClockIcon, CalendarDaysIcon, BookOpenIcon, ClipboardDocumentIcon,
@@ -72,18 +71,15 @@ const NAV_SECTIONS: NavSection[] = [
     // cada uno gana su propia entrada aquí en vez de esconderse todos
     // detrás de un nombre paraguas.
     //
-    // Anonimizador depende del backend Python (services/anonimizador.py,
-    // NER con spaCy) -- sin equivalente viable en escritorio (Tauri/Rust,
-    // requeriría empaquetar un modelo NER completo), mismo criterio ya
-    // aplicado a la importación de horario en PDF
-    // (ImportScheduleModal.tsx::PDF_IMPORT_AVAILABLE), así que se queda
-    // oculto en Tauri. Adaptar material NEAE y Detección curricular SÍ
-    // tienen backend Rust (solo la vía "online" copiar/pegar, ver
-    // services/prompts.rs) y se muestran en las dos plataformas.
+    // Anonimizador depende de NER con spaCy -- en escritorio va al sidecar
+    // Python (python-helper/src/anonimizador.py, copia manual del backend
+    // web, ver ese README) en vez de sin equivalente viable: sí se
+    // muestra en las dos plataformas, igual que Adaptar material NEAE y
+    // Detección curricular.
     {
         label: 'Herramientas',
         items: [
-            ...(isTauri() ? [] : [{ view: 'ai-tools' as View, label: 'Anonimizador', icon: SparklesIcon }]),
+            { view: 'ai-tools' as View, label: 'Anonimizador', icon: SparklesIcon },
             { view: 'adaptar-material' as View, label: 'Adaptar material NEAE', icon: AcademicCapIcon },
             { view: 'deteccion-curricular' as View, label: 'Detección curricular', icon: MagnifyingGlassIcon },
         ],

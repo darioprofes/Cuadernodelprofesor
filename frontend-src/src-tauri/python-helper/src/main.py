@@ -6,7 +6,7 @@
 # services::api_request en el lado Rust: un despachador genérico en vez
 # de un binario por función) para las partes que dependen de librerías
 # Python sin equivalente razonable en Rust -- pdfplumber para importar el
-# horario en PDF, más adelante spaCy para el Anonimizador. Se compila con
+# horario en PDF, spaCy para el Anonimizador. Se compila con
 # PyInstaller en modo --onedir (carpeta ya desempaquetada, sin coste de
 # autoextracción en cada arranque) y se instala como recurso de Tauri, no
 # como sidecar "externalBin" (ese mecanismo espera un único fichero).
@@ -72,10 +72,79 @@ def cmd_educastur_sincronizar(args):
     return sincronizar(datos)
 
 
+def cmd_anonimizar_texto(args):
+    """anonimizar-texto -- stdin: {"texto": "..."}. Mismo contrato que
+    devuelve POST /ai-tools/anonimizar en el backend web: {"anonimizado":
+    "...", "mapa": {...}}. Import perezoso de anonimizador (carga el
+    modelo de spaCy, ver ese módulo) para que el resto de subcomandos no
+    paguen ese coste de arranque si no hace falta."""
+
+    from anonimizador import anonimizar
+
+    datos = json.loads(sys.stdin.buffer.read())
+
+    anonimizado, mapa = anonimizar(datos["texto"])
+
+    return {"anonimizado": anonimizado, "mapa": mapa}
+
+
+def cmd_anonimizar_docx(args):
+    """anonimizar-docx -- stdin: {"docx_base64": "..."}. El .docx viaja en
+    base64 dentro de un JSON (no bytes crudos como importar-horario)
+    porque reintegrar-docx necesita ir acompañado de un mapa aparte y así
+    los tres subcomandos de este módulo comparten el mismo formato de
+    entrada. Devuelve {"anonimizado_docx_base64", "anonimizado_texto",
+    "mapa"}, igual que POST /ai-tools/anonimizar-docx."""
+
+    import base64
+
+    from anonimizador import anonimizar_docx
+    from extraccion_docx import extraer_markdown_docx
+
+    datos = json.loads(sys.stdin.buffer.read())
+
+    contenido_bytes = base64.b64decode(datos["docx_base64"])
+
+    contenido_final, mapa = anonimizar_docx(contenido_bytes)
+    texto = extraer_markdown_docx(contenido_final)
+
+    return {
+        "anonimizado_docx_base64": base64.b64encode(contenido_final).decode("ascii"),
+        "anonimizado_texto": texto,
+        "mapa": mapa,
+    }
+
+
+def cmd_reintegrar_docx(args):
+    """reintegrar-docx -- stdin: {"docx_base64": "...", "mapa": {...}}.
+    Devuelve {"docx_base64", "sobrantes"}, igual que POST
+    /ai-tools/reintegrar-docx (que además manda el mapa en la cabecera
+    X-Codigos-Sin-Resolver -- aquí, sin HTTP de por medio, va en el JSON
+    de salida directamente)."""
+
+    import base64
+
+    from anonimizador import reintegrar_docx
+
+    datos = json.loads(sys.stdin.buffer.read())
+
+    contenido_bytes = base64.b64decode(datos["docx_base64"])
+
+    contenido_final, sobrantes = reintegrar_docx(contenido_bytes, datos.get("mapa") or {})
+
+    return {
+        "docx_base64": base64.b64encode(contenido_final).decode("ascii"),
+        "sobrantes": sobrantes,
+    }
+
+
 COMANDOS = {
     "importar-horario": cmd_importar_horario,
     "importar-calendario": cmd_importar_calendario,
     "educastur-sincronizar": cmd_educastur_sincronizar,
+    "anonimizar-texto": cmd_anonimizar_texto,
+    "anonimizar-docx": cmd_anonimizar_docx,
+    "reintegrar-docx": cmd_reintegrar_docx,
 }
 
 
