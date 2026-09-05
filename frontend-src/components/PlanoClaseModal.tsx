@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ClassData, Student } from '../types';
 import { getNombreCompleto } from '../utils';
-import { XMarkIcon, PencilIcon, CheckCircleIcon } from './Icons';
+import { XMarkIcon, PencilIcon, CheckCircleIcon, PhotoIcon, UserCircleIcon } from './Icons';
 import { TYPOGRAPHY } from '../theme/typography';
 import { SEMANTIC } from '../theme/palette';
 
@@ -16,6 +16,19 @@ interface PlanoClaseModalProps {
 }
 
 const MESA_PROFESOR_ID = '__mesa_profesor__';
+const CLAVE_MOSTRAR_FOTOS = 'planoClase.mostrarFotos';
+
+// Persistido en localStorage (no por clase, es una preferencia general de
+// visualización -- p.ej. para proyectar el plano sin mostrar caras) y no se
+// resetea al cerrar el modal, a diferencia de editMode/draggingId/livePos
+// (esos sí son estado transitorio de una sesión de edición concreta).
+const leerMostrarFotos = (): boolean => {
+    try {
+        return localStorage.getItem(CLAVE_MOSTRAR_FOTOS) !== 'false';
+    } catch {
+        return true;
+    }
+};
 
 // Portado del "plano de clase" del Profe Planner anterior (antes del cambio
 // a este fork; ver /mnt/storage/docker/data/profe.bak-20260724-123414/js/
@@ -28,6 +41,7 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
     const [editMode, setEditMode] = useState(false);
     const [draggingId, setDraggingId] = useState<string | null>(null);
     const [livePos, setLivePos] = useState<Record<string, { x: number; y: number }>>({});
+    const [mostrarFotos, setMostrarFotos] = useState(leerMostrarFotos);
     const canvasRef = useRef<HTMLDivElement>(null);
     const dragStartRef = useRef<{ x: number; y: number } | null>(null);
     const movedRef = useRef(false);
@@ -105,6 +119,14 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
         }
     };
 
+    const toggleMostrarFotos = () => {
+        setMostrarFotos(prev => {
+            const next = !prev;
+            try { localStorage.setItem(CLAVE_MOSTRAR_FOTOS, String(next)); } catch { /* almacenamiento no disponible, se queda en memoria */ }
+            return next;
+        });
+    };
+
     const mesaPos = getPos(MESA_PROFESOR_ID, classData.mesaProfesorX, classData.mesaProfesorY, { x: 50, y: 6 });
 
     const PLANO_COLOR_BG: Record<string, string> = {
@@ -118,6 +140,14 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
             <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
                 <h2 className={`${TYPOGRAPHY.sectionTitle} truncate`}>Plano de la clase — {materia}</h2>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                        onClick={toggleMostrarFotos}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        title={mostrarFotos ? 'Mostrar iconos en vez de fotos' : 'Mostrar fotos del alumnado'}
+                    >
+                        {mostrarFotos ? <UserCircleIcon className="w-4 h-4" /> : <PhotoIcon className="w-4 h-4" />}
+                        {mostrarFotos ? 'Ver como iconos' : 'Ver fotos'}
+                    </button>
                     <button
                         onClick={() => setEditMode(v => !v)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg ${editMode ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -166,7 +196,7 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
                             className={`absolute flex flex-col items-center w-16 select-none ${editMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${draggingId === s.id ? 'opacity-80 z-20' : ''}`}
                             style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)', touchAction: 'none' }}
                         >
-                            {s.foto ? (
+                            {s.foto && mostrarFotos ? (
                                 <img src={s.foto} alt="" className="w-[76px] h-[76px] rounded-full object-cover shadow pointer-events-none" />
                             ) : (
                                 <div
