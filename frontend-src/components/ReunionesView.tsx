@@ -342,6 +342,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                                     </button>
                                 </div>
                             </div>
+                            {m.motivo && <p className="text-sm font-semibold text-slate-700 mt-1 truncate">{m.motivo}</p>}
                         </div>
                         );
                     })

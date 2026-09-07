@@ -1,7 +1,7 @@
 import React, { Suspense, useMemo, useState } from 'react';
 import type { Meeting } from '../types';
 import { ChevronLeftIcon, TrashIcon } from './Icons';
-import { formatFechaEs, TIPO_REUNION_LABEL as TIPO_LABEL } from '../utils';
+import { TIPO_REUNION_LABEL as TIPO_LABEL } from '../utils';
 import { PAGE_ACCENT } from '../theme/palette';
 import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
@@ -118,9 +118,37 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
                         placeholder="Título de la reunión"
                         className="block w-full text-xl font-bold text-white bg-transparent border-none outline-none focus:ring-0 p-0 placeholder-white/50 truncate"
                     />
-                    <p className="text-sm text-white/80 mt-0.5 truncate">
-                        {formatFechaEs(fecha)}{hora && ` · ${hora}`} · {TIPO_LABEL[tipo]}{conQuien && ` · ${conQuien}`}
-                    </p>
+                    {/* Fecha/hora/tipo editables aquí mismo, no solo en la pestaña
+                        Información -- pedido explícito (conversación 2026-09-07).
+                        [color-scheme:dark] hace que el icono del selector nativo de
+                        fecha/hora y la flecha del <select> se vean en blanco, a
+                        juego con el fondo de color en vez del negro por defecto. */}
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5 text-sm text-white/90">
+                        <input
+                            type="date"
+                            value={fecha}
+                            onChange={e => onFechaChange(e.target.value)}
+                            className="bg-transparent border-none outline-none focus:ring-0 p-0 [color-scheme:dark] cursor-pointer"
+                        />
+                        <span className="text-white/50">·</span>
+                        <input
+                            type="time"
+                            value={hora}
+                            onChange={e => onHoraChange(e.target.value)}
+                            className="bg-transparent border-none outline-none focus:ring-0 p-0 [color-scheme:dark] cursor-pointer"
+                        />
+                        <span className="text-white/50">·</span>
+                        <select
+                            value={tipo}
+                            onChange={e => onTipoChange(e.target.value as Meeting['tipo'])}
+                            className="bg-transparent border-none outline-none focus:ring-0 p-0 [color-scheme:dark] cursor-pointer"
+                        >
+                            {TIPOS.map(t => (
+                                <option key={t} value={t} className="text-slate-800">{TIPO_LABEL[t]}</option>
+                            ))}
+                        </select>
+                        {conQuien && <span className="text-white/70 truncate">· {conQuien}</span>}
+                    </div>
                 </div>
                 {onDelete && (
                     <IconButton
