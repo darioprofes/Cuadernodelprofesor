@@ -41,9 +41,19 @@ const TIPO_ACCENT: Record<Meeting['tipo'], string> = {
     otras: '#475569',
 };
 
-type RangoFecha = 'hoy' | 'semana' | 'mes' | 'todas' | 'personalizado';
+type RangoFecha = 'recientes' | 'semana' | 'mes' | 'todas' | 'personalizado';
 
+// "Esta semana"/"Este mes" son periodos naturales de calendario (lunes a
+// domingo, día 1 a fin de mes), no "desde hoy hasta..." -- así ya incluyen
+// lo reciente de esa semana/mes aunque sea pasado (antes se perdía el
+// acceso a una reunión ya tenida en cuanto pasaba su fecha, salvo cambiando
+// a "Todas"). "Recientes y próximas" (por defecto) es la misma idea llevada
+// al caso general: últimos 7 días + todas las futuras, sin límite superior.
+const DIAS_RECIENTES = 7;
+const inicioRecientes = (hoy: Date): string => toYYYYMMDD(addDays(hoy, -DIAS_RECIENTES));
+const inicioDeSemana = (hoy: Date): string => toYYYYMMDD(addDays(hoy, 1 - getDayOfWeek1a7(hoy)));
 const finDeSemana = (hoy: Date): string => toYYYYMMDD(addDays(hoy, 7 - getDayOfWeek1a7(hoy)));
+const inicioDeMes = (hoy: Date): string => toYYYYMMDD(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
 const finDeMes = (hoy: Date): string => toYYYYMMDD(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0));
 
 // Registro de reuniones, deliberadamente más estructurado que el Diario de
@@ -85,10 +95,13 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
 
     const hoy = new Date();
     const hoyStr = toYYYYMMDD(hoy);
+    const recientesDesdeStr = inicioRecientes(hoy);
+    const inicioSemanaStr = inicioDeSemana(hoy);
     const finSemanaStr = finDeSemana(hoy);
+    const inicioMesStr = inicioDeMes(hoy);
     const finMesStr = finDeMes(hoy);
 
-    const [rango, setRango] = useState<RangoFecha>('hoy');
+    const [rango, setRango] = useState<RangoFecha>('recientes');
     // Solo se usan cuando rango === 'personalizado' -- vacío significa "sin
     // límite" en ese extremo (p.ej. desde vacío + hasta relleno = "todo lo
     // anterior a esa fecha").
@@ -248,17 +261,20 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
             if (rango === 'personalizado') {
                 if (rangoDesde && m.fecha < rangoDesde) return false;
                 if (rangoHasta && m.fecha > rangoHasta) return false;
-            } else {
-                if (rango !== 'todas' && m.fecha < hoyStr) return false;
-                if (rango === 'semana' && m.fecha > finSemanaStr) return false;
-                if (rango === 'mes' && m.fecha > finMesStr) return false;
+            } else if (rango === 'recientes') {
+                if (m.fecha < recientesDesdeStr) return false;
+            } else if (rango === 'semana') {
+                if (m.fecha < inicioSemanaStr || m.fecha > finSemanaStr) return false;
+            } else if (rango === 'mes') {
+                if (m.fecha < inicioMesStr || m.fecha > finMesStr) return false;
             }
+            // 'todas' -- sin límite de fecha.
             if (tipoFiltro && m.tipo !== tipoFiltro) return false;
             if (!query) return true;
             const haystack = [TIPO_LABEL[m.tipo], m.conQuien, m.motivo, m.acuerdos, m.seguimiento].filter(Boolean).join(' ').toLowerCase();
             return haystack.includes(query);
         });
-    }, [sorted, rango, rangoDesde, rangoHasta, tipoFiltro, busqueda, hoyStr, finSemanaStr, finMesStr]);
+    }, [sorted, rango, rangoDesde, rangoHasta, tipoFiltro, busqueda, recientesDesdeStr, inicioSemanaStr, finSemanaStr, inicioMesStr, finMesStr]);
 
     if (isFormOpen) {
         return (
@@ -309,7 +325,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                     <Select value={rango} onChange={e => setRango(e.target.value as RangoFecha)} className="sm:w-auto">
-                        <option value="hoy">Desde hoy</option>
+                        <option value="recientes">Recientes y próximas</option>
                         <option value="semana">Esta semana</option>
                         <option value="mes">Este mes</option>
                         <option value="todas">Todas (incluye pasadas)</option>
