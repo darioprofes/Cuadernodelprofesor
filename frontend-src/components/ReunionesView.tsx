@@ -304,7 +304,12 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                     filtered.map(m => {
                         const { Icon: UrgenciaIcon, color: urgenciaColor } = urgencia(m.fecha);
                         return (
-                        <div key={m.id} className="p-4 first:rounded-t-xl last:rounded-b-xl" style={{ boxShadow: `inset 4px 0 0 0 ${TIPO_ACCENT[m.tipo]}` }}>
+                        <div
+                            key={m.id}
+                            onClick={() => handleEdit(m)}
+                            className="p-4 first:rounded-t-xl last:rounded-b-xl cursor-pointer hover:bg-slate-50"
+                            style={{ boxShadow: `inset 4px 0 0 0 ${TIPO_ACCENT[m.tipo]}` }}
+                        >
                             <div className="flex items-start justify-between gap-2">
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <span className="flex-shrink-0" style={{ color: urgenciaColor }}>
@@ -315,18 +320,13 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                                     {m.conQuien && <span className="text-sm font-medium text-slate-800">{m.conQuien}</span>}
                                 </div>
                                 <div className="flex items-center gap-1 flex-shrink-0">
-                                    <button onClick={() => handleEdit(m)} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-full" title="Editar">
+                                    <button onClick={e => { e.stopPropagation(); handleEdit(m); }} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-full" title="Editar">
                                         <PencilIcon className="w-4 h-4" />
                                     </button>
-                                    <button onClick={() => handleDelete(m.id)} className="p-1.5 text-slate-400 hover:text-red-500 rounded-full" title="Eliminar">
+                                    <button onClick={e => { e.stopPropagation(); handleDelete(m.id); }} className="p-1.5 text-slate-400 hover:text-red-500 rounded-full" title="Eliminar">
                                         <TrashIcon className="w-4 h-4" />
                                     </button>
                                 </div>
-                            </div>
-                            <div className="mt-2 space-y-1 text-sm text-slate-600">
-                                {m.motivo && <p><span className="font-semibold text-slate-700">Motivo:</span> {m.motivo}</p>}
-                                {m.acuerdos && <p><span className="font-semibold text-slate-700">Acuerdos:</span> {m.acuerdos}</p>}
-                                {m.seguimiento && <p><span className="font-semibold text-slate-700">Seguimiento:</span> {m.seguimiento}</p>}
                             </div>
                         </div>
                         );
