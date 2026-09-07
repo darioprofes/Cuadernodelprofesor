@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Variables/animaciones que necesita el editor de reuniones (Tiptap UI
+   Components, ver components/tiptap-templates/simple/) -- instaladas por
+   `npx @tiptap/cli add simple-editor`, importadas aquí porque ese comando
+   asumía una carpeta src/ que este proyecto no tiene. */
+@import "./styles/_variables.scss";
+@import "./styles/_keyframe-animations.scss";
+
 /* Origen real de los colores de marca: theme/palette.ts (PALETTE/SEMANTIC),
    que casi toda la app lee en JS vía props de estilo. Estas dos variables
    son la única excepción -- Tailwind resuelve las clases de "arbitrary
