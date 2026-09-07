@@ -1081,14 +1081,12 @@ a mano durante la propia reunión.
 
 <tarea>
 Redacta el acta de esta reunión a partir de <notas>, en un tono formal y ordenado, propio de un \
-documento de centro educativo. Estructura el acta en estos apartados, solo cuando haya contenido \
-real en las notas para ese apartado (omite el apartado entero si no hay nada que poner en él, no \
-inventes contenido para rellenarlo):
-
-1. **Desarrollo**: resumen ordenado y redactado en prosa de lo tratado en la reunión, a partir de \
-   las notas -- no una simple lista de las notas tal cual, sino una redacción fluida y profesional.
-2. **Acuerdos**: los acuerdos o decisiones tomadas, en una lista.
-3. **Seguimiento**: las tareas o compromisos pendientes de revisar más adelante, en una lista.
+documento de centro educativo. TÚ decides la estructura y los apartados que mejor encajen con el \
+contenido real de las notas y el tipo de reunión -- no hay un esquema fijo que aplicar siempre: una \
+tutoría breve puede no necesitar más que un párrafo, mientras que una reunión con varios acuerdos y \
+tareas de seguimiento puede pedir apartados diferenciados. Ajusta la extensión y la organización a \
+lo que de verdad hay en las notas, sin rellenar con secciones vacías ni forzar apartados que no \
+correspondan a esta reunión concreta.
 
 No inventes datos, nombres, fechas ni decisiones que no estén ya, explícita o implícitamente, en \
 <notas> -- si las notas son escuetas, el acta debe serlo también en vez de rellenarse con relleno \

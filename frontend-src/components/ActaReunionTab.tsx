@@ -3,7 +3,6 @@ import { isTauri } from '@tauri-apps/api/core';
 import type { Meeting } from '../types';
 import Button from './Button';
 import Textarea from './Textarea';
-import MarkdownResult from './MarkdownResult';
 import TextoResaltado from './TextoResaltado';
 import AnonimizarSeleccionButton from './AnonimizarSeleccionButton';
 import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon } from './Icons';
@@ -357,13 +356,24 @@ const ActaReunionTab: React.FC<ActaReunionTabProps> = ({ notasMarkdown, tipo, ac
             )}
 
             {paso === 'resultado' && resultadoFinal !== null && (
-                <div className="flex flex-col gap-3">
-                    <p className="text-sm text-emerald-700 flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                <div className="flex flex-col gap-3 flex-1 min-h-0">
+                    <p className="text-sm text-emerald-700 flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex-shrink-0">
                         <CheckCircleIcon className="w-4 h-4 flex-shrink-0" />
-                        Acta redactada. Revísala antes de guardarla -- podrás seguir editándola después como el resto de pestañas.
+                        Acta redactada -- edítala aquí mismo si hace falta antes de guardarla.
                     </p>
-                    <MarkdownResult texto={resultadoFinal} className="max-h-[28rem] overflow-auto text-sm border rounded-lg p-4 bg-slate-50" />
-                    <div className="flex justify-between">
+                    <Suspense fallback={RICH_TEXT_FALLBACK}>
+                        {/* initialMarkdown se lee una sola vez al montar (ver
+                            RichTextEditor.tsx) -- vale aquí porque este editor se
+                            crea de cero cada vez que se entra en el paso
+                            'resultado' (una generación nueva), nunca se reutiliza
+                            con un `resultadoFinal` distinto por debajo. */}
+                        <RichTextEditor
+                            initialMarkdown={resultadoFinal}
+                            onChangeMarkdown={setResultadoFinal}
+                            className="min-h-[20rem] flex-1"
+                        />
+                    </Suspense>
+                    <div className="flex justify-between flex-shrink-0">
                         <Button type="button" variant="secondary" onClick={() => setPaso('via')}>Descartar y volver a intentar</Button>
                         <Button type="button" onClick={handleUsarActa}>Usar este acta</Button>
                     </div>
