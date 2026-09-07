@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { EditorContent, EditorContext, useEditor } from '@tiptap/react';
+import { BubbleMenu } from '@tiptap/react/menus';
 import { StarterKit } from '@tiptap/starter-kit';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TextAlign } from '@tiptap/extension-text-align';
@@ -84,6 +85,19 @@ interface RichTextEditorProps {
 // listas, cita, código, negrita/cursiva/tachado/código/subrayado,
 // resaltado en color, enlace, super/subíndice, alineación) se mantiene tal
 // cual de la plantilla oficial.
+//
+// Añadido aparte (no viene en la plantilla): un BubbleMenu -- el menú
+// contextual que aparece junto al texto seleccionado, estés donde estés
+// del documento. La plantilla original solo trae la barra fija de arriba,
+// pensada para una página normal donde esa barra siempre está a la vista;
+// aquí, dentro de una tarjeta que se desplaza con el resto de la pantalla,
+// una reunión larga (un acta de varias páginas) dejaba la barra fuera de
+// vista al bajar, sin ninguna forma de aplicar formato -- confirmado en
+// real (2026-09-07). El wrapper tampoco lleva ya overflow-y-auto (sí lo
+// llevaba antes) -- con eso puesto, la barra fija (position: sticky) no
+// tenía a qué pegarse (creaba su propio contexto de scroll en vez de dejar
+// que se pegara a la página real), así que tampoco se quedaba visible al
+// bajar. Quitarlo hace que la barra de arriba también se comporte bien.
 const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChangeMarkdown, autoFocus, placeholder, className = '', bare = false }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -129,7 +143,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChan
         : 'rounded-lg border border-slate-300 shadow-sm focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30 focus-within:border-[var(--color-primary)]';
 
     return (
-        <div className={`overflow-y-auto ${chromeClassName} ${className}`}>
+        <div className={`${chromeClassName} ${className}`}>
             <EditorContext.Provider value={{ editor }}>
                 <Toolbar ref={toolbarRef} variant="fixed">
                     <ToolbarGroup>
@@ -171,6 +185,20 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChan
                     serie (pensado para una página a pantalla completa) -- se anula
                     aquí para que ocupe todo el ancho de la tarjeta que la contiene. */}
                 <EditorContent editor={editor} role="presentation" className="simple-editor-content" style={{ maxWidth: 'none', margin: 0 }} />
+                {editor && (
+                    <BubbleMenu editor={editor}>
+                        <Toolbar variant="floating">
+                            <ToolbarGroup>
+                                <MarkButton type="bold" />
+                                <MarkButton type="italic" />
+                                <MarkButton type="underline" />
+                                <MarkButton type="strike" />
+                                <ColorHighlightPopover />
+                                <LinkPopover />
+                            </ToolbarGroup>
+                        </Toolbar>
+                    </BubbleMenu>
+                )}
             </EditorContext.Provider>
         </div>
     );
