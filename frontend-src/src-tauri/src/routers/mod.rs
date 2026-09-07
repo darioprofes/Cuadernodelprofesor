@@ -211,6 +211,7 @@ pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>
         ("POST", ["prompts", "instrumento-evaluacion", "prompt"]) => prompts::generar_prompt_instrumento(conn, require_body(body)?),
         ("POST", ["prompts", "instrumento-evaluacion", "validar"]) => prompts::validar_instrumento(conn, require_body(body)?),
         ("POST", ["prompts", "adaptacion-material", "prompt"]) => prompts::generar_prompt_adaptacion_material(conn, require_body(body)?),
+        ("POST", ["prompts", "reuniones", "acta", "prompt"]) => prompts::generar_prompt_acta_reunion(conn, require_body(body)?),
         ("POST", ["prompts", "deteccion-curricular", "prompt"]) => prompts::generar_prompt_deteccion_curricular(conn, require_body(body)?),
         ("POST", ["prompts", "deteccion-curricular", "validar"]) => prompts::validar_deteccion_curricular(conn, require_body(body)?),
 

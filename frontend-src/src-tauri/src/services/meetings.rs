@@ -6,7 +6,7 @@ use crate::error::ApiError;
 
 use super::merge_object;
 
-const COLUMNS: &str = "id, academic_year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento";
+const COLUMNS: &str = "id, academic_year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento, acta";
 
 fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
     Ok(json!({
@@ -19,6 +19,7 @@ fn row_to_json(row: &Row) -> rusqlite::Result<Value> {
         "motivo": row.get::<_, Option<String>>(6)?,
         "acuerdos": row.get::<_, Option<String>>(7)?,
         "seguimiento": row.get::<_, Option<String>>(8)?,
+        "acta": row.get::<_, Option<String>>(9)?,
     }))
 }
 
@@ -48,11 +49,12 @@ pub fn create(conn: &Connection, year_id: &str, body: Value) -> Result<Value, Ap
     let motivo = body.get("motivo").and_then(Value::as_str);
     let acuerdos = body.get("acuerdos").and_then(Value::as_str);
     let seguimiento = body.get("seguimiento").and_then(Value::as_str);
+    let acta = body.get("acta").and_then(Value::as_str);
 
     let id = db::new_uuid();
     conn.execute(
-        "INSERT INTO meetings (id, academic_year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento) VALUES (?,?,?,?,?,?,?,?,?)",
-        params![id, year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento],
+        "INSERT INTO meetings (id, academic_year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento, acta) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        params![id, year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento, acta],
     )?;
     get_one(conn, &id)?.ok_or_else(|| ApiError::internal("no se pudo releer la reunión recién creada"))
 }
@@ -67,10 +69,11 @@ pub fn update(conn: &Connection, id: &str, body: Value) -> Result<Value, ApiErro
     let motivo = merged.get("motivo").and_then(Value::as_str);
     let acuerdos = merged.get("acuerdos").and_then(Value::as_str);
     let seguimiento = merged.get("seguimiento").and_then(Value::as_str);
+    let acta = merged.get("acta").and_then(Value::as_str);
 
     conn.execute(
-        "UPDATE meetings SET fecha = ?, hora = ?, tipo = ?, con_quien = ?, motivo = ?, acuerdos = ?, seguimiento = ? WHERE id = ?",
-        params![fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento, id],
+        "UPDATE meetings SET fecha = ?, hora = ?, tipo = ?, con_quien = ?, motivo = ?, acuerdos = ?, seguimiento = ?, acta = ? WHERE id = ?",
+        params![fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento, acta, id],
     )?;
     get_one(conn, id)?.ok_or_else(|| ApiError::internal("no se pudo releer la reunión tras actualizar"))
 }

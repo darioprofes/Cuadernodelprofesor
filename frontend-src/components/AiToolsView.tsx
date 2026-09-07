@@ -6,8 +6,10 @@ import Textarea from './Textarea';
 import MarkdownResult from './MarkdownResult';
 import DownloadDocxButton from './DownloadDocxButton';
 import TextoResaltado, { PATRON_CODIGO } from './TextoResaltado';
+import AnonimizarSeleccionButton from './AnonimizarSeleccionButton';
 import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './Icons';
 import { useAnonimizar } from '../hooks/useAnonimizar';
+import { quitarCodigo, anonimizarManual } from '../services/anonimizadorEdicion';
 import { PAGE_ACCENT } from '../theme/palette';
 
 type Paso = 1 | 2 | 3 | 4;
@@ -116,6 +118,22 @@ const AiToolsView: React.FC = () => {
         setResultadoDocxOriginal(null);
         setResultado(data);
         setPaso(2);
+    };
+
+    // Edición manual del paso de revisión -- solo en la rama de texto plano
+    // (`resultado`): la rama .docx (`resultadoDocxOriginal`) se queda de
+    // solo lectura porque editar el texto mostrado ahí desincronizaría el
+    // Blob descargable, ya generado tal cual en el backend.
+    const handleQuitarCodigo = (codigo: string) => {
+        if (!resultado) return;
+        const { texto, mapa } = quitarCodigo(resultado.anonimizado, resultado.mapa, codigo);
+        setResultado({ anonimizado: texto, mapa });
+    };
+
+    const handleAnonimizarSeleccion = (seleccion: string) => {
+        if (!resultado) return;
+        const res = anonimizarManual(resultado.anonimizado, resultado.mapa, seleccion);
+        if (res) setResultado({ anonimizado: res.texto, mapa: res.mapa });
     };
 
     // Anonimiza el propio .docx sin pasar por texto en ningún momento --
@@ -310,18 +328,21 @@ const AiToolsView: React.FC = () => {
                     <div className="flex flex-col gap-3 flex-1">
                         <p className="text-sm text-slate-600">
                             Se han detectado y sustituido <strong>{Object.keys(mapaActivo ?? {}).length}</strong> dato(s)
-                            (pasa el ratón por encima de un código para ver el dato real). Revisa el documento antes de
-                            enviarlo: una combinación de datos (p.ej. curso + fecha + número de incidencias) puede seguir
-                            identificando a alguien aunque no aparezca ningún nombre.
+                            (pasa el ratón por encima de un código para ver el dato real{resultado ? ', o pulsa uno para quitarle la anonimización' : ''}).
+                            Revisa el documento antes de enviarlo: una combinación de datos (p.ej. curso + fecha + número
+                            de incidencias) puede seguir identificando a alguien aunque no aparezca ningún nombre.
                         </p>
                         <TextoResaltado
                             texto={resultadoDocxOriginal ? resultadoDocxOriginal.texto : resultado!.anonimizado}
                             mapa={mapaActivo ?? {}}
                             className="flex-1 bg-slate-50 border rounded-lg p-3 overflow-auto"
+                            editable={!!resultado}
+                            onQuitarCodigo={resultado ? handleQuitarCodigo : undefined}
                         />
                         <div className="flex justify-between">
                             <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
                             <div className="flex gap-2">
+                                {resultado && <AnonimizarSeleccionButton onAnonimizar={handleAnonimizarSeleccion} />}
                                 <CopyButton texto={resultadoDocxOriginal ? resultadoDocxOriginal.texto : resultado!.anonimizado} />
                                 {resultadoDocxOriginal && (
                                     <DownloadDocxButton blob={resultadoDocxOriginal.blob} filename="documento-anonimizado.docx" />

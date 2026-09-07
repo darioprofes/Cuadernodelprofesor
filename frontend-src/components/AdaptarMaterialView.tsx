@@ -9,12 +9,14 @@ import SeleccionarInstrumentoModal from './SeleccionarInstrumentoModal';
 import MarkdownResult from './MarkdownResult';
 import DownloadDocxButton from './DownloadDocxButton';
 import TextoResaltado from './TextoResaltado';
+import AnonimizarSeleccionButton from './AnonimizarSeleccionButton';
 import {
     AcademicCapIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon, ArrowUpTrayIcon,
 } from './Icons';
 import { PAGE_ACCENT } from '../theme/palette';
 import { formatClassLabel } from '../utils';
 import { useAnonimizar } from '../hooks/useAnonimizar';
+import { quitarCodigo, anonimizarManual, reintegrar } from '../services/anonimizadorEdicion';
 import { useIaLocalDisponible } from '../hooks/useIaLocalDisponible';
 import { useGroqDisponible } from '../hooks/useGroqDisponible';
 import { useProgrammingUnitsForCourses } from '../hooks/useProgrammingUnits';
@@ -73,12 +75,6 @@ const notasCategoricas = (s: Student): string => {
     if (s.programaEspecifico) lineas.push(`Programa específico: ${s.programaEspecifico}`);
     if (s.haRepetidoCurso) lineas.push('Repite curso.');
     return lineas.join('\n');
-};
-
-const reintegrar = (texto: string, mapa: Record<string, string>): string => {
-    let out = texto;
-    for (const [codigo, real] of Object.entries(mapa)) out = out.split(codigo).join(real);
-    return out;
 };
 
 interface AdaptarMaterialViewProps {
@@ -241,6 +237,25 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
             setMapaActivo(data.mapa);
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
+        }
+    };
+
+    // Edición manual del paso de revisión -- solo cuando hay un mapa real
+    // (web, sin isTauri()); en escritorio ya se edita a mano el textarea
+    // entero desde el principio (ver anonimizarAlumno), no hace falta esto.
+    const handleQuitarCodigo = (codigo: string) => {
+        if (!mapaActivo) return;
+        const { texto, mapa } = quitarCodigo(textoAnonimizado, mapaActivo, codigo);
+        setTextoAnonimizado(texto);
+        setMapaActivo(mapa);
+    };
+
+    const handleAnonimizarSeleccion = (seleccion: string) => {
+        if (!mapaActivo) return;
+        const res = anonimizarManual(textoAnonimizado, mapaActivo, seleccion);
+        if (res) {
+            setTextoAnonimizado(res.texto);
+            setMapaActivo(res.mapa);
         }
     };
 
@@ -527,15 +542,22 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
                                                 texto={textoAnonimizado}
                                                 mapa={mapaActivo}
                                                 className="bg-slate-50 border rounded-lg p-3 max-h-[20rem] overflow-auto"
+                                                editable
+                                                onQuitarCodigo={handleQuitarCodigo}
                                             />
                                         )}
                                         <div className="flex justify-between">
-                                            {!isTauri() && (
-                                                <Button type="button" variant="secondary" onClick={() => setEditandoManualmente(v => !v)}>
-                                                    {editandoManualmente ? 'Ver con códigos resaltados' : 'Editar manualmente'}
-                                                </Button>
-                                            )}
-                                            <Button type="button" className={isTauri() ? 'ml-auto' : undefined} onClick={() => setPasoAlumno('via')}>Siguiente</Button>
+                                            <div className="flex gap-2">
+                                                {!isTauri() && (
+                                                    <Button type="button" variant="secondary" onClick={() => setEditandoManualmente(v => !v)}>
+                                                        {editandoManualmente ? 'Ver con códigos resaltados' : 'Editar manualmente'}
+                                                    </Button>
+                                                )}
+                                                {!isTauri() && !editandoManualmente && (
+                                                    <AnonimizarSeleccionButton onAnonimizar={handleAnonimizarSeleccion} />
+                                                )}
+                                            </div>
+                                            <Button type="button" onClick={() => setPasoAlumno('via')}>Siguiente</Button>
                                         </div>
                                     </>
                                 )}

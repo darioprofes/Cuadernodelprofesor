@@ -541,6 +541,7 @@ export interface Meeting {
     motivo?: string;
     acuerdos?: string;
     seguimiento?: string;
+    acta?: string;
 }
 
 export interface MeetingInput {
@@ -551,6 +552,7 @@ export interface MeetingInput {
     motivo?: string;
     acuerdos?: string;
     seguimiento?: string;
+    acta?: string;
 }
 
 export interface MeetingPatch extends Partial<MeetingInput> {}

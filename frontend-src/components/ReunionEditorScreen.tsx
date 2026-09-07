@@ -5,7 +5,6 @@ import { TIPO_REUNION_LABEL as TIPO_LABEL } from '../utils';
 import { PAGE_ACCENT } from '../theme/palette';
 import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
-import Input from './Input';
 import IconButton from './IconButton';
 import Tabs, { type TabItem } from './Tabs';
 
@@ -13,22 +12,16 @@ import Tabs, { type TabItem } from './Tabs';
 // demanda igual que antes en ReunionesView.tsx, reubicado aquí porque
 // esta pantalla es ahora quien lo usa de verdad (Notas y Seguimiento).
 const RichTextEditor = React.lazy(() => import('./RichTextEditor'));
+// Trae consigo el flujo de Anonimizador + IA (más pesado aún) -- cargado
+// bajo demanda igual que RichTextEditor, solo cuando se abre la pestaña
+// Acta.
+const ActaReunionTab = React.lazy(() => import('./ActaReunionTab'));
 
 const RICH_TEXT_FALLBACK = <div className="min-h-[50vh] animate-pulse bg-slate-50 rounded-lg" />;
 
-type TabId = 'notas' | 'informacion' | 'seguimiento';
+type TabId = 'notas' | 'acta' | 'seguimiento';
 
 const TIPOS: Meeting['tipo'][] = ['tutoria', 'r_tutores', 'departamento', 'familia', 'otras'];
-
-// Mismos colores que la fila de la lista (ReunionesView.tsx) para el pill
-// del tipo en la pestaña Información -- si se toca uno, tocar el otro.
-const TIPO_COLOR: Record<Meeting['tipo'], string> = {
-    tutoria: 'bg-blue-100 text-blue-700',
-    r_tutores: 'bg-amber-100 text-amber-700',
-    departamento: 'bg-purple-100 text-purple-700',
-    familia: 'bg-teal-100 text-teal-700',
-    otras: 'bg-slate-100 text-slate-700',
-};
 
 // Cuenta líneas de checklist Markdown ("- [ ] ..." / "- [x] ...") sin
 // parsear el documento entero -- solo para el indicador (N) de la pestaña
@@ -58,6 +51,8 @@ interface ReunionEditorScreenProps {
     onAcuerdosChange: (value: string) => void;
     seguimiento: string;
     onSeguimientoChange: (value: string) => void;
+    acta: string;
+    onActaChange: (value: string) => void;
 }
 
 // Pantalla de creación/edición de una reunión, pensada para sentirse como
@@ -73,18 +68,22 @@ interface ReunionEditorScreenProps {
 // y tarjetas blancas redondeadas, igual que el resto de la app. El
 // sidebar y la barra superior nunca desaparecen.
 //
-// Deliberadamente SIN cambio de modelo de datos (decisión explícita del
-// profesor): no hay campos nuevos (título propio, lugar, duración,
-// participantes estructurados) ni listas estructuradas de acuerdos/
-// seguimiento con responsable+fecha+estado -- Seguimiento reutiliza el
-// mismo editor BlockNote de Notas, que ya trae de serie bloques de lista
-// de tareas (checkbox), así que el profesor puede marcar pendientes/hechas
-// sin ningún campo nuevo. "Convertir en tarea de la Agenda" (mencionado en
-// el diseño original) queda fuera de esta primera versión.
+// Deliberadamente SIN cambio de modelo de datos para Notas/Información/
+// Seguimiento (decisión explícita del profesor en el rediseño original): no
+// hay campos nuevos de estructura (lugar, duración, participantes
+// estructurados) ni listas estructuradas de acuerdos/seguimiento con
+// responsable+fecha+estado -- Seguimiento reutiliza el mismo editor de
+// Notas, que ya trae de serie bloques de lista de tareas (checkbox), así
+// que el profesor puede marcar pendientes/hechas sin ningún campo nuevo.
+// "Convertir en tarea de la Agenda" (mencionado en el diseño original) queda
+// fuera de esta primera versión. El campo `acta` (conversación 2026-09-07)
+// SÍ es una excepción deliberada a "sin cambio de modelo": el acta
+// redactada con IA es contenido nuevo, no una reorganización de lo que ya
+// había, así que necesita su propia columna (ver ActaReunionTab.tsx).
 const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
     onClose, onDelete,
     fecha, onFechaChange, hora, onHoraChange, tipo, onTipoChange, conQuien, onConQuienChange, motivo, onMotivoChange,
-    acuerdos, onAcuerdosChange, seguimiento, onSeguimientoChange,
+    acuerdos, onAcuerdosChange, seguimiento, onSeguimientoChange, acta, onActaChange,
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>('notas');
 
@@ -92,7 +91,7 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
 
     const tabItems: TabItem<TabId>[] = [
         { id: 'notas', label: 'Notas' },
-        { id: 'informacion', label: 'Información' },
+        { id: 'acta', label: 'Acta' },
         { id: 'seguimiento', label: pendientes > 0 ? `Seguimiento (${pendientes})` : 'Seguimiento' },
     ];
 
@@ -147,7 +146,14 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
                                 <option key={t} value={t} className="text-slate-800">{TIPO_LABEL[t]}</option>
                             ))}
                         </select>
-                        {conQuien && <span className="text-white/70 truncate">· {conQuien}</span>}
+                        <span className="text-white/50">·</span>
+                        <input
+                            type="text"
+                            value={conQuien}
+                            onChange={e => onConQuienChange(e.target.value)}
+                            placeholder="Con quién (familia de..., claustro...)"
+                            className="bg-transparent border-none outline-none focus:ring-0 p-0 placeholder-white/50 flex-1 min-w-[8rem]"
+                        />
                     </div>
                 </div>
                 {onDelete && (
@@ -187,42 +193,15 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
                         </Suspense>
                     )}
 
-                    {activeTab === 'informacion' && (
-                        <div className="max-w-xl space-y-5">
-                            <div>
-                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Título</label>
-                                <Input type="text" value={motivo} onChange={e => onMotivoChange(e.target.value)} placeholder="Título de la reunión" className="w-full" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Tipo</label>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {TIPOS.map(t => (
-                                        <button
-                                            key={t}
-                                            type="button"
-                                            onClick={() => onTipoChange(t)}
-                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${tipo === t ? `${TIPO_COLOR[t]} border-transparent` : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-                                        >
-                                            {TIPO_LABEL[t]}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Fecha</label>
-                                    <Input type="date" value={fecha} onChange={e => onFechaChange(e.target.value)} className="w-full" />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Hora</label>
-                                    <Input type="time" value={hora} onChange={e => onHoraChange(e.target.value)} className="w-full" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Con quién</label>
-                                <Input type="text" value={conQuien} onChange={e => onConQuienChange(e.target.value)} placeholder="Familia de..., Claustro, Equipo docente..." className="w-full" />
-                            </div>
-                        </div>
+                    {activeTab === 'acta' && (
+                        <Suspense fallback={RICH_TEXT_FALLBACK}>
+                            <ActaReunionTab
+                                notasMarkdown={acuerdos}
+                                tipo={tipo}
+                                acta={acta}
+                                onActaChange={onActaChange}
+                            />
+                        </Suspense>
                     )}
 
                     {activeTab === 'seguimiento' && (

@@ -23,6 +23,7 @@ from services.extraccion_pdf import extraer_texto_pdf
 from services.extraccion_pptx import extraer_texto_pptx
 from services.llm_client import esta_disponible as ia_local_esta_disponible
 from services.llm_client import groq_disponible
+from services.prompts import acta_reunion as prompt_acta
 from services.prompts import adaptacion_material as prompt_adaptacion
 from services.prompts import deteccion_curricular as prompt_deteccion
 from services.prompts import instrumento_evaluacion as prompt_instrumento
@@ -621,6 +622,89 @@ async def generar_adaptacion_material_groq(datos: GenerarAdaptacionRequest):
 @router.post("/adaptacion-material/prompt")
 async def generar_adaptacion_material_texto(datos: GenerarAdaptacionRequest):
     prompt = prompt_adaptacion.construir_prompt(datos.material, datos.notas_alumno)
+    return {"prompt": prompt}
+
+
+# ==========================================================
+# Acta de una reunión
+# ==========================================================
+#
+# El frontend ya ha anonimizado las notas de la reunión (vía
+# /ai-tools/anonimizar) y el profesor ya las ha revisado ANTES de llamar a
+# cualquiera de estos tres endpoints -- este router nunca ve el mapa de
+# anonimización ni datos personales en crudo, solo el texto ya limpio. Mismas
+# tres vías que adaptación de material (local con job+polling, Groq
+# síncrono, prompt para copiar/pegar online).
+
+class GenerarActaRequest(BaseModel):
+    tipo: str
+    notas: str
+
+
+_trabajos_acta: dict[str, dict] = {}
+
+
+def _ejecutar_generacion_acta(job_id: str, datos: GenerarActaRequest):
+    try:
+        resultado_texto = prompt_acta.generar_acta(datos.tipo, datos.notas)
+        resultado = {"estado": "listo", "resultado": resultado_texto}
+    except ValueError as exc:
+        resultado = {"estado": "error", "detail": str(exc)}
+    except Exception as exc:
+        resultado = {"estado": "error", "detail": f"Error inesperado redactando el acta: {exc}"}
+
+    with _trabajos_lock:
+        actual = _trabajos_acta.get(job_id)
+        # Misma llamada única bloqueante que la adaptación de material -- ver
+        # el comentario equivalente en _ejecutar_generacion_adaptacion.
+        if actual is not None and actual.get("estado") != "cancelado":
+            actual.update(resultado)
+        _eventos_cancelacion.pop(job_id, None)
+
+
+@router.post("/reuniones/acta/generar", status_code=202)
+async def generar_acta_reunion(datos: GenerarActaRequest):
+    job_id = str(uuid.uuid4())
+    with _trabajos_lock:
+        _limpiar_trabajos_viejos(_trabajos_acta)
+        _trabajos_acta[job_id] = {
+            "estado": "en_progreso",
+            "creado": time.monotonic(),
+            "tipo": "acta_reunion",
+            "titulo": "Acta de reunión",
+            "iniciado": time.time(),
+        }
+        _eventos_cancelacion[job_id] = threading.Event()
+
+    threading.Thread(target=_ejecutar_generacion_acta, args=(job_id, datos), daemon=True).start()
+    return {"jobId": job_id}
+
+
+@router.get("/reuniones/acta/generar/{job_id}")
+async def estado_acta_reunion(job_id: str):
+    with _trabajos_lock:
+        trabajo = _trabajos_acta.get(job_id)
+    if trabajo is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No se encuentra este trabajo -- puede que haya expirado (más de una hora) o que el "
+            "servidor se haya reiniciado a mitad de la generación. Inténtalo de nuevo.",
+        )
+    return trabajo
+
+
+@router.post("/reuniones/acta/generar-groq")
+async def generar_acta_reunion_groq(datos: GenerarActaRequest):
+    try:
+        resultado_texto = prompt_acta.generar_acta_groq(datos.tipo, datos.notas)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"resultado": resultado_texto}
+
+
+@router.post("/reuniones/acta/prompt")
+async def generar_acta_reunion_texto(datos: GenerarActaRequest):
+    prompt = prompt_acta.construir_prompt(datos.tipo, datos.notas)
     return {"prompt": prompt}
 
 

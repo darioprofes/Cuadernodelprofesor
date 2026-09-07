@@ -422,6 +422,7 @@ export interface Meeting {
   motivo?: string;
   acuerdos?: string;
   seguimiento?: string;
+  acta?: string;
 }
 
 export interface BasicKnowledge {

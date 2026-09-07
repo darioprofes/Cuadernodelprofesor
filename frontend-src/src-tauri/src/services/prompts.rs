@@ -1044,6 +1044,70 @@ mención a que el texto ha sido adaptado o a las necesidades del alumno.
     Ok(json!({"prompt": prompt}))
 }
 
+fn etiqueta_tipo_reunion(tipo: &str) -> &'static str {
+    match tipo {
+        "tutoria" => "Tutoría",
+        "r_tutores" => "Coordinación de tutores",
+        "departamento" => "Reunión de departamento",
+        "familia" => "Reunión con familia",
+        _ => "Reunión",
+    }
+}
+
+// Puerto de api/app/services/prompts/acta_reunion.py::construir_prompt().
+// Igual que adaptacion_material más arriba: en escritorio no hay
+// Anonimizador (sin spaCy en Rust, ver project_tauri_ia_scope.md), así que
+// esta es la ÚNICA vía disponible aquí -- el profesor anonimiza a mano las
+// notas antes de generar este prompt, lo copia a una IA online y pega la
+// respuesta directamente en la pestaña Acta (sin paso de "validar" aparte,
+// el resultado es texto/Markdown libre, no una estructura JSON con forma
+// fija).
+pub fn generar_prompt_acta_reunion(_conn: &Connection, body: Value) -> Result<Value, ApiError> {
+    let tipo = req_str(&body, "tipo")?;
+    let notas = body.get("notas").and_then(Value::as_str).unwrap_or("");
+    let tipo_label = etiqueta_tipo_reunion(tipo);
+
+    let prompt = format!(
+        "Eres un profesor redactando el acta formal de una reunión a partir de sus notas tomadas \
+a mano durante la propia reunión.
+
+<tipo_de_reunion>
+{tipo_label}
+</tipo_de_reunion>
+
+<notas>
+{notas}
+</notas>
+
+<tarea>
+Redacta el acta de esta reunión a partir de <notas>, en un tono formal y ordenado, propio de un \
+documento de centro educativo. Estructura el acta en estos apartados, solo cuando haya contenido \
+real en las notas para ese apartado (omite el apartado entero si no hay nada que poner en él, no \
+inventes contenido para rellenarlo):
+
+1. **Desarrollo**: resumen ordenado y redactado en prosa de lo tratado en la reunión, a partir de \
+   las notas -- no una simple lista de las notas tal cual, sino una redacción fluida y profesional.
+2. **Acuerdos**: los acuerdos o decisiones tomadas, en una lista.
+3. **Seguimiento**: las tareas o compromisos pendientes de revisar más adelante, en una lista.
+
+No inventes datos, nombres, fechas ni decisiones que no estén ya, explícita o implícitamente, en \
+<notas> -- si las notas son escuetas, el acta debe serlo también en vez de rellenarse con relleno \
+genérico. Si aparecen códigos como PERS_XXXXXX o GRUPO_XXXXXX, son anonimización real de datos \
+personales -- déjalos EXACTAMENTE igual en el resultado, no los traduzcas ni los elimines ni los \
+sustituyas por ningún nombre inventado.
+</tarea>
+
+<formato_de_salida>
+Devuelve ÚNICAMENTE el acta ya redactada, en Markdown, lista para guardar tal cual -- sin \
+explicaciones antes ni después, sin envolverla en bloques de código, sin repetir el tipo de \
+reunión como título (ya se muestra aparte), sin fecha ni asistentes (el profesor los añade él \
+mismo, no están en <notas>).
+</formato_de_salida>"
+    );
+
+    Ok(json!({"prompt": prompt}))
+}
+
 // Puerto de api/app/services/prompts/deteccion_curricular.py.
 fn elementos_por_tipo(conn: &Connection, course_id: &str, tipo: &str) -> Result<Vec<(String, String, String)>, ApiError> {
     let extraer = |v: Value| -> Vec<(String, String, String)> {
@@ -1415,6 +1479,21 @@ mod tests {
         assert!(prompt.contains("Explica el ciclo del agua en 5 pasos."));
         assert!(prompt.contains("PERS_000001"));
         assert!(prompt.contains("dislexia"));
+    }
+
+    #[test]
+    fn generar_prompt_acta_reunion_incluye_tipo_y_notas() {
+        let conn = db::test_connection();
+
+        let resultado = dispatch(&conn, "POST", "/prompts/reuniones/acta/prompt", Some(json!({
+            "tipo": "familia",
+            "notas": "Se habla con PERS_000001 sobre el rendimiento en GRUPO_000002.",
+        }))).unwrap();
+
+        let prompt = resultado["prompt"].as_str().unwrap();
+        assert!(prompt.contains("Reunión con familia"));
+        assert!(prompt.contains("PERS_000001"));
+        assert!(prompt.contains("GRUPO_000002"));
     }
 
     #[test]

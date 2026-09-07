@@ -64,6 +64,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
     const [motivo, setMotivo] = useState('');
     const [acuerdos, setAcuerdos] = useState('');
     const [seguimiento, setSeguimiento] = useState('');
+    const [acta, setActa] = useState('');
     // editingIdRef espeja a editingId (estado) pero de lectura/escritura
     // síncrona -- el autoguardado debounced (ver scheduleAutosave) lo
     // necesita para decidir crear-vs-actualizar sin arriesgarse a un
@@ -101,6 +102,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
         setMotivo('');
         setAcuerdos('');
         setSeguimiento('');
+        setActa('');
     };
 
     const handleOpenNew = () => {
@@ -128,6 +130,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
         setMotivo(m.motivo || '');
         setAcuerdos(m.acuerdos || '');
         setSeguimiento(m.seguimiento || '');
+        setActa(m.acta || '');
         setIsFormOpen(true);
     };
 
@@ -147,7 +150,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [openMeetingId]);
 
-    type ReunionFormValues = { fecha: string; hora: string; tipo: Meeting['tipo']; conQuien: string; motivo: string; acuerdos: string; seguimiento: string };
+    type ReunionFormValues = { fecha: string; hora: string; tipo: Meeting['tipo']; conQuien: string; motivo: string; acuerdos: string; seguimiento: string; acta: string };
 
     const buildData = (v: ReunionFormValues) => ({
         fecha: v.fecha || toYYYYMMDD(new Date()),
@@ -157,6 +160,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
         motivo: v.motivo.trim() || undefined,
         acuerdos: v.acuerdos.trim() || undefined,
         seguimiento: v.seguimiento.trim() || undefined,
+        acta: v.acta.trim() || undefined,
     });
 
     // Autoguardado: 1.5s tras la última pulsación en CUALQUIER campo del
@@ -170,7 +174,7 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
     // memoriza su id (vía editingIdRef, síncrono) para que los siguientes
     // autoguardados actualicen esa misma fila en vez de crear duplicados.
     const scheduleAutosave = (overrides: Partial<ReunionFormValues>) => {
-        const snapshot: ReunionFormValues = { fecha, hora, tipo, conQuien, motivo, acuerdos, seguimiento, ...overrides };
+        const snapshot: ReunionFormValues = { fecha, hora, tipo, conQuien, motivo, acuerdos, seguimiento, acta, ...overrides };
         const data = buildData(snapshot);
 
         cancelPendingSave();
@@ -266,6 +270,8 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                     onAcuerdosChange={v => { setAcuerdos(v); scheduleAutosave({ acuerdos: v }); }}
                     seguimiento={seguimiento}
                     onSeguimientoChange={v => { setSeguimiento(v); scheduleAutosave({ seguimiento: v }); }}
+                    acta={acta}
+                    onActaChange={v => { setActa(v); scheduleAutosave({ acta: v }); }}
                 />
             </div>
         );

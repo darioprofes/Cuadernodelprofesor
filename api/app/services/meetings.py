@@ -5,7 +5,7 @@ from typing import Optional
 from services.db import get_conn
 from services.schemas import ApiModel
 
-_COLUMNS = "id, academic_year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento"
+_COLUMNS = "id, academic_year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento, acta"
 
 
 class MeetingInput(ApiModel):
@@ -16,6 +16,7 @@ class MeetingInput(ApiModel):
     motivo: Optional[str] = None
     acuerdos: Optional[str] = None
     seguimiento: Optional[str] = None
+    acta: Optional[str] = None
 
 
 class MeetingPatch(ApiModel):
@@ -26,6 +27,7 @@ class MeetingPatch(ApiModel):
     motivo: Optional[str] = None
     acuerdos: Optional[str] = None
     seguimiento: Optional[str] = None
+    acta: Optional[str] = None
 
 
 class Meeting(MeetingInput):
@@ -52,10 +54,10 @@ def create_meeting(year_id: str, data: MeetingInput) -> Meeting:
 
             cur.execute(
                 f"""
-                INSERT INTO meetings (academic_year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING {_COLUMNS}
+                INSERT INTO meetings (academic_year_id, fecha, hora, tipo, con_quien, motivo, acuerdos, seguimiento, acta)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {_COLUMNS}
                 """,
-                [year_id, data.fecha, data.hora, data.tipo, data.con_quien, data.motivo, data.acuerdos, data.seguimiento]
+                [year_id, data.fecha, data.hora, data.tipo, data.con_quien, data.motivo, data.acuerdos, data.seguimiento, data.acta]
             )
 
             return Meeting.model_validate(cur.fetchone())
