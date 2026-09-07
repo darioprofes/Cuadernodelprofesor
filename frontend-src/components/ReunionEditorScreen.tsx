@@ -134,7 +134,7 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border p-4">
-                <Tabs className="max-w-md mb-4" activeId={activeTab} onChange={setActiveTab} items={tabItems} />
+                <Tabs className="max-w-md mb-4" activeId={activeTab} onChange={setActiveTab} items={tabItems} accentColor={PAGE_ACCENT.reuniones} />
 
                 {activeTab === 'notas' && (
                     <Suspense fallback={RICH_TEXT_FALLBACK}>
