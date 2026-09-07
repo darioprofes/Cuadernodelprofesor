@@ -1,7 +1,10 @@
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useState } from 'react';
 import type { Meeting } from '../types';
 import { ChevronLeftIcon, TrashIcon } from './Icons';
 import { formatFechaEs, TIPO_REUNION_LABEL as TIPO_LABEL } from '../utils';
+import { PAGE_ACCENT } from '../theme/palette';
+import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../theme/components/PageHeader';
+import { headerPatternStyle } from '../theme/headerPattern';
 import Input from './Input';
 import IconButton from './IconButton';
 import Tabs, { type TabItem } from './Tabs';
@@ -11,7 +14,7 @@ import Tabs, { type TabItem } from './Tabs';
 // esta pantalla es ahora quien lo usa de verdad (Notas y Seguimiento).
 const RichTextEditor = React.lazy(() => import('./RichTextEditor'));
 
-const RICH_TEXT_FALLBACK = <div className="h-full min-h-[300px] animate-pulse bg-slate-50 rounded-lg" />;
+const RICH_TEXT_FALLBACK = <div className="min-h-[50vh] animate-pulse bg-slate-50 rounded-lg" />;
 
 type TabId = 'notas' | 'informacion' | 'seguimiento';
 
@@ -61,9 +64,14 @@ interface ReunionEditorScreenProps {
 // una libreta en la que se empieza a escribir de inmediato, no como un
 // formulario administrativo (rediseño pedido explícitamente, conversación
 // 2026-09-07): cabecera con título editable + pestañas Notas/Información/
-// Seguimiento, en vez de mostrar todos los campos a la vez. Pantalla
-// completa a mano (mismo patrón que PlanoClaseModal.tsx) en vez de
-// <Modal>, para no arrastrar la cabecera genérica de ese componente.
+// Seguimiento, en vez de mostrar todos los campos a la vez.
+//
+// A diferencia del primer intento (retirado tras feedback directo: "parece
+// que te has ido de la aplicación"), esto NO es una superposición a
+// pantalla completa -- vive dentro del <main> de siempre, con la cabecera
+// de color de PageHeader (mismo PAGE_ACCENT.reuniones que la propia lista)
+// y tarjetas blancas redondeadas, igual que el resto de la app. El
+// sidebar y la barra superior nunca desaparecen.
 //
 // Deliberadamente SIN cambio de modelo de datos (decisión explícita del
 // profesor): no hay campos nuevos (título propio, lugar, duración,
@@ -80,12 +88,6 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<TabId>('notas');
 
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-        document.addEventListener('keydown', handleKeyDown);
-        return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [onClose]);
-
     const pendientes = useMemo(() => contarPendientes(seguimiento), [seguimiento]);
 
     const tabItems: TabItem<TabId>[] = [
@@ -95,36 +97,45 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
     ];
 
     return (
-        <div className="fixed inset-0 z-40 bg-white flex flex-col">
-            <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-200 flex-shrink-0">
-                <div className="flex items-start gap-2 min-w-0 flex-1">
-                    <IconButton label="Volver a Reuniones" onClick={onClose} className="mt-1 flex-shrink-0">
-                        <ChevronLeftIcon className="w-5 h-5" />
-                    </IconButton>
-                    <div className="min-w-0 flex-1">
-                        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Reunión</p>
-                        <input
-                            type="text"
-                            value={motivo}
-                            onChange={e => onMotivoChange(e.target.value)}
-                            placeholder="Título de la reunión"
-                            className="block w-full text-xl font-bold text-slate-800 bg-transparent border-none outline-none focus:ring-0 p-0 placeholder-slate-300 truncate"
-                        />
-                        <p className="text-xs text-slate-400 mt-0.5 truncate">
-                            {formatFechaEs(fecha)}{hora && ` · ${hora}`} · {TIPO_LABEL[tipo]}{conQuien && ` · ${conQuien}`}
-                        </p>
-                    </div>
+        <div className="space-y-4">
+            <div
+                className={`rounded-xl ${pageHeaderPaddingClassName} ${pageHeaderMinHeight} flex items-start gap-3`}
+                style={{ backgroundColor: PAGE_ACCENT.reuniones, ...headerPatternStyle }}
+            >
+                <IconButton
+                    label="Volver a Reuniones"
+                    onClick={onClose}
+                    className="text-white/80 hover:text-white hover:bg-white/10 flex-shrink-0"
+                >
+                    <ChevronLeftIcon className="w-5 h-5" />
+                </IconButton>
+                <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold text-white/70 uppercase tracking-wide">Reunión</p>
+                    <input
+                        type="text"
+                        value={motivo}
+                        onChange={e => onMotivoChange(e.target.value)}
+                        placeholder="Título de la reunión"
+                        className="block w-full text-xl font-bold text-white bg-transparent border-none outline-none focus:ring-0 p-0 placeholder-white/50 truncate"
+                    />
+                    <p className="text-sm text-white/80 mt-0.5 truncate">
+                        {formatFechaEs(fecha)}{hora && ` · ${hora}`} · {TIPO_LABEL[tipo]}{conQuien && ` · ${conQuien}`}
+                    </p>
                 </div>
                 {onDelete && (
-                    <IconButton label="Eliminar reunión" tone="danger" onClick={onDelete} className="flex-shrink-0">
+                    <IconButton
+                        label="Eliminar reunión"
+                        onClick={onDelete}
+                        className="text-white/80 hover:text-white hover:bg-white/10 flex-shrink-0"
+                    >
                         <TrashIcon className="w-5 h-5" />
                     </IconButton>
                 )}
             </div>
 
-            <Tabs className="mx-4 mt-3 flex-shrink-0 max-w-md" activeId={activeTab} onChange={setActiveTab} items={tabItems} />
+            <div className="bg-white rounded-xl shadow-sm border p-4">
+                <Tabs className="max-w-md mb-4" activeId={activeTab} onChange={setActiveTab} items={tabItems} />
 
-            <div className="flex-1 min-h-0 overflow-y-auto">
                 {activeTab === 'notas' && (
                     <Suspense fallback={RICH_TEXT_FALLBACK}>
                         <RichTextEditor
@@ -133,13 +144,13 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
                             initialMarkdown={acuerdos}
                             onChangeMarkdown={onAcuerdosChange}
                             placeholder="Escribe aquí tus notas..."
-                            className="h-full max-w-3xl mx-auto px-6 py-4"
+                            className="min-h-[50vh]"
                         />
                     </Suspense>
                 )}
 
                 {activeTab === 'informacion' && (
-                    <div className="max-w-xl mx-auto px-6 py-6 space-y-5">
+                    <div className="max-w-xl space-y-5">
                         <div>
                             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Título</label>
                             <Input type="text" value={motivo} onChange={e => onMotivoChange(e.target.value)} placeholder="Título de la reunión" className="w-full" />
@@ -183,7 +194,7 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
                             initialMarkdown={seguimiento}
                             onChangeMarkdown={onSeguimientoChange}
                             placeholder="Escribe '/' para insertar una lista de tareas y marcar lo pendiente..."
-                            className="h-full max-w-3xl mx-auto px-6 py-4"
+                            className="min-h-[50vh]"
                         />
                     </Suspense>
                 )}

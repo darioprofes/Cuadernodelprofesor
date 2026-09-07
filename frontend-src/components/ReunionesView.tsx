@@ -246,6 +246,31 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
         });
     }, [sorted, rango, tipoFiltro, busqueda, hoyStr, finSemanaStr, finMesStr]);
 
+    if (isFormOpen) {
+        return (
+            <div className="space-y-6">
+                <ReunionEditorScreen
+                    onClose={handleCloseForm}
+                    onDelete={editingId ? () => handleDelete(editingId) : undefined}
+                    fecha={fecha}
+                    onFechaChange={v => { setFecha(v); scheduleAutosave({ fecha: v }); }}
+                    hora={hora}
+                    onHoraChange={v => { setHora(v); scheduleAutosave({ hora: v }); }}
+                    tipo={tipo}
+                    onTipoChange={v => { setTipo(v); scheduleAutosave({ tipo: v }); }}
+                    conQuien={conQuien}
+                    onConQuienChange={v => { setConQuien(v); scheduleAutosave({ conQuien: v }); }}
+                    motivo={motivo}
+                    onMotivoChange={v => { setMotivo(v); scheduleAutosave({ motivo: v }); }}
+                    acuerdos={acuerdos}
+                    onAcuerdosChange={v => { setAcuerdos(v); scheduleAutosave({ acuerdos: v }); }}
+                    seguimiento={seguimiento}
+                    onSeguimientoChange={v => { setSeguimiento(v); scheduleAutosave({ seguimiento: v }); }}
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             <PageHeader title="Reuniones" subtitle="Tutorías, coordinación de tutores, departamento y familias." accent={PAGE_ACCENT.reuniones} icon={<UsersIcon className="w-6 h-6" />} />
@@ -322,27 +347,6 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                     })
                 )}
             </div>
-
-            {isFormOpen && (
-                <ReunionEditorScreen
-                    onClose={handleCloseForm}
-                    onDelete={editingId ? () => handleDelete(editingId) : undefined}
-                    fecha={fecha}
-                    onFechaChange={v => { setFecha(v); scheduleAutosave({ fecha: v }); }}
-                    hora={hora}
-                    onHoraChange={v => { setHora(v); scheduleAutosave({ hora: v }); }}
-                    tipo={tipo}
-                    onTipoChange={v => { setTipo(v); scheduleAutosave({ tipo: v }); }}
-                    conQuien={conQuien}
-                    onConQuienChange={v => { setConQuien(v); scheduleAutosave({ conQuien: v }); }}
-                    motivo={motivo}
-                    onMotivoChange={v => { setMotivo(v); scheduleAutosave({ motivo: v }); }}
-                    acuerdos={acuerdos}
-                    onAcuerdosChange={v => { setAcuerdos(v); scheduleAutosave({ acuerdos: v }); }}
-                    seguimiento={seguimiento}
-                    onSeguimientoChange={v => { setSeguimiento(v); scheduleAutosave({ seguimiento: v }); }}
-                />
-            )}
         </div>
     );
 };
