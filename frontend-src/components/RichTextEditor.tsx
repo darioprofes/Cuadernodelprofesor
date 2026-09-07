@@ -88,16 +88,17 @@ interface RichTextEditorProps {
 //
 // Añadido aparte (no viene en la plantilla): un BubbleMenu -- el menú
 // contextual que aparece junto al texto seleccionado, estés donde estés
-// del documento. La plantilla original solo trae la barra fija de arriba,
-// pensada para una página normal donde esa barra siempre está a la vista;
-// aquí, dentro de una tarjeta que se desplaza con el resto de la pantalla,
-// una reunión larga (un acta de varias páginas) dejaba la barra fuera de
-// vista al bajar, sin ninguna forma de aplicar formato -- confirmado en
-// real (2026-09-07). El wrapper tampoco lleva ya overflow-y-auto (sí lo
-// llevaba antes) -- con eso puesto, la barra fija (position: sticky) no
-// tenía a qué pegarse (creaba su propio contexto de scroll en vez de dejar
-// que se pegara a la página real), así que tampoco se quedaba visible al
-// bajar. Quitarlo hace que la barra de arriba también se comporte bien.
+// del documento, con TODOS los mismos controles que la barra fija de
+// arriba (no un subconjunto -- primer intento con solo 6 botones,
+// insuficiente según feedback directo). La plantilla original solo trae
+// esa barra fija, pensada para una página normal donde siempre está a la
+// vista. Aquí, además, la barra fija (position: sticky) solo se queda
+// pegada de verdad si el contenedor que la envuelve hace scroll real --
+// eso lo resuelve ReunionEditorScreen.tsx acotando la altura de la tarjeta
+// y dándole su propio overflow-y-auto (confirmado en real 2026-09-07: sin
+// eso, es el <main> de la app entera el que hace scroll de página, y ni la
+// barra fija ni el propio wrapper de este componente tienen ningún
+// contenedor real al que pegarse).
 const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChangeMarkdown, autoFocus, placeholder, className = '', bare = false }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -189,12 +190,32 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChan
                     <BubbleMenu editor={editor}>
                         <Toolbar variant="floating">
                             <ToolbarGroup>
+                                <HeadingDropdownMenu modal={false} levels={[1, 2, 3, 4]} />
+                                <ListDropdownMenu modal={false} types={['bulletList', 'orderedList', 'taskList']} />
+                                <BlockquoteButton />
+                                <CodeBlockButton />
+                            </ToolbarGroup>
+                            <ToolbarSeparator />
+                            <ToolbarGroup>
                                 <MarkButton type="bold" />
                                 <MarkButton type="italic" />
-                                <MarkButton type="underline" />
                                 <MarkButton type="strike" />
+                                <MarkButton type="code" />
+                                <MarkButton type="underline" />
                                 <ColorHighlightPopover />
                                 <LinkPopover />
+                            </ToolbarGroup>
+                            <ToolbarSeparator />
+                            <ToolbarGroup>
+                                <MarkButton type="superscript" />
+                                <MarkButton type="subscript" />
+                            </ToolbarGroup>
+                            <ToolbarSeparator />
+                            <ToolbarGroup>
+                                <TextAlignButton align="left" />
+                                <TextAlignButton align="center" />
+                                <TextAlignButton align="right" />
+                                <TextAlignButton align="justify" />
                             </ToolbarGroup>
                         </Toolbar>
                     </BubbleMenu>

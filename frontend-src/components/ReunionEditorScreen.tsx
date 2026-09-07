@@ -133,71 +133,82 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
                 )}
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-                <Tabs className="max-w-md mb-4" activeId={activeTab} onChange={setActiveTab} items={tabItems} accentColor={PAGE_ACCENT.reuniones} />
+            {/* max-height + overflow-y-auto AQUÍ (no en RichTextEditor) a
+                propósito: es el <main> de la app entera el que hace scroll de
+                página, no un contenedor interno -- así que la barra fija
+                (position: sticky) del editor no tenía a qué pegarse (ver
+                RichTextEditor.tsx) y se iba con el resto al bajar. Acotando la
+                altura de esta tarjeta y dándole su propio scroll, la barra sí
+                encuentra un contenedor real que se desplaza y se queda fija de
+                verdad. Las pestañas quedan fuera de esa zona con scroll propio
+                (flex-shrink-0), siempre a la vista. */}
+            <div className="bg-white rounded-xl shadow-sm border p-4 flex flex-col" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+                <Tabs className="max-w-md mb-4 flex-shrink-0" activeId={activeTab} onChange={setActiveTab} items={tabItems} accentColor={PAGE_ACCENT.reuniones} />
 
-                {activeTab === 'notas' && (
-                    <Suspense fallback={RICH_TEXT_FALLBACK}>
-                        <RichTextEditor
-                            bare
-                            autoFocus
-                            initialMarkdown={acuerdos}
-                            onChangeMarkdown={onAcuerdosChange}
-                            placeholder="Escribe aquí tus notas..."
-                            className="min-h-[50vh]"
-                        />
-                    </Suspense>
-                )}
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                    {activeTab === 'notas' && (
+                        <Suspense fallback={RICH_TEXT_FALLBACK}>
+                            <RichTextEditor
+                                bare
+                                autoFocus
+                                initialMarkdown={acuerdos}
+                                onChangeMarkdown={onAcuerdosChange}
+                                placeholder="Escribe aquí tus notas..."
+                                className="min-h-full"
+                            />
+                        </Suspense>
+                    )}
 
-                {activeTab === 'informacion' && (
-                    <div className="max-w-xl space-y-5">
-                        <div>
-                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Título</label>
-                            <Input type="text" value={motivo} onChange={e => onMotivoChange(e.target.value)} placeholder="Título de la reunión" className="w-full" />
-                        </div>
-                        <div>
-                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Tipo</label>
-                            <div className="flex flex-wrap gap-1.5">
-                                {TIPOS.map(t => (
-                                    <button
-                                        key={t}
-                                        type="button"
-                                        onClick={() => onTipoChange(t)}
-                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${tipo === t ? `${TIPO_COLOR[t]} border-transparent` : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-                                    >
-                                        {TIPO_LABEL[t]}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
+                    {activeTab === 'informacion' && (
+                        <div className="max-w-xl space-y-5">
                             <div>
-                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Fecha</label>
-                                <Input type="date" value={fecha} onChange={e => onFechaChange(e.target.value)} className="w-full" />
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Título</label>
+                                <Input type="text" value={motivo} onChange={e => onMotivoChange(e.target.value)} placeholder="Título de la reunión" className="w-full" />
                             </div>
                             <div>
-                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Hora</label>
-                                <Input type="time" value={hora} onChange={e => onHoraChange(e.target.value)} className="w-full" />
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Tipo</label>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {TIPOS.map(t => (
+                                        <button
+                                            key={t}
+                                            type="button"
+                                            onClick={() => onTipoChange(t)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${tipo === t ? `${TIPO_COLOR[t]} border-transparent` : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                                        >
+                                            {TIPO_LABEL[t]}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Fecha</label>
+                                    <Input type="date" value={fecha} onChange={e => onFechaChange(e.target.value)} className="w-full" />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Hora</label>
+                                    <Input type="time" value={hora} onChange={e => onHoraChange(e.target.value)} className="w-full" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Con quién</label>
+                                <Input type="text" value={conQuien} onChange={e => onConQuienChange(e.target.value)} placeholder="Familia de..., Claustro, Equipo docente..." className="w-full" />
                             </div>
                         </div>
-                        <div>
-                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Con quién</label>
-                            <Input type="text" value={conQuien} onChange={e => onConQuienChange(e.target.value)} placeholder="Familia de..., Claustro, Equipo docente..." className="w-full" />
-                        </div>
-                    </div>
-                )}
+                    )}
 
-                {activeTab === 'seguimiento' && (
-                    <Suspense fallback={RICH_TEXT_FALLBACK}>
-                        <RichTextEditor
-                            bare
-                            initialMarkdown={seguimiento}
-                            onChangeMarkdown={onSeguimientoChange}
-                            placeholder="Escribe '/' para insertar una lista de tareas y marcar lo pendiente..."
-                            className="min-h-[50vh]"
-                        />
-                    </Suspense>
-                )}
+                    {activeTab === 'seguimiento' && (
+                        <Suspense fallback={RICH_TEXT_FALLBACK}>
+                            <RichTextEditor
+                                bare
+                                initialMarkdown={seguimiento}
+                                onChangeMarkdown={onSeguimientoChange}
+                                placeholder="Escribe '/' para insertar una lista de tareas y marcar lo pendiente..."
+                                className="min-h-full"
+                            />
+                        </Suspense>
+                    )}
+                </div>
             </div>
         </div>
     );
