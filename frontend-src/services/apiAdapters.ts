@@ -384,23 +384,39 @@ export const hydrateClassData = (
 // positivo constantemente si comparásemos por referencia — a esta escala
 // (decenas de filas, no miles) el coste de comparar por contenido es
 // irrelevante frente a evitar peticiones de red vacías.
+// Devuelve un Map id-provisional -> fila real creada (id-provisional =
+// el id generado en el cliente, tipo `meeting-${Date.now()}-...`, que
+// nunca existe en el servidor -- este lo sustituye por un UUID real al
+// crear). Hace falta para un patrón real: un autoguardado debounced que
+// CREA la fila en el primer disparo y sigue editando la MISMA fila en
+// disparos posteriores, guardando el id devuelto la primera vez (ver
+// ReunionesView.tsx::scheduleAutosave). Sin este mapa, ese id guardado
+// sigue siendo el provisional -- un `.map(x => x.id === idGuardado ...)`
+// posterior no encuentra nada que actualizar en cuanto la caché de
+// react-query se refresca con el id real, y el cambio se pierde en
+// silencio (confirmado como bug real 2026-09-07: título/con quién
+// escritos varios segundos después de crear la reunión, en pestañas
+// distintas, nunca llegaban a guardarse). Los consumidores que no
+// necesitan saber el id real (Tareas, Notas de agenda) simplemente
+// ignoran el valor devuelto -- api compatible con antes.
 export async function diffAndSyncList<T extends { id: string }>(
     current: T[],
     next: T[],
     ops: {
-        create: (item: Omit<T, 'id'>) => Promise<unknown>;
+        create: (item: Omit<T, 'id'>) => Promise<T>;
         update: (id: string, patch: Omit<T, 'id'>) => Promise<unknown>;
         remove: (id: string) => Promise<unknown>;
     },
-): Promise<void> {
+): Promise<Map<string, T>> {
     const currentById = new Map(current.map(item => [item.id, item]));
     const nextIds = new Set(next.map(item => item.id));
+    const created = new Map<string, T>();
 
     for (const item of next) {
         const { id, ...rest } = item;
         const prevItem = currentById.get(id);
         if (!prevItem) {
-            await ops.create(rest as Omit<T, 'id'>);
+            created.set(id, await ops.create(rest as Omit<T, 'id'>));
         } else if (JSON.stringify(prevItem) !== JSON.stringify(item)) {
             await ops.update(id, rest as Omit<T, 'id'>);
         }
@@ -411,6 +427,8 @@ export async function diffAndSyncList<T extends { id: string }>(
             await ops.remove(item.id);
         }
     }
+
+    return created;
 }
 
 // programming_units.session_details/final_product/final_exam son columnas

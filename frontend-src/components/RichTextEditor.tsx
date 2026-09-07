@@ -19,6 +19,10 @@ interface RichTextEditorProps {
     autoFocus?: boolean;
     placeholder?: string;
     className?: string;
+    // Sin borde/sombra de tarjeta -- para cuando el propio editor ocupa
+    // toda la pantalla y debe sentirse como la hoja en sí (p.ej. la
+    // pestaña Notas de una reunión), no como un campo de formulario más.
+    bare?: boolean;
 }
 
 // Editor de texto enriquecido (BlockNote, sobre ProseMirror/Tiptap -- ver
@@ -30,7 +34,7 @@ interface RichTextEditorProps {
 // datos sigue siendo un TEXT plano en formato Markdown (mismo campo
 // `acuerdos` de siempre) -- BlockNote solo se usa como vista/edición,
 // nunca cambia lo que se guarda.
-const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChangeMarkdown, autoFocus, placeholder, className = '' }) => {
+const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChangeMarkdown, autoFocus, placeholder, className = '', bare = false }) => {
     const editor = useCreateBlockNote({
         dictionary: placeholder
             ? { ...esLocale, placeholders: { ...esLocale.placeholders, default: placeholder } }
@@ -55,8 +59,12 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChan
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const chromeClassName = bare
+        ? ''
+        : 'rounded-lg border border-slate-300 shadow-sm focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30 focus-within:border-[var(--color-primary)]';
+
     return (
-        <div className={`rounded-lg border border-slate-300 shadow-sm focus-within:ring-2 focus-within:ring-[var(--color-primary)]/30 focus-within:border-[var(--color-primary)] overflow-y-auto ${className}`}>
+        <div className={`overflow-y-auto ${chromeClassName} ${className}`}>
             <BlockNoteView
                 editor={editor}
                 theme="light"

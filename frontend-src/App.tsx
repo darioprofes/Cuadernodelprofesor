@@ -659,10 +659,16 @@ const App = () => {
             remove: id => deleteTaskMutation.mutateAsync({ id, yearId }),
         });
     }, [yearId, effectiveTasks, createTaskMutation, updateTaskMutation, deleteTaskMutation]);
+    // A diferencia de setTasksCallback/setAgendaNotesCallback (abajo), esta
+    // SÍ devuelve el resultado de diffAndSyncList -- ReunionesView necesita
+    // el id real que asigna el servidor al crear, para poder seguir
+    // editando la MISMA fila en autoguardados posteriores (ver el
+    // comentario de diffAndSyncList en apiAdapters.ts para el bug real que
+    // esto evita).
     const setMeetingsCallback = useCallback((updater: React.SetStateAction<Meeting[]>) => {
-        if (!yearId) return;
+        if (!yearId) return Promise.resolve(new Map<string, Meeting>());
         const next = typeof updater === 'function' ? updater(effectiveMeetings) : updater;
-        diffAndSyncList(effectiveMeetings, next, {
+        return diffAndSyncList(effectiveMeetings, next, {
             create: data => createMeetingMutation.mutateAsync({ yearId, data }),
             update: (id, data) => updateMeetingMutation.mutateAsync({ id, yearId, data }),
             remove: id => deleteMeetingMutation.mutateAsync({ id, yearId }),
