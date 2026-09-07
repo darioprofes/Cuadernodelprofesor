@@ -17,13 +17,15 @@ export const tabItemInactiveClassName = 'text-slate-500 hover:text-slate-700 hov
 
 export const tabItemActiveClassName = 'shadow-sm';
 
-// Color de la pestaña activa -- parametrizado (en vez de una constante
+// Estilo de la pestaña activa -- parametrizado (en vez de una constante
 // fija) para que una pantalla con su propio PAGE_ACCENT (p.ej. Reuniones)
 // pueda usar ESE tono en vez del azul-marino genérico y quedar en línea
 // con la cabecera de color que tiene justo encima, sin que eso afecte a
-// los demás usos de <Tabs> (StudentSummaryModal sigue con el azul por
-// defecto si no pasa accentColor).
-export const tabItemActiveStyle = (accentColor: string = SEMANTIC.primary.base): CSSProperties => ({
-    backgroundColor: '#ffffff',
-    color: accentColor,
-});
+// los demás usos de <Tabs> (StudentSummaryModal sigue con fondo blanco +
+// texto azul si no pasa accentColor). Con accentColor, la pestaña activa
+// se rellena de ese color (no solo el texto) -- mismo tratamiento sólido
+// que ya usa la cabecera de la página.
+export const tabItemActiveStyle = (accentColor?: string): CSSProperties =>
+    accentColor
+        ? { backgroundColor: accentColor, color: '#ffffff' }
+        : { backgroundColor: '#ffffff', color: SEMANTIC.primary.base };
