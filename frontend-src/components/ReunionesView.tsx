@@ -41,7 +41,7 @@ const TIPO_ACCENT: Record<Meeting['tipo'], string> = {
     otras: '#475569',
 };
 
-type RangoFecha = 'hoy' | 'semana' | 'mes' | 'todas';
+type RangoFecha = 'hoy' | 'semana' | 'mes' | 'todas' | 'personalizado';
 
 const finDeSemana = (hoy: Date): string => toYYYYMMDD(addDays(hoy, 7 - getDayOfWeek1a7(hoy)));
 const finDeMes = (hoy: Date): string => toYYYYMMDD(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0));
@@ -89,6 +89,11 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
     const finMesStr = finDeMes(hoy);
 
     const [rango, setRango] = useState<RangoFecha>('hoy');
+    // Solo se usan cuando rango === 'personalizado' -- vacío significa "sin
+    // límite" en ese extremo (p.ej. desde vacío + hasta relleno = "todo lo
+    // anterior a esa fecha").
+    const [rangoDesde, setRangoDesde] = useState('');
+    const [rangoHasta, setRangoHasta] = useState('');
     const [tipoFiltro, setTipoFiltro] = useState<Meeting['tipo'] | ''>('');
     const [busqueda, setBusqueda] = useState('');
 
@@ -240,15 +245,20 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
     const filtered = useMemo(() => {
         const query = busqueda.trim().toLowerCase();
         return sorted.filter(m => {
-            if (rango !== 'todas' && m.fecha < hoyStr) return false;
-            if (rango === 'semana' && m.fecha > finSemanaStr) return false;
-            if (rango === 'mes' && m.fecha > finMesStr) return false;
+            if (rango === 'personalizado') {
+                if (rangoDesde && m.fecha < rangoDesde) return false;
+                if (rangoHasta && m.fecha > rangoHasta) return false;
+            } else {
+                if (rango !== 'todas' && m.fecha < hoyStr) return false;
+                if (rango === 'semana' && m.fecha > finSemanaStr) return false;
+                if (rango === 'mes' && m.fecha > finMesStr) return false;
+            }
             if (tipoFiltro && m.tipo !== tipoFiltro) return false;
             if (!query) return true;
             const haystack = [TIPO_LABEL[m.tipo], m.conQuien, m.motivo, m.acuerdos, m.seguimiento].filter(Boolean).join(' ').toLowerCase();
             return haystack.includes(query);
         });
-    }, [sorted, rango, tipoFiltro, busqueda, hoyStr, finSemanaStr, finMesStr]);
+    }, [sorted, rango, rangoDesde, rangoHasta, tipoFiltro, busqueda, hoyStr, finSemanaStr, finMesStr]);
 
     if (isFormOpen) {
         return (
@@ -303,7 +313,15 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                         <option value="semana">Esta semana</option>
                         <option value="mes">Este mes</option>
                         <option value="todas">Todas (incluye pasadas)</option>
+                        <option value="personalizado">Rango de fechas...</option>
                     </Select>
+                    {rango === 'personalizado' && (
+                        <div className="flex items-center gap-1.5">
+                            <Input type="date" value={rangoDesde} onChange={e => setRangoDesde(e.target.value)} className="sm:w-auto" />
+                            <span className="text-sm text-slate-400">a</span>
+                            <Input type="date" value={rangoHasta} onChange={e => setRangoHasta(e.target.value)} className="sm:w-auto" />
+                        </div>
+                    )}
                     <Select value={tipoFiltro} onChange={e => setTipoFiltro(e.target.value as Meeting['tipo'] | '')} className="sm:w-auto">
                         <option value="">Todos los tipos</option>
                         <option value="tutoria">Tutoría</option>
