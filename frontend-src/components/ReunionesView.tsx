@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, Suspense } from 'react';
 import type { Meeting } from '../types';
 import { TrashIcon, PlusIcon, UsersIcon, PencilIcon, ExclamationTriangleIcon, ClockIcon, CalendarDaysIcon } from './Icons';
 import { toYYYYMMDD, addDays, getDayOfWeek1a7, formatFechaEs, TIPO_REUNION_LABEL as TIPO_LABEL } from '../utils';
@@ -9,6 +9,13 @@ import Input from './Input';
 import Select from './Select';
 import Textarea from './Textarea';
 import Button from './Button';
+// BlockNote/ProseMirror/Mantine (ver RichTextEditor.tsx) pesan ~280 KB
+// gzip -- cargados bajo demanda solo cuando de verdad se abre el
+// formulario de una reunión, no en cada carga de la app (mismo criterio
+// que los gestores pesados de Ajustes en App.tsx, ver el comentario de
+// cabecera de ese fichero). Confirmado con un build real: sin esto, el
+// chunk principal pasaba de 173 KB a 458 KB gzip.
+const RichTextEditor = React.lazy(() => import('./RichTextEditor'));
 
 interface ReunionesViewProps {
     meetings: Meeting[];
@@ -356,14 +363,15 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                             placeholder="Con quién (Familia de..., Claustro, Equipo docente...)"
                             className="w-full"
                         />
-                        <Textarea
-                            autoFocus
-                            value={acuerdos}
-                            onChange={e => { setAcuerdos(e.target.value); scheduleAutosave({ acuerdos: e.target.value }); }}
-                            rows={16}
-                            className="w-full font-mono text-sm"
-                            placeholder="Empieza a escribir -- se guarda solo mientras hablas..."
-                        />
+                        <Suspense fallback={<div className="min-h-[380px] max-h-[60vh] rounded-lg border border-slate-300 shadow-sm animate-pulse bg-slate-50" />}>
+                            <RichTextEditor
+                                autoFocus
+                                initialMarkdown={acuerdos}
+                                onChangeMarkdown={md => { setAcuerdos(md); scheduleAutosave({ acuerdos: md }); }}
+                                className="min-h-[380px] max-h-[60vh]"
+                                placeholder="Empieza a escribir -- se guarda solo mientras hablas..."
+                            />
+                        </Suspense>
                         <details className="text-sm">
                             <summary className="cursor-pointer text-slate-500 font-medium select-none">Más campos (fecha, hora, motivo, seguimiento)</summary>
                             <div className="mt-3 space-y-3">
@@ -423,7 +431,14 @@ const ReunionesView: React.FC<ReunionesViewProps> = ({ meetings, setMeetings, op
                     </div>
                     <div>
                         <label className="text-xs font-medium text-slate-600">Acuerdos</label>
-                        <Textarea value={acuerdos} onChange={e => { setAcuerdos(e.target.value); scheduleAutosave({ acuerdos: e.target.value }); }} rows={6} className="w-full mt-1" placeholder="Notas de la reunión: lo que se ha hablado y acordado..." />
+                        <Suspense fallback={<div className="mt-1 min-h-[160px] rounded-lg border border-slate-300 shadow-sm animate-pulse bg-slate-50" />}>
+                            <RichTextEditor
+                                initialMarkdown={acuerdos}
+                                onChangeMarkdown={md => { setAcuerdos(md); scheduleAutosave({ acuerdos: md }); }}
+                                className="mt-1 min-h-[160px]"
+                                placeholder="Notas de la reunión: lo que se ha hablado y acordado..."
+                            />
+                        </Suspense>
                     </div>
                     <div>
                         <label className="text-xs font-medium text-slate-600">Seguimiento</label>
