@@ -55,6 +55,13 @@ interface ActaReunionTabProps {
 // campos) -- "Regenerar con IA" reabre el asistente sin tocar el acta actual
 // hasta que el profesor acepte el nuevo resultado.
 const ActaReunionTab: React.FC<ActaReunionTabProps> = ({ notasMarkdown, tipo, acta, onActaChange }) => {
+    // Permite escribir el acta directamente a mano, sin pasar por el
+    // asistente de IA -- "Escribir a mano" en la pantalla de arranque. Una
+    // vez el acta tiene contenido (`acta.trim()`) ya no hace falta este
+    // flag para mantener visible el editor, pero se necesita ANTES de la
+    // primera pulsación (acta todavía vacía) para no volver a la pantalla
+    // de arranque con cada carácter borrado.
+    const [modoManual, setModoManual] = useState(false);
     const [mostrarAsistente, setMostrarAsistente] = useState(false);
     const [paso, setPaso] = useState<PasoAsistente>('revisar');
     const [textoAnonimizado, setTextoAnonimizado] = useState('');
@@ -99,8 +106,13 @@ const ActaReunionTab: React.FC<ActaReunionTabProps> = ({ notasMarkdown, tipo, ac
         }
     };
 
-    const handleRegenerar = () => {
-        if (!window.confirm('¿Volver a generar el acta? El acta actual no se pierde hasta que aceptes el nuevo resultado.')) return;
+    const handleGenerarOregenerar = () => {
+        // Sin confirmación si todavía no hay nada escrito -- no hay nada
+        // que perder. Con contenido (escrito a mano o de una generación
+        // anterior), confirma antes: el asistente no pisa `acta` hasta que
+        // se acepte el resultado, pero conviene que quede claro que se va a
+        // reemplazar si se acepta.
+        if (acta.trim() && !window.confirm('¿Generar el acta con IA? El acta actual no se pierde hasta que aceptes el nuevo resultado.')) return;
         iniciarAsistente();
     };
 
@@ -157,20 +169,21 @@ const ActaReunionTab: React.FC<ActaReunionTabProps> = ({ notasMarkdown, tipo, ac
     };
 
     if (!mostrarAsistente) {
-        if (acta.trim()) {
+        if (acta.trim() || modoManual) {
             return (
                 <div className="flex flex-col gap-3 h-full">
                     <div className="flex justify-end flex-shrink-0">
-                        <Button type="button" variant="secondary" onClick={handleRegenerar}>
-                            <SparklesIcon className="w-4 h-4" /> Regenerar con IA
+                        <Button type="button" variant="secondary" onClick={handleGenerarOregenerar}>
+                            <SparklesIcon className="w-4 h-4" /> {acta.trim() ? 'Regenerar con IA' : 'Generar con IA'}
                         </Button>
                     </div>
                     <Suspense fallback={RICH_TEXT_FALLBACK}>
                         <RichTextEditor
                             bare
+                            autoFocus={modoManual && !acta.trim()}
                             initialMarkdown={acta}
                             onChangeMarkdown={onActaChange}
-                            placeholder="El acta redactada..."
+                            placeholder="Escribe aquí el acta..."
                             className="min-h-full flex-1"
                         />
                     </Suspense>
@@ -182,13 +195,19 @@ const ActaReunionTab: React.FC<ActaReunionTabProps> = ({ notasMarkdown, tipo, ac
                 <SparklesIcon className="w-8 h-8 text-slate-300" />
                 <p className="text-sm text-slate-500 max-w-sm">
                     Redacta el acta formal de esta reunión con IA a partir de la pestaña Notas -- pasan primero
-                    por el Anonimizador para que revises qué se manda antes de generar nada.
+                    por el Anonimizador para que revises qué se manda antes de generar nada. O escríbela tú
+                    mismo directamente.
                 </p>
-                <Button type="button" onClick={iniciarAsistente} disabled={!notasMarkdown.trim()}>
-                    Generar acta con IA
-                </Button>
+                <div className="flex gap-2">
+                    <Button type="button" onClick={iniciarAsistente} disabled={!notasMarkdown.trim()}>
+                        Generar acta con IA
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={() => setModoManual(true)}>
+                        Escribir a mano
+                    </Button>
+                </div>
                 {!notasMarkdown.trim() && (
-                    <p className="text-xs text-slate-400">Escribe algo en la pestaña Notas primero.</p>
+                    <p className="text-xs text-slate-400">Escribe algo en la pestaña Notas primero si quieres usar la IA.</p>
                 )}
             </div>
         );
