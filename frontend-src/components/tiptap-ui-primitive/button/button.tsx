@@ -1,4 +1,4 @@
-import { forwardRef, Fragment, useMemo } from "react"
+import { forwardRef, Fragment, useCallback, useMemo } from "react"
 
 // --- Tiptap UI Primitive ---
 import {
@@ -83,10 +83,28 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       size,
       role,
       "aria-checked": ariaChecked,
+      onMouseDown,
       ...props
     },
     ref
   ) => {
+    // Evita que el navegador robe el foco del editor (y colapse su
+    // selección) al pulsar cualquier botón de la barra de herramientas --
+    // sin esto, la barra flotante (BubbleMenu junto al texto seleccionado,
+    // ver RichTextEditor.tsx) se desmonta a mitad de abrir un desplegable
+    // (Encabezados, Listas...) porque Tiptap la retira del DOM en cuanto
+    // detecta que la selección ya no es válida, y el desplegable de Radix
+    // -- que ancla su posición al propio botón -- acaba midiendo un botón
+    // que ya no está en el documento: aparece en (0,0), arriba del todo,
+    // en vez de junto al botón (confirmado con captura real, 2026-09-09).
+    // La barra fija de arriba nunca se desmonta, así que ahí no se notaba.
+    const handleMouseDown = useCallback(
+      (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.preventDefault()
+        onMouseDown?.(event)
+      },
+      [onMouseDown]
+    )
     const isCheckVariant = variant === "check"
     const buttonStyle: ButtonStyle | undefined = isCheckVariant
       ? "ghost"
@@ -122,6 +140,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           data-variant={isCheckVariant ? "check" : undefined}
           role={buttonRole}
           aria-checked={buttonAriaChecked}
+          onMouseDown={handleMouseDown}
           {...props}
         >
           {content}
@@ -140,6 +159,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           data-variant={isCheckVariant ? "check" : undefined}
           role={buttonRole}
           aria-checked={buttonAriaChecked}
+          onMouseDown={handleMouseDown}
           {...props}
         >
           {content}

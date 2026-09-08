@@ -48,6 +48,25 @@ function DropdownMenuContent({
         align={align}
         className={cn("tiptap-dropdown-menu-content", className)}
         onCloseAutoFocus={(e) => e.preventDefault()}
+        // Sin esto, Radix mueve el foco del navegador DENTRO de este panel
+        // (portado a document.body) en cuanto se abre -- si el disparador
+        // vive dentro de la barra flotante del editor (BubbleMenu, ver
+        // RichTextEditor.tsx), ese cambio de foco hace que Tiptap decida
+        // que el foco "salió" del editor Y del menú (el panel, al estar
+        // portado fuera, no cuenta como descendiente de la barra) y retire
+        // la barra flotante del DOM en ese mismo instante -- el propio
+        // desplegable, que ancla su posición al botón que lo abrió, mide
+        // entonces un botón ya fuera del documento y aparece en (0,0),
+        // arriba del todo, en vez de junto al botón (bug real, confirmado
+        // con clic real 2026-09-09). En la barra fija de arriba no se
+        // notaba porque esa barra nunca se retira del DOM.
+        //
+        // No está en el tipo público de DropdownMenuContentProps (Radix lo
+        // marca "privado" ahí), pero SÍ lo reenvía tal cual al
+        // MenuContentImpl interno en tiempo de ejecución -- confirmado en
+        // node_modules/@radix-ui/react-dropdown-menu/dist/index.mjs.
+        // @ts-expect-error -- ver comentario: prop reenviada en runtime pero no listada en el tipo público
+        onOpenAutoFocus={(e: Event) => e.preventDefault()}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>

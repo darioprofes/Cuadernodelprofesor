@@ -1,6 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { EditorContent, EditorContext, useEditor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
+import { isTextSelection } from '@tiptap/core';
 import { StarterKit } from '@tiptap/starter-kit';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TextAlign } from '@tiptap/extension-text-align';
@@ -102,6 +103,40 @@ interface RichTextEditorProps {
 const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChangeMarkdown, autoFocus, placeholder, className = '', bare = false }) => {
     const toolbarRef = useRef<HTMLDivElement>(null);
 
+    // Calcado del shouldShow por defecto de @tiptap/extension-bubble-menu,
+    // con un único cambio: además de comprobar si el foco sigue DENTRO del
+    // propio wrapper de la barra flotante (`element.contains(...)`), también
+    // cuenta como "sigue dentro del menú" el foco que ha entrado en un panel
+    // de Radix ya abierto (los desplegables/popover de la barra --
+    // Encabezados, Listas, Resaltado, Enlace -- portan su contenido a
+    // document.body, FUERA del DOM de la barra flotante, así que la
+    // comprobación original nunca los contaba como "hijos" del menú).
+    //
+    // Sin este arreglo: al abrir uno de esos desplegables desde la barra
+    // flotante (nunca desde la fija, que no depende de la selección y no se
+    // desmonta), Tiptap detecta que el foco "salió" del menú, decide que ya
+    // no debe mostrarse y llama a element.remove() -- el desplegable de
+    // Radix, que en ese mismo instante ancla su posición al botón que lo
+    // abrió, acaba midiendo un botón ya fuera del documento y aparece en
+    // (0,0), arriba del todo, en vez de junto al botón (bug real, reunión
+    // 2026-09-09, reproducido con clic real: el desplegable se abre bien un
+    // instante y salta a (0,0) a los ~250 ms, el `updateDelay` por defecto).
+    const bubbleMenuShouldShow = useCallback<NonNullable<React.ComponentProps<typeof BubbleMenu>['shouldShow']>>(
+        ({ editor, element, state, from, to }) => {
+            const { doc, selection } = state;
+            const { empty } = selection;
+            const isEmptyTextBlock = !doc.textBetween(from, to).length && isTextSelection(selection);
+            const activeElement = document.activeElement;
+            const isChildOfMenu = element.contains(activeElement);
+            const isInsideOpenRadixPortal = !!activeElement?.closest('[data-radix-popper-content-wrapper]');
+            if (!(editor.view.hasFocus() || isChildOfMenu || isInsideOpenRadixPortal) || empty || isEmptyTextBlock || !editor.isEditable) {
+                return false;
+            }
+            return true;
+        },
+        []
+    );
+
     const editor = useEditor({
         immediatelyRender: false,
         autofocus: autoFocus ? 'end' : false,
@@ -187,7 +222,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ initialMarkdown, onChan
                     aquí para que ocupe todo el ancho de la tarjeta que la contiene. */}
                 <EditorContent editor={editor} role="presentation" className="simple-editor-content" style={{ maxWidth: 'none', margin: 0 }} />
                 {editor && (
-                    <BubbleMenu editor={editor}>
+                    <BubbleMenu editor={editor} shouldShow={bubbleMenuShouldShow}>
                         <Toolbar variant="floating">
                             <ToolbarGroup>
                                 <HeadingDropdownMenu modal={false} levels={[1, 2, 3, 4]} />

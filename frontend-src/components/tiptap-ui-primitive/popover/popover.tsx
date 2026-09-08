@@ -26,6 +26,12 @@ function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         className={cn("tiptap-popover", className)}
+        // Ver el comentario largo en dropdown-menu.tsx::DropdownMenuContent
+        // -- mismo arreglo, mismo motivo: sin esto, la barra flotante del
+        // editor (BubbleMenu) se retira del DOM en cuanto Radix mueve el
+        // foco a este panel portado, y el propio popover acaba anclado a un
+        // botón que ya no está en el documento.
+        onOpenAutoFocus={(e) => e.preventDefault()}
         {...props}
       />
     </PopoverPrimitive.Portal>
