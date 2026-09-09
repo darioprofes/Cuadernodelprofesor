@@ -129,9 +129,6 @@ const MonthView: React.FC<{
                             </div>
                             <div className="space-y-1 mt-1">
                                 {eventsForDay.map(event => {
-                                    if (event.eventType === 'otherActivity') {
-                                        return null;
-                                    }
                                     if (event.eventType === 'note') {
                                         return (
                                             <div key={event.id} className="p-1 text-xs rounded border flex items-start gap-1 group/note" style={{ backgroundColor: NOTE_COLOR.backgroundColor, color: NOTE_COLOR.textColor, borderColor: NOTE_COLOR.borderColor }}>

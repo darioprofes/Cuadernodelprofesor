@@ -17,7 +17,7 @@ export interface CalendarEvent {
     classGrupo?: string; // p.ej. "S4BD", separado de className
     color?: string;
     courseColor: { backgroundColor: string, textColor: string, borderColor: string };
-    eventType: 'session' | 'assignment' | 'otherActivity' | 'note' | 'meeting';
+    eventType: 'session' | 'assignment' | 'note' | 'meeting';
     assignmentId?: string; // For standalone assignments
     assignments?: Assignment[]; // For assignments merged into a session
     periodIndex?: number;
@@ -185,10 +185,16 @@ export const buildCalendarEvents = ({
         currentDateIterator = addDaysUTC(currentDateIterator, 1);
     }
 
-    // 1. Generate Sessions (Classes and Other Activities)
+    // 1. Generate Sessions. "Otras ocupaciones" (course.type === 'other':
+    // guardia, recreo, reuniones fijas...) nunca tienen Situación de
+    // Aprendizaje ni alumnado real -- no hay "programado" que mostrar en la
+    // Agenda ni lo habrá nunca, así que se excluyen del todo (decisión
+    // explícita del usuario, 2026-09-09: antes se veían siempre, incluso
+    // cuando ninguna clase real con alumnado aparecía por falta de
+    // programación, lo que resultaba confuso).
     classes.forEach(classData => {
         const course = courses.find(c => c.id === classData.courseId);
-        if (!course || !classData.schedule || classData.schedule.length === 0) return;
+        if (!course || course.type === 'other' || !classData.schedule || classData.schedule.length === 0) return;
 
         const courseColor = getClassColor(course.level, buildClassName(classData.grupo, course.subject));
         const skippedDaysSet = new Set(classData.skippedDays || []);
@@ -206,25 +212,7 @@ export const buildCalendarEvents = ({
             });
         });
 
-        if (course.type === 'other') {
-            classSessionSlots.forEach(slot => {
-                const event: CalendarEvent = {
-                    id: `${classData.id}-${toYYYYMMDD_UTC(slot.date)}-${slot.periodIndex}`,
-                    date: slot.date,
-                    eventType: 'otherActivity',
-                    unitName: course.subject,
-                    description: course.subject,
-                    courseId: classData.courseId,
-                    classId: classData.id,
-                    className: course.subject,
-                    classGrupo: classData.grupo,
-                    courseColor: { backgroundColor: '#f1f5f9', textColor: '#475569', borderColor: '#cbd5e1' },
-                    periodIndex: slot.periodIndex,
-                    periodName: periods[slot.periodIndex] || `Periodo ${slot.periodIndex + 1}`,
-                };
-                generatedEvents.push(event);
-            });
-        } else {
+        {
             const unitsForClass = units.filter(u => u.courseId === classData.courseId);
             let unitIndex = 0;
             let sessionInUnit = 0;

@@ -38,9 +38,7 @@ const DayColumn: React.FC<{
             <div className="space-y-1 mt-1">
             {eventsForDay.map(event => {
                 let style: React.CSSProperties;
-                if (event.eventType === 'otherActivity') {
-                    style = { backgroundColor: '#f1f5f9', color: '#475569', borderColor: '#e2e8f0', borderLeftWidth: '4px' };
-                } else if (event.eventType === 'session' && event.color) {
+                if (event.eventType === 'session' && event.color) {
                     style = { backgroundColor: event.color, color: getContrastingTextColor(event.color), borderColor: event.color, borderLeftWidth: '4px' };
                 } else {
                     style = { backgroundColor: event.courseColor.backgroundColor, color: event.courseColor.textColor, borderColor: event.courseColor.borderColor, borderLeftWidth: '4px' };
