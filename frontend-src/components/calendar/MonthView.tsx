@@ -179,7 +179,7 @@ const MonthView: React.FC<{
                                                             {event.className}
                                                             {event.journalNote && <BookOpenIcon className="w-3 h-3 ml-1 flex-shrink-0" />}
                                                         </p>
-                                                        <p className="truncate text-[10px]">{event.unitName} (S{event.sessionNumber})</p>
+                                                        <p className="truncate text-[10px]">{event.unitName}{event.sessionNumber != null ? ` (S${event.sessionNumber})` : ''}</p>
                                                     </div>
                                                     <button onClick={() => onEventClick(event)} className="flex-shrink-0 opacity-50 hover:opacity-100"><PencilIcon className="w-4 h-4"/></button>
                                                 </div>

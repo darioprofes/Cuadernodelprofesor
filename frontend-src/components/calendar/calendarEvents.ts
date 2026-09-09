@@ -229,9 +229,47 @@ export const buildCalendarEvents = ({
             let unitIndex = 0;
             let sessionInUnit = 0;
 
+            // Sin unidades de programación (SA) todavía que cubran esta franja
+            // -- ni ninguna en absoluto, ni ya se han agotado las que hay --
+            // no hay contenido que mostrar, pero la clase SIGUE ocupando su
+            // hueco del horario y debe seguir viéndose en la Agenda, igual
+            // que ya pasa con "otras ocupaciones" (guardia, recreo...) y con
+            // el Diario (que nunca dependió de que hubiera unidades). Antes
+            // se dejaba de generar CUALQUIER evento para el resto del curso
+            // en cuanto se agotaban las unidades -- una clase real sin
+            // programación desaparecía entera de la Agenda mientras que las
+            // ocupaciones sin alumnado seguían saliendo (bug real reportado,
+            // 2026-09-09).
+            const pushSinProgramar = (slot: { date: Date, periodIndex: number }, i: number) => {
+                const event: CalendarEvent = {
+                    id: `${classData.id}-sin-programar-${i}`,
+                    date: slot.date,
+                    eventType: 'session',
+                    unitName: 'Sin programar todavía',
+                    description: '',
+                    journalNote: journalEntries.find(e => e.classId === classData.id && e.date === toYYYYMMDD_UTC(slot.date) && e.periodIndex === slot.periodIndex)?.notes,
+                    courseId: classData.courseId,
+                    classId: classData.id,
+                    className: course.subject,
+                    classGrupo: classData.grupo,
+                    courseColor: courseColor,
+                    periodIndex: slot.periodIndex,
+                    periodName: periods[slot.periodIndex] || `Periodo ${slot.periodIndex + 1}`,
+                    assignments: [],
+                };
+                generatedEvents.push(event);
+                const key = `${classData.id}-${toYYYYMMDD_UTC(slot.date)}`;
+                if (!sessionEventMap.has(key)) sessionEventMap.set(key, event);
+            };
+
             for (let i = 0; i < classSessionSlots.length; i++) {
                 const slot = classSessionSlots[i];
                 const slotDateStr = toYYYYMMDD_UTC(slot.date);
+
+                if (unitsForClass.length === 0) {
+                    pushSinProgramar(slot, i);
+                    continue;
+                }
 
                 // Find if there is a journal entry for this class/date/period
                 const journalEntry = journalEntries.find(e => e.classId === classData.id && e.date === slotDateStr && e.periodIndex === slot.periodIndex);
@@ -244,7 +282,7 @@ export const buildCalendarEvents = ({
                     sessionInUnit = 0;
                 }
 
-                if (unitIndex >= unitsForClass.length) break;
+                if (unitIndex >= unitsForClass.length) { pushSinProgramar(slot, i); continue; }
 
                 const unit = unitsForClass[unitIndex];
                 const nextUnitAnchor = unitIndex < unitsForClass.length - 1 ? unitsForClass[unitIndex + 1].startDate : null;
@@ -258,7 +296,8 @@ export const buildCalendarEvents = ({
                             i--;
                             continue;
                         } else {
-                            break;
+                            pushSinProgramar(slot, i);
+                            continue;
                         }
                     }
                 }

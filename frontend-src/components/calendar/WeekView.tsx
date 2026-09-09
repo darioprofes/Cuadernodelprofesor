@@ -80,7 +80,7 @@ const DayColumn: React.FC<{
                                 {event.className}
                                 {event.journalNote && <BookOpenIcon className="w-3 h-3 ml-1 flex-shrink-0"/>}
                             </p>
-                            <p>{event.unitName} {event.eventType === 'session' && `(S${event.sessionNumber})`}</p>
+                            <p>{event.unitName}{event.eventType === 'session' && event.sessionNumber != null ? ` (S${event.sessionNumber})` : ''}</p>
 
                             {event.journalNote ? (
                                 <p className="text-xs font-semibold mt-1 truncate">📝 {event.journalNote}</p>
