@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import type { JournalEntry, ClassData, AcademicConfiguration, ProgrammingUnit, Course } from '../types';
+import type { JournalEntry, ClassData, AcademicConfiguration, ProgrammingUnit, Course, Holiday } from '../types';
 import { ClockIcon, BookOpenIcon, ClipboardDocumentIcon, ChevronLeftIcon, ChevronRightIcon, MagnifyingGlassIcon, CheckCircleIcon } from './Icons';
 import ClassLabel from './ClassLabel';
 import Input from './Input';
@@ -13,6 +13,7 @@ import { sessionDisplayText } from '../utils';
 import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
 import { getMateria, getClassAccentColor, formatFechaEs } from '../utils';
+import { COLOR_POR_TIPO_FESTIVO } from './calendar/calendarColors';
 
 type PlannedContent = { unitName: string, sessionDesc: string, sessionNumber: number } | null;
 
@@ -125,6 +126,17 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
         // settings change (grading periods, gradeScale, etc).
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [academicConfiguration.holidays]);
+
+  // Tipo real del festivo (festivo/no_lectivo/vacaciones) para el aviso de
+  // abajo -- isHoliday de arriba solo da un booleano. Mismo criterio que
+  // CalendarView.tsx (Agenda): un profesor buscando "qué pasó ese día"
+  // antes no tenía forma de saber, con solo el Diario, que era festivo
+  // (bug real reportado, 2026-09-09) -- las clases programadas ese día de
+  // la semana se seguían listando igual, sin ningún aviso.
+  const holidayToday = useMemo((): Holiday | undefined => {
+      const ranges = (academicConfiguration.holidays ?? []).filter(h => h.startDate && h.endDate);
+      return ranges.find(h => h.startDate <= selectedDate && selectedDate <= h.endDate);
+  }, [academicConfiguration.holidays, selectedDate]);
 
   // Logic to find planned content for a specific class and date. Wrapped in
   // useCallback (rather than a plain function) so its identity only changes
@@ -334,6 +346,15 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
             </div>
         </div>
       </div>
+
+      {holidayToday && (
+          <div
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-white text-center"
+              style={{ backgroundColor: COLOR_POR_TIPO_FESTIVO[holidayToday.type ?? 'festivo'] }}
+          >
+              Día no lectivo{holidayToday.name ? ` — ${holidayToday.name}` : ''}
+          </div>
+      )}
 
       {/* Búsqueda de anotaciones */}
       <div className="relative" ref={searchWrapperRef}>

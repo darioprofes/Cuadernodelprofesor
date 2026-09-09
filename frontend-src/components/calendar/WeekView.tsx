@@ -185,8 +185,11 @@ const WeekView: React.FC<{
                             {/* Mismos 3 botones que MonthView.tsx (tarea/nota/reunión),
                                 pedido explícito del usuario -- antes solo estaban en la
                                 vista Mes. Tarea/reunión no tienen sentido en un día no
-                                lectivo, una nota libre sí. */}
-                            <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover/day:opacity-100 transition-opacity z-10">
+                                lectivo, una nota libre sí. Siempre visibles (no solo
+                                opacity-0 + hover): en tablet/táctil no hay ratón que
+                                dispare :hover, quedaban invisibles del todo (bug real
+                                reportado, 2026-09-09). */}
+                            <div className="absolute top-1 right-1 flex gap-0.5 opacity-70 group-hover/day:opacity-100 transition-opacity z-10">
                                 {!isDayHoliday && (
                                     <button
                                         onClick={() => onOpenTaskModal(d)}

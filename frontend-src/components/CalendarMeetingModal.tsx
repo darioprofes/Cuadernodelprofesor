@@ -4,7 +4,6 @@ import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import Select from './Select';
-import Textarea from './Textarea';
 
 interface CalendarMeetingModalProps {
     isOpen: boolean;
@@ -21,8 +20,11 @@ const toYYYYMMDD = (date: Date): string => {
 };
 
 // Apuntar una reunión programada desde la Agenda: solo lo que se suele saber
-// de antemano (tipo, con quién, motivo). Acuerdos/seguimiento se completan
-// después de que la reunión tenga lugar, desde Reuniones (ya editable).
+// de antemano (título, tipo, con quién). Notas/Acta/Seguimiento se completan
+// después de que la reunión tenga lugar, desde Reuniones (ya editable) --
+// mismos campos y mismo nombre "Título" que la cabecera de
+// ReunionEditorScreen.tsx (antes "Motivo", terminología del formulario
+// original ya retirado del rediseño de Reuniones).
 const CalendarMeetingModal: React.FC<CalendarMeetingModalProps> = ({ isOpen, onClose, onSave, selectedDate }) => {
     const [fecha, setFecha] = useState<string>(() => toYYYYMMDD(selectedDate));
     const [hora, setHora] = useState('');
@@ -55,6 +57,15 @@ const CalendarMeetingModal: React.FC<CalendarMeetingModalProps> = ({ isOpen, onC
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Nueva reunión" size="md">
             <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="text-xs font-medium text-slate-600">Título</label>
+                    <Input
+                        type="text" value={motivo} onChange={e => setMotivo(e.target.value)}
+                        placeholder="Título de la reunión"
+                        className="mt-1"
+                        autoFocus
+                    />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="text-xs font-medium text-slate-600">Fecha</label>
@@ -81,12 +92,7 @@ const CalendarMeetingModal: React.FC<CalendarMeetingModalProps> = ({ isOpen, onC
                         type="text" value={conQuien} onChange={e => setConQuien(e.target.value)}
                         placeholder="Ej: Familia de..., Claustro, Equipo docente..."
                         className="mt-1"
-                        autoFocus
                     />
-                </div>
-                <div>
-                    <label className="text-xs font-medium text-slate-600">Motivo</label>
-                    <Textarea value={motivo} onChange={e => setMotivo(e.target.value)} rows={2} className="mt-1" />
                 </div>
                 <div className="flex justify-end gap-2">
                     <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>

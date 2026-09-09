@@ -94,7 +94,13 @@ const MonthView: React.FC<{
                                 festivo. Antes las 3 estaban juntas tras el mismo
                                 !isDayHoliday y una nota tampoco se podía añadir en
                                 festivo -- bug real reportado por el usuario. */}
-                            <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover/day:opacity-100 transition-opacity z-10">
+                            {/* Antes opacity-0 + group-hover/day:opacity-100 -- invisibles
+                                del todo en tablet/táctil, sin ratón que dispare :hover
+                                (bug real reportado, 2026-09-09). Siempre visibles ahora,
+                                algo atenuados en reposo y a opacidad plena al pasar el
+                                ratón por encima, para no perder la idea de "aparecen al
+                                interactuar" en escritorio. */}
+                            <div className="absolute top-1 right-1 flex gap-0.5 opacity-70 group-hover/day:opacity-100 transition-opacity z-10">
                                 {!isDayHoliday && (
                                     <button
                                         onClick={() => onOpenTaskModal(d)}
