@@ -85,7 +85,14 @@ const ReunionEditorScreen: React.FC<ReunionEditorScreenProps> = ({
     fecha, onFechaChange, hora, onHoraChange, tipo, onTipoChange, conQuien, onConQuienChange, motivo, onMotivoChange,
     acuerdos, onAcuerdosChange, seguimiento, onSeguimientoChange, acta, onActaChange,
 }) => {
-    const [activeTab, setActiveTab] = useState<TabId>('notas');
+    // Pestaña de arranque: si ya hay acta redactada, esa es la que
+    // interesa ver primero (Notas ya ha cumplido su función); si no hay
+    // acta todavía, Notas sigue siendo la de entrada por defecto. Se
+    // calcula una sola vez al montar -- esta pantalla se desmonta y
+    // vuelve a montar en cada apertura de reunión (ver isFormOpen en
+    // ReunionesView.tsx), así que siempre parte del valor de `acta` real
+    // de esa reunión concreta, no de una anterior.
+    const [activeTab, setActiveTab] = useState<TabId>(() => (acta.trim() ? 'acta' : 'notas'));
 
     const pendientes = useMemo(() => contarPendientes(seguimiento), [seguimiento]);
 
