@@ -126,7 +126,7 @@ const DayView: React.FC<{
                                     {event.className} - {event.unitName}
                                     {event.journalNote && <BookOpenIcon className="w-5 h-5 ml-2 flex-shrink-0"/>}
                                 </p>
-                                {event.eventType === 'session' && event.sessionNumber != null && <p className="text-sm font-medium mt-1">Sesión {event.sessionNumber}</p>}
+                                {event.eventType === 'session' && <p className="text-sm font-medium mt-1">Sesión {event.sessionNumber}</p>}
 
                                 {event.description && (
                                     <div className="mt-2 p-2 bg-white/40 rounded text-sm">
