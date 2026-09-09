@@ -1162,7 +1162,17 @@ const App = () => {
                     </div>
                 </header>
 
-                <main ref={mainRef} className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto" style={backgroundPatternStyle}>
+                {/* overflow-x-hidden explícito: sin él, el navegador computa
+                    overflow-x como "auto" en cuanto overflow-y no es "visible"
+                    (regla CSS real, no un descuido) -- este <main> pasaba a ser
+                    TAMBIÉN un contenedor de scroll horizontal, compitiendo con
+                    el propio overflow-x-auto de tablas anchas como el Cuaderno
+                    (GradebookTable.tsx) por el gesto de arrastre en pantallas
+                    táctiles. En tablet, el resultado era que solo se veía la
+                    columna del alumnado, sin poder desplazarla (bug real
+                    reportado, 2026-09-09) -- <main> solo debe manejar scroll
+                    vertical, el horizontal es cosa de cada vista. */}
+                <main ref={mainRef} className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto overflow-x-hidden" style={backgroundPatternStyle}>
                     {renderContent()}
                 </main>
             </div>
