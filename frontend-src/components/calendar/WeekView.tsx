@@ -171,27 +171,37 @@ const WeekView: React.FC<{
                     return (
                         <div key={d.toISOString()} className="relative py-2 border-r group/day">
                             <div className="text-xs">{d.toLocaleString('es-ES', { weekday: 'short', timeZone: 'UTC' })}</div>
-                            <div
-                                className="text-xl mt-1 font-bold inline-flex items-center justify-center w-8 h-8 rounded-full"
-                                style={isToday
-                                    ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text }
-                                    : { color: dayNumberColor, boxShadow: ringColor ? `inset 0 0 0 2px ${ringColor}` : undefined }}
-                                title={periodStart ? `Empieza: ${periodStart.name}` : undefined}
-                            >
-                                {d.getUTCDate()}
-                            </div>
-                            {/* Mismos 3 botones que MonthView.tsx (tarea/nota/reunión),
-                                pedido explícito del usuario -- antes solo estaban en la
-                                vista Mes. Tarea/reunión no tienen sentido en un día no
-                                lectivo, una nota libre sí. Siempre visibles (no solo
-                                opacity-0 + hover): en tablet/táctil no hay ratón que
-                                dispare :hover, quedaban invisibles del todo (bug real
-                                reportado, 2026-09-09). */}
-                            <div className="absolute top-1 right-1 flex gap-0.5 opacity-70 group-hover/day:opacity-100 transition-opacity z-10">
+                            {/* Antes el número del día iba suelto y los botones en
+                                absolute top-1 right-1, superpuestos -- en una columna
+                                estrecha (5 columnas, sobre todo en móvil) podían
+                                solaparse con el número o con el nombre del día de la
+                                semana de arriba. Ahora los 4 (número + 3 botones) son
+                                hijos sueltos de una misma fila flex-wrap: caben todos en
+                                una línea cuando hay sitio y los que no caben saltan solos
+                                a la línea siguiente cuando no, sin overlap a ningún
+                                ancho. */}
+                            <div className="flex items-center flex-wrap gap-1 mt-1">
+                                <div
+                                    className="flex-shrink-0 text-xl font-bold inline-flex items-center justify-center w-8 h-8 rounded-full"
+                                    style={isToday
+                                        ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text }
+                                        : { color: dayNumberColor, boxShadow: ringColor ? `inset 0 0 0 2px ${ringColor}` : undefined }}
+                                    title={periodStart ? `Empieza: ${periodStart.name}` : undefined}
+                                >
+                                    {d.getUTCDate()}
+                                </div>
+                                {/* Mismos 3 botones que MonthView.tsx (tarea/nota/reunión),
+                                    pedido explícito del usuario -- antes solo estaban en la
+                                    vista Mes. Tarea/reunión no tienen sentido en un día no
+                                    lectivo, una nota libre sí. Siempre visibles (no solo
+                                    opacity-0 + hover): en tablet/táctil no hay ratón que
+                                    dispare :hover, quedaban invisibles del todo (bug real
+                                    reportado, 2026-09-09). Mismos colores que los botones
+                                    de la vista Día (petición explícita). */}
                                 {!isDayHoliday && (
                                     <button
                                         onClick={() => onOpenTaskModal(d)}
-                                        className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-blue-200 hover:text-blue-600"
+                                        className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center hover:bg-blue-200 opacity-70 group-hover/day:opacity-100 transition-opacity"
                                         title="Añadir tarea calificable"
                                     >
                                         <PlusIcon className="w-4 h-4" />
@@ -199,7 +209,7 @@ const WeekView: React.FC<{
                                 )}
                                 <button
                                     onClick={() => onOpenNoteModal(d)}
-                                    className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-amber-200 hover:text-amber-700"
+                                    className="flex-shrink-0 w-6 h-6 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center hover:bg-amber-200 opacity-70 group-hover/day:opacity-100 transition-opacity"
                                     title="Añadir nota libre (no evaluable)"
                                 >
                                     <ListBulletIcon className="w-4 h-4" />
@@ -207,7 +217,7 @@ const WeekView: React.FC<{
                                 {!isDayHoliday && (
                                     <button
                                         onClick={() => onOpenMeetingModal(d)}
-                                        className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-teal-200 hover:text-teal-700"
+                                        className="flex-shrink-0 w-6 h-6 bg-teal-100 text-teal-700 rounded-full flex items-center justify-center hover:bg-teal-200 opacity-70 group-hover/day:opacity-100 transition-opacity"
                                         title="Apuntar una reunión"
                                     >
                                         <UsersIcon className="w-4 h-4" />

@@ -79,32 +79,42 @@ const MonthView: React.FC<{
                     return (
                          // Fixed: Increased minimum height and removed overflow-y-auto to allow full month scrolling
                          <div key={d.toISOString()} className="relative border-r border-b p-2 min-h-[7rem] group/day" style={{ backgroundColor: cellBackgroundColor }}>
-                            <div
-                                className="flex items-center justify-center w-6 h-6 text-xs rounded-full font-bold"
-                                style={isToday
-                                    ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text, fontWeight: 700 }
-                                    : { color: dayNumberColor, boxShadow: ringColor ? `inset 0 0 0 2px ${ringColor}` : undefined }}
-                                title={periodStart ? `Empieza: ${periodStart.name}` : undefined}
-                            >
-                              {d.getUTCDate()}
-                            </div>
-                            {/* Tarea/reunión no tienen sentido en un día no lectivo
-                                (no hay clase, no se califica), pero una nota libre
-                                sí -- p.ej. "reunión con la familia" puede caer en
-                                festivo. Antes las 3 estaban juntas tras el mismo
-                                !isDayHoliday y una nota tampoco se podía añadir en
-                                festivo -- bug real reportado por el usuario. */}
-                            {/* Antes opacity-0 + group-hover/day:opacity-100 -- invisibles
-                                del todo en tablet/táctil, sin ratón que dispare :hover
-                                (bug real reportado, 2026-09-09). Siempre visibles ahora,
-                                algo atenuados en reposo y a opacidad plena al pasar el
-                                ratón por encima, para no perder la idea de "aparecen al
-                                interactuar" en escritorio. */}
-                            <div className="absolute top-1 right-1 flex gap-0.5 opacity-70 group-hover/day:opacity-100 transition-opacity z-10">
+                            {/* Antes el número del día iba suelto y los botones en
+                                absolute top-1 right-1, superpuestos -- en columnas
+                                estrechas (móvil, 5 columnas) se solapaban con el número.
+                                Ahora los 4 (número + 3 botones) son hijos sueltos de una
+                                misma fila flex-wrap -- caben todos en una línea cuando hay
+                                sitio (escritorio/tablet) y los que no caben saltan solos
+                                a la línea siguiente cuando no (columna de móvil, ~70px),
+                                sin overlap a ningún ancho. */}
+                            <div className="flex items-center flex-wrap gap-1">
+                                <div
+                                    className="flex-shrink-0 flex items-center justify-center w-6 h-6 text-xs rounded-full font-bold"
+                                    style={isToday
+                                        ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text, fontWeight: 700 }
+                                        : { color: dayNumberColor, boxShadow: ringColor ? `inset 0 0 0 2px ${ringColor}` : undefined }}
+                                    title={periodStart ? `Empieza: ${periodStart.name}` : undefined}
+                                >
+                                  {d.getUTCDate()}
+                                </div>
+                                {/* Tarea/reunión no tienen sentido en un día no lectivo
+                                    (no hay clase, no se califica), pero una nota libre
+                                    sí -- p.ej. "reunión con la familia" puede caer en
+                                    festivo. Antes las 3 estaban juntas tras el mismo
+                                    !isDayHoliday y una nota tampoco se podía añadir en
+                                    festivo -- bug real reportado por el usuario. */}
+                                {/* Antes opacity-0 + group-hover/day:opacity-100 -- invisibles
+                                    del todo en tablet/táctil, sin ratón que dispare :hover
+                                    (bug real reportado, 2026-09-09). Siempre visibles ahora,
+                                    algo atenuados en reposo y a opacidad plena al pasar el
+                                    ratón por encima, para no perder la idea de "aparecen al
+                                    interactuar" en escritorio. Mismos colores que los
+                                    botones de la vista Día (petición explícita), no ya
+                                    grises con tinte solo al pasar el ratón. */}
                                 {!isDayHoliday && (
                                     <button
                                         onClick={() => onOpenTaskModal(d)}
-                                        className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-blue-200 hover:text-blue-600"
+                                        className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center hover:bg-blue-200 opacity-70 group-hover/day:opacity-100 transition-opacity"
                                         title="Añadir tarea calificable"
                                     >
                                         <PlusIcon className="w-4 h-4" />
@@ -112,7 +122,7 @@ const MonthView: React.FC<{
                                 )}
                                 <button
                                     onClick={() => onOpenNoteModal(d)}
-                                    className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-amber-200 hover:text-amber-700"
+                                    className="flex-shrink-0 w-6 h-6 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center hover:bg-amber-200 opacity-70 group-hover/day:opacity-100 transition-opacity"
                                     title="Añadir nota libre (no evaluable)"
                                 >
                                     <ListBulletIcon className="w-4 h-4" />
@@ -120,7 +130,7 @@ const MonthView: React.FC<{
                                 {!isDayHoliday && (
                                     <button
                                         onClick={() => onOpenMeetingModal(d)}
-                                        className="w-6 h-6 bg-slate-200/50 text-slate-500 rounded-full flex items-center justify-center hover:bg-teal-200 hover:text-teal-700"
+                                        className="flex-shrink-0 w-6 h-6 bg-teal-100 text-teal-700 rounded-full flex items-center justify-center hover:bg-teal-200 opacity-70 group-hover/day:opacity-100 transition-opacity"
                                         title="Apuntar una reunión"
                                     >
                                         <UsersIcon className="w-4 h-4" />
