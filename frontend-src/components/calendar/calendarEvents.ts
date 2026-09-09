@@ -216,10 +216,23 @@ export const buildCalendarEvents = ({
             const unitsForClass = units.filter(u => u.courseId === classData.courseId);
             let unitIndex = 0;
             let sessionInUnit = 0;
+            // startDate es opcional (Unidad['startDate']?): la mayoría de
+            // unidades no fijan una y simplemente siguen a la anterior en
+            // el mismo orden del array -- por eso unitIndex sigue empezando
+            // en 0 por defecto, igual que antes. Pero si la PRIMERA unidad
+            // sí fija una fecha de inicio posterior al primer día lectivo
+            // del curso, antes se le atribuía igualmente desde ese primer
+            // día (sesión 1 aparecía semanas antes de la fecha real, bug
+            // real reportado, 2026-09-09) -- ahora se saltan los huecos
+            // anteriores a esa fecha explícita hasta alcanzarla (el ancla
+            // de abajo ya se encarga de "engancharla" justo ese día).
+            const firstUnitStart = unitsForClass[0]?.startDate;
 
             for (let i = 0; i < classSessionSlots.length; i++) {
                 const slot = classSessionSlots[i];
                 const slotDateStr = toYYYYMMDD_UTC(slot.date);
+
+                if (firstUnitStart && slotDateStr < firstUnitStart) continue;
 
                 // Find if there is a journal entry for this class/date/period
                 const journalEntry = journalEntries.find(e => e.classId === classData.id && e.date === slotDateStr && e.periodIndex === slot.periodIndex);
