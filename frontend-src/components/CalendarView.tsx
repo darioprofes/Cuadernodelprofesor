@@ -57,6 +57,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
     const [selectedDateForTask, setSelectedDateForTask] = useState<Date | null>(null);
     const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
     const [selectedDateForNote, setSelectedDateForNote] = useState<Date | null>(null);
+    const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
     const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
     const [selectedDateForMeeting, setSelectedDateForMeeting] = useState<Date | null>(null);
     const [initialized, setInitialized] = useState(false);
@@ -122,6 +123,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
             // Lleva a Reuniones con esa reunión concreta abierta para editar.
             onOpenMeeting(event.meetingId);
             setActiveView('meetings');
+        } else if (event.eventType === 'note' && event.noteId) {
+            setSelectedDateForNote(event.date);
+            setSelectedNoteId(event.noteId);
+            setIsNoteModalOpen(true);
         }
     };
 
@@ -132,11 +137,18 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
 
     const handleOpenNoteModal = (date: Date) => {
         setSelectedDateForNote(date);
+        setSelectedNoteId(null);
         setIsNoteModalOpen(true);
     };
 
-    const handleSaveNote = (texto: string) => {
+    const handleSaveNote = (texto: string, noteId?: string) => {
         if (!selectedDateForNote) return;
+        if (noteId) {
+            setAgendaNotes(prev => prev.map(note => note.id === noteId ? { ...note, texto } : note));
+            setIsNoteModalOpen(false);
+            setSelectedNoteId(null);
+            return;
+        }
         const newNote: AgendaNote = {
             id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             texto,
@@ -374,9 +386,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ units, courses, academicCon
             {isNoteModalOpen && selectedDateForNote && (
                 <CalendarNoteModal
                     isOpen={isNoteModalOpen}
-                    onClose={() => setIsNoteModalOpen(false)}
+                    onClose={() => { setIsNoteModalOpen(false); setSelectedNoteId(null); }}
                     onSave={handleSaveNote}
                     selectedDate={selectedDateForNote}
+                    note={selectedNoteId ? agendaNotes.find(note => note.id === selectedNoteId) : undefined}
                 />
             )}
             {isMeetingModalOpen && selectedDateForMeeting && (

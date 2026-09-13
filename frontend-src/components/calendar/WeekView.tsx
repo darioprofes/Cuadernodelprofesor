@@ -37,7 +37,7 @@ const DayColumn: React.FC<{
     const accentColor = holidayColor ?? courseBoundary ?? evaluationColor;
 
     return (
-        <div className="border-r p-1.5 overflow-y-auto" style={{ backgroundColor, boxShadow: accentColor ? `inset 4px 0 0 ${accentColor}` : undefined }}>
+        <div className="border-r border-b border-slate-300 p-1.5 overflow-y-auto" style={{ backgroundColor, boxShadow: accentColor ? `inset 4px 0 0 ${accentColor}` : undefined }}>
             <div className="space-y-1 mt-1">
             {eventsForDay.map(event => {
                 let style: React.CSSProperties;
@@ -95,34 +95,28 @@ const DayColumn: React.FC<{
                     )
                 } else if (event.eventType === 'note') {
                     return (
-                        <div key={event.id} className="p-1.5 text-xs rounded border flex items-start gap-1.5 group" style={{ backgroundColor: NOTE_COLOR.backgroundColor, color: NOTE_COLOR.textColor, borderColor: NOTE_COLOR.borderColor }}>
-                            <ListBulletIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80" />
-                            <p className="flex-grow" title={event.description}>{event.description}</p>
-                            <button onClick={() => event.noteId && onDeleteNote(event.noteId)} className="flex-shrink-0 opacity-0 group-hover:opacity-70 hover:!opacity-100">
+                        <div key={event.id} onClick={() => onEventClick(event)} className="px-2 py-1 text-xs rounded-full border flex items-center gap-1.5 group cursor-pointer hover:brightness-95" style={{ backgroundColor: NOTE_COLOR.backgroundColor, color: NOTE_COLOR.textColor, borderColor: NOTE_COLOR.borderColor }}>
+                            <ListBulletIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80" />
+                            <p className="flex-grow truncate" title={event.description}>{event.description}</p>
+                            <button onClick={(e) => { e.stopPropagation(); event.noteId && onDeleteNote(event.noteId); }} className="flex-shrink-0 opacity-0 group-hover:opacity-70 hover:!opacity-100">
                                 <TrashIcon className="w-3.5 h-3.5" />
                             </button>
                         </div>
                     )
                 } else if (event.eventType === 'meeting') {
                     return (
-                        <div key={event.id} onClick={() => onEventClick(event)} className="p-1.5 text-xs rounded border border-l-4 flex items-start gap-1.5 cursor-pointer hover:brightness-95" style={style}>
-                            <UsersIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80"/>
-                            <p>{event.description}</p>
+                        <div key={event.id} onClick={() => onEventClick(event)} className="px-2 py-1 text-xs rounded-full border flex items-center gap-1.5 cursor-pointer hover:brightness-95" style={{ ...style, borderLeftWidth: undefined }}>
+                            <UsersIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80"/>
+                            <p className="truncate">{event.description}</p>
                         </div>
                     )
                 } else {
                     // Standalone assignment
                     const categoryName = event.assignmentId ? getAssignmentCategoryName(event.classId, event.assignmentId) : undefined;
                      return (
-                        <div key={event.id} onClick={() => onEventClick(event)} className="p-1.5 text-xs rounded border border-l-4 flex items-start gap-1.5 cursor-pointer hover:brightness-95" style={style}>
-                           <ClipboardDocumentIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80"/>
-                           <div>
-                                <p className="font-semibold">
-                                    {event.classGrupo && <span className="inline-block px-1 py-0.5 mr-1 rounded bg-black/10 text-[10px] font-mono">{event.classGrupo}</span>}
-                                    {event.className}
-                                </p>
-                                <p>{event.unitName}{categoryName && <span className="opacity-70"> ({categoryName})</span>}</p>
-                            </div>
+                        <div key={event.id} onClick={() => onEventClick(event)} className="px-2 py-1 text-xs rounded-full border flex items-center gap-1.5 cursor-pointer hover:brightness-95" style={{ ...style, borderLeftWidth: undefined }}>
+                           <ClipboardDocumentIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80"/>
+                           <p className="font-semibold truncate" title={`${event.className} · ${event.unitName}`}>{event.classGrupo && `${event.classGrupo} · `}{event.className} · {event.unitName}{categoryName && ` (${categoryName})`}</p>
                         </div>
                     )
                 }
@@ -156,7 +150,7 @@ const WeekView: React.FC<{
     return (
         <div>
             {/* Modified to 5 cols */}
-            <div className="grid grid-cols-5 text-center font-semibold text-sm text-slate-600 border-b">
+            <div className="grid grid-cols-5 text-center font-semibold text-sm text-slate-700 border-x border-t border-slate-400 bg-white">
                 {days.map(d => {
                     const today = new Date();
                     const isToday = d.getUTCFullYear() === today.getUTCFullYear() && d.getUTCMonth() === today.getUTCMonth() && d.getUTCDate() === today.getUTCDate();
@@ -176,8 +170,8 @@ const WeekView: React.FC<{
                     const dayNumberColor = periodInfo ? COLORES_EVALUACION[periodInfo.index % COLORES_EVALUACION.length] : undefined;
                     const ringColor = !isToday && periodStart ? COLORES_EVALUACION[periodStart.index % COLORES_EVALUACION.length] : undefined;
                     return (
-                        <div key={d.toISOString()} className="relative py-2 border-r group/day">
-                            <div className="text-xs">{d.toLocaleString('es-ES', { weekday: 'short', timeZone: 'UTC' })}</div>
+                        <div key={d.toISOString()} className="relative border-r border-slate-400 last:border-r-0 group/day">
+                            <div className="py-2 text-sm font-semibold border-b border-slate-400 bg-slate-200">{d.toLocaleString('es-ES', { weekday: 'long', timeZone: 'UTC' })}</div>
                             {/* Antes el número del día iba suelto y los botones en
                                 absolute top-1 right-1, superpuestos -- en una columna
                                 estrecha (5 columnas, sobre todo en móvil) podían
@@ -187,9 +181,9 @@ const WeekView: React.FC<{
                                 una línea cuando hay sitio y los que no caben saltan solos
                                 a la línea siguiente cuando no, sin overlap a ningún
                                 ancho. */}
-                            <div className="flex items-center flex-wrap gap-1 mt-1">
+                            <div className="flex items-center flex-wrap gap-1 px-2 py-2">
                                 <div
-                                    className="flex-shrink-0 text-xl font-bold inline-flex items-center justify-center w-8 h-8 rounded-full"
+                                    className="flex-shrink-0 text-xl font-extrabold inline-flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100"
                                     style={isToday
                                         ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text }
                                         : { color: dayNumberColor, boxShadow: ringColor ? `inset 0 0 0 2px ${ringColor}` : undefined }}

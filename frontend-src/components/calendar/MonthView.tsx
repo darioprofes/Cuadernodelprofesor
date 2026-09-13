@@ -43,8 +43,10 @@ const MonthView: React.FC<{
         // ese espacio a partes iguales entre sus semanas, en vez de crecer por
         // la altura mínima de cada celda y obligar a desplazar toda la página.
         <div className="h-[calc(100dvh-12rem)] min-h-[28rem] flex flex-col overflow-hidden">
-            <div className="grid grid-cols-5 flex-none text-center font-semibold text-sm text-slate-600 border-b bg-white z-10 shadow-sm">
-                {['Lun', 'Mar', 'Mié', 'Jue', 'Vie'].map(d => <div key={d} className="py-2">{d}</div>)}
+            <div className="grid grid-cols-5 flex-none text-center text-sm text-slate-700 border-x border-t border-slate-400 bg-slate-200 z-10 shadow-sm">
+                {['Lun', 'Mar', 'Mié', 'Jue', 'Vie'].map(d => (
+                    <div key={d} className="py-2.5 font-semibold border-r border-slate-400 last:border-r-0">{d}</div>
+                ))}
             </div>
             <div className="grid grid-cols-5 flex-1 min-h-0" style={{ gridTemplateRows: `repeat(${rowCount}, minmax(0, 1fr))` }}>
                 {days.map(d => {
@@ -87,7 +89,7 @@ const MonthView: React.FC<{
                          // Fixed: Increased minimum height and removed overflow-y-auto to allow full month scrolling
                          <div
                             key={d.toISOString()}
-                            className="relative border-r border-b p-2 min-h-0 overflow-y-auto group/day"
+                            className="relative border-r border-b border-slate-300 p-2 min-h-0 overflow-y-auto group/day"
                             style={{ backgroundColor: cellBackgroundColor, boxShadow: accentColor ? `inset 4px 0 0 ${accentColor}` : undefined }}
                          >
                             {/* Antes el número del día iba suelto y los botones en
@@ -100,7 +102,7 @@ const MonthView: React.FC<{
                                 sin overlap a ningún ancho. */}
                             <div className="flex items-center flex-wrap gap-1">
                                 <div
-                                    className="flex-shrink-0 flex items-center justify-center w-6 h-6 text-xs rounded-full font-bold"
+                                    className="flex-shrink-0 flex items-center justify-center w-7 h-7 text-sm rounded-lg font-extrabold bg-slate-100"
                                     style={isToday
                                         ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text, fontWeight: 700 }
                                         : { color: dayNumberColor }}
@@ -171,10 +173,10 @@ const MonthView: React.FC<{
                                 {eventsForDay.map(event => {
                                     if (event.eventType === 'note') {
                                         return (
-                                            <div key={event.id} className="p-1 text-xs rounded border flex items-start gap-1 group/note" style={{ backgroundColor: NOTE_COLOR.backgroundColor, color: NOTE_COLOR.textColor, borderColor: NOTE_COLOR.borderColor }}>
-                                                <ListBulletIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80" />
+                                            <div key={event.id} onClick={() => onEventClick(event)} className="px-2 py-1 text-xs rounded-full border flex items-center gap-1 group/note cursor-pointer hover:brightness-95" style={{ backgroundColor: NOTE_COLOR.backgroundColor, color: NOTE_COLOR.textColor, borderColor: NOTE_COLOR.borderColor }}>
+                                                <ListBulletIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80" />
                                                 <p className="truncate flex-grow" title={event.description}>{event.description}</p>
-                                                <button onClick={() => event.noteId && onDeleteNote(event.noteId)} className="flex-shrink-0 opacity-0 group-hover/note:opacity-70 hover:!opacity-100">
+                                                <button onClick={(e) => { e.stopPropagation(); event.noteId && onDeleteNote(event.noteId); }} className="flex-shrink-0 opacity-0 group-hover/note:opacity-70 hover:!opacity-100">
                                                     <TrashIcon className="w-3.5 h-3.5" />
                                                 </button>
                                             </div>
@@ -185,10 +187,10 @@ const MonthView: React.FC<{
                                             <div
                                                 key={event.id}
                                                 onClick={() => onEventClick(event)}
-                                                className="p-1 text-xs rounded border flex items-start gap-1 group/note cursor-pointer hover:brightness-95"
+                                                className="px-2 py-1 text-xs rounded-full border flex items-center gap-1 group/note cursor-pointer hover:brightness-95"
                                                 style={{ backgroundColor: MEETING_COLOR.backgroundColor, color: MEETING_COLOR.textColor, borderColor: MEETING_COLOR.borderColor }}
                                             >
-                                                <UsersIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80" />
+                                                <UsersIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80" />
                                                 <p className="truncate flex-grow" title={event.description}>{event.description}</p>
                                                 <button onClick={(e) => { e.stopPropagation(); event.meetingId && onDeleteMeeting(event.meetingId); }} className="flex-shrink-0 opacity-0 group-hover/note:opacity-70 hover:!opacity-100">
                                                     <TrashIcon className="w-3.5 h-3.5" />
@@ -250,18 +252,12 @@ const MonthView: React.FC<{
                                             <div
                                                 key={event.id}
                                                 onClick={() => onEventClick(event)}
-                                                className="p-1 text-xs rounded border flex items-start gap-1.5 cursor-pointer hover:brightness-95"
+                                                className="px-2 py-1 text-xs rounded-full border flex items-center gap-1.5 cursor-pointer hover:brightness-95"
                                                 style={style}
                                                 title={`${event.classGrupo ? event.classGrupo + ' - ' : ''}${event.className} - ${event.unitName}${categoryName ? ' (' + categoryName + ')' : ''}`}
                                             >
-                                               <ClipboardDocumentIcon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-80"/>
-                                               <div className="truncate">
-                                                    <p className="font-semibold truncate">
-                                                        {event.classGrupo && <span className="font-mono text-[11px] opacity-80 mr-1">{event.classGrupo}</span>}
-                                                        {event.className}
-                                                    </p>
-                                                    <p className="truncate">{event.unitName}{categoryName && <span className="opacity-70"> ({categoryName})</span>}</p>
-                                                </div>
+                                               <ClipboardDocumentIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80"/>
+                                               <p className="font-semibold truncate">{event.classGrupo && `${event.classGrupo} · `}{event.className} · {event.unitName}{categoryName && ` (${categoryName})`}</p>
                                             </div>
                                         );
                                     }

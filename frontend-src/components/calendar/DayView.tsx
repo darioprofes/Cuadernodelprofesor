@@ -47,9 +47,12 @@ const DayView: React.FC<{
     const accentColor = holidayColor ?? courseBoundary?.color ?? evaluationColor ?? weekendMarker?.color;
 
     return (
-        <div className="p-4 h-[70vh] overflow-y-auto" style={{ backgroundColor, boxShadow: accentColor ? `inset 6px 0 0 ${accentColor}` : undefined }}>
-             <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <div className="p-4 h-[70vh] overflow-y-auto border border-slate-300" style={{ backgroundColor, boxShadow: accentColor ? `inset 6px 0 0 ${accentColor}` : undefined }}>
+             <div className="-mx-4 -mt-4 mb-4 px-4 py-3 flex items-center justify-between gap-2 flex-wrap bg-slate-200 border-b border-slate-400">
                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white text-slate-800 text-lg font-extrabold shadow-sm" aria-hidden="true">
+                        {currentDate.getUTCDate()}
+                    </div>
                     <h3 className={TYPOGRAPHY.sectionTitle}>{currentDate.toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}</h3>
                     {holidayColor && (
                         <span className="px-2 py-1 rounded-full text-xs font-semibold text-white" style={{ backgroundColor: holidayColor }} title={holiday?.name}>
@@ -171,33 +174,29 @@ const DayView: React.FC<{
                         );
                     } else if (event.eventType === 'note') {
                         return (
-                            <div key={event.id} className="p-3 rounded-lg border-l-4 flex items-center gap-3 group" style={{ backgroundColor: NOTE_COLOR.backgroundColor, color: NOTE_COLOR.textColor, borderColor: NOTE_COLOR.borderColor }}>
-                                <ListBulletIcon className="w-6 h-6 opacity-80" />
-                                <p className="text-base flex-grow">{event.description}</p>
-                                <button onClick={() => event.noteId && onDeleteNote(event.noteId)} className="flex-shrink-0 opacity-0 group-hover:opacity-70 hover:!opacity-100">
+                            <div key={event.id} onClick={() => onEventClick(event)} className="px-3 py-1.5 rounded-full border flex items-center gap-2 group cursor-pointer hover:brightness-95" style={{ backgroundColor: NOTE_COLOR.backgroundColor, color: NOTE_COLOR.textColor, borderColor: NOTE_COLOR.borderColor }}>
+                                <ListBulletIcon className="w-4 h-4 flex-shrink-0 opacity-80" />
+                                <p className="text-sm flex-grow truncate">{event.description}</p>
+                                <button onClick={(e) => { e.stopPropagation(); event.noteId && onDeleteNote(event.noteId); }} className="flex-shrink-0 opacity-0 group-hover:opacity-70 hover:!opacity-100">
                                     <TrashIcon className="w-5 h-5" />
                                 </button>
                             </div>
                         );
                     } else if (event.eventType === 'meeting') {
                         return (
-                            <div key={event.id} onClick={() => onEventClick(event)} className="p-3 rounded-lg border-l-4 flex items-center gap-3 cursor-pointer hover:brightness-95" style={style}>
-                                <UsersIcon className="w-6 h-6 opacity-80"/>
-                                <p className="text-base">{event.description}</p>
+                            <div key={event.id} onClick={() => onEventClick(event)} className="px-3 py-1.5 rounded-full border flex items-center gap-2 cursor-pointer hover:brightness-95" style={{ ...style, borderLeftWidth: undefined }}>
+                                <UsersIcon className="w-4 h-4 flex-shrink-0 opacity-80"/>
+                                <p className="text-sm truncate">{event.description}</p>
                             </div>
                         )
                     } else {
                         const categoryName = event.assignmentId ? getAssignmentCategoryName(event.classId, event.assignmentId) : undefined;
                          return (
-                            <div key={event.id} onClick={() => onEventClick(event)} className="p-3 rounded-lg border-l-4 flex items-center gap-3 cursor-pointer hover:brightness-95" style={style}>
-                                <ClipboardDocumentIcon className="w-6 h-6 opacity-80"/>
-                                <div>
-                                    <p className="font-bold text-lg">
-                                        {event.classGrupo && <span className="inline-block px-2 py-0.5 mr-2 rounded bg-black/10 text-sm font-mono">{event.classGrupo}</span>}
-                                        {event.className}
-                                    </p>
-                                    <p className="text-base">{event.unitName}{categoryName && <span className="opacity-70"> ({categoryName})</span>}</p>
-                                </div>
+                            <div key={event.id} onClick={() => onEventClick(event)} className="px-3 py-1.5 rounded-full border flex items-center gap-2 cursor-pointer hover:brightness-95" style={{ ...style, borderLeftWidth: undefined }}>
+                                <ClipboardDocumentIcon className="w-4 h-4 flex-shrink-0 opacity-80"/>
+                                <p className="font-semibold text-sm truncate" title={`${event.className} · ${event.unitName}`}>
+                                    {event.classGrupo && `${event.classGrupo} · `}{event.className} · {event.unitName}{categoryName && ` (${categoryName})`}
+                                </p>
                             </div>
                         )
                     }
@@ -206,7 +205,7 @@ const DayView: React.FC<{
             ) : (
                 !(isDayHoliday || isWeekend) &&
                 <div className="flex items-center justify-center h-full text-slate-500">
-                    <p>No hay sesiones programadas para este día.</p>
+                    <p>No hay nada programado para este día.</p>
                 </div>
             )}
         </div>
