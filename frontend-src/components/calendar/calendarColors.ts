@@ -21,6 +21,14 @@ export const COLOR_POR_TIPO_FESTIVO: Record<NonNullable<Holiday['type']>, string
     vacaciones: COLOR_VACACIONES,
 };
 
+// Nombre compacto para las etiquetas de Agenda. El color identifica el tipo
+// de un vistazo y el texto evita que dependa solo de ese color.
+export const ETIQUETA_POR_TIPO_FESTIVO: Record<NonNullable<Holiday['type']>, string> = {
+    festivo: 'Festivo',
+    no_lectivo: 'No lectivo',
+    vacaciones: 'Vacaciones',
+};
+
 // Un color por evaluación, cíclico si hubiera más evaluaciones que colores
 // (lo habitual son 3 -- 1ª/2ª/3ª evaluación -- pero el profesor puede
 // tener más o menos). Tiñe el número del día dentro de esa evaluación, y

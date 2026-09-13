@@ -4,7 +4,7 @@ import { PlusIcon, ListBulletIcon, UsersIcon, TrashIcon, PencilIcon, BookOpenIco
 import { CalendarEvent, NOTE_COLOR, MEETING_COLOR, startOfMonthUTC, endOfMonthUTC, startOfWeekUTC, addDaysUTC, toYYYYMMDD_UTC, getContrastingTextColor } from './calendarEvents';
 import { SEMANTIC } from '../../theme/palette';
 import {
-    COLOR_INICIO_CURSO, COLOR_FIN_CURSO, COLOR_POR_TIPO_FESTIVO, COLORES_EVALUACION, COLOR_DIA_NORMAL,
+    COLOR_INICIO_CURSO, COLOR_FIN_CURSO, COLOR_POR_TIPO_FESTIVO, ETIQUETA_POR_TIPO_FESTIVO, COLORES_EVALUACION, COLOR_DIA_NORMAL,
 } from './calendarColors';
 
 const MonthView: React.FC<{
@@ -36,15 +36,17 @@ const MonthView: React.FC<{
         days.push(day);
         day = addDaysUTC(day, 1);
     }
+    const rowCount = days.length / 7;
 
     return (
-        <div>
-            {/* Fixed: Sticky Header for days of week */}
-            <div className="grid grid-cols-5 text-center font-semibold text-sm text-slate-600 border-b sticky top-0 bg-white z-10 shadow-sm">
+        // La Agenda ocupa el alto útil de la aplicación: la cuadrícula reparte
+        // ese espacio a partes iguales entre sus semanas, en vez de crecer por
+        // la altura mínima de cada celda y obligar a desplazar toda la página.
+        <div className="h-[calc(100dvh-12rem)] min-h-[28rem] flex flex-col overflow-hidden">
+            <div className="grid grid-cols-5 flex-none text-center font-semibold text-sm text-slate-600 border-b bg-white z-10 shadow-sm">
                 {['Lun', 'Mar', 'Mié', 'Jue', 'Vie'].map(d => <div key={d} className="py-2">{d}</div>)}
             </div>
-            {/* Fixed: Auto rows and removed fixed height to allow full scrolling */}
-            <div className="grid grid-cols-5 auto-rows-fr">
+            <div className="grid grid-cols-5 flex-1 min-h-0" style={{ gridTemplateRows: `repeat(${rowCount}, minmax(0, 1fr))` }}>
                 {days.map(d => {
                      const dayOfWeek = d.getUTCDay();
                      // Skip Saturday (6) and Sunday (0)
@@ -63,22 +65,31 @@ const MonthView: React.FC<{
                      const periodInfo = getPeriodForDate(d);
                      const periodStart = getPeriodStart(dayStr);
 
-                     // Mismo esquema que AnnualCalendarView.tsx (Calendario) --
-                     // pedido explícito del usuario: el fondo de la Agenda debe
-                     // ser igual que el del Calendario.
+                     // El Calendario anual usa todo el fondo para sus casillas
+                     // pequeñas. En esta Agenda mensual las celdas son grandes,
+                     // así que el festivo se marca con una línea lateral y un chip
+                     // compacto, sin convertir toda la jornada en un bloque intenso.
                      let cellBackgroundColor = isCurrentMonth ? '#ffffff' : '#f8fafc';
                      let dayNumberColor = periodInfo ? COLORES_EVALUACION[periodInfo.index % COLORES_EVALUACION.length] : COLOR_DIA_NORMAL;
-                     if (isDayHoliday) { cellBackgroundColor = COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo']; dayNumberColor = '#ffffff'; }
-                     if (isStart) { cellBackgroundColor = COLOR_INICIO_CURSO; dayNumberColor = '#ffffff'; }
-                     if (isEnd) { cellBackgroundColor = COLOR_FIN_CURSO; dayNumberColor = '#ffffff'; }
+                     const holidayColor = isDayHoliday ? COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo'] : undefined;
+                     const courseBoundary = isStart
+                        ? { color: COLOR_INICIO_CURSO, label: 'Inicio de curso' }
+                        : isEnd ? { color: COLOR_FIN_CURSO, label: 'Fin de curso' } : undefined;
+                     if (courseBoundary) dayNumberColor = courseBoundary.color;
 
-                     // Aviso de cambio de evaluación: un anillo en el color de
-                     // la evaluación que empieza ese día.
-                     const ringColor = periodStart ? COLORES_EVALUACION[periodStart.index % COLORES_EVALUACION.length] : undefined;
+                     const evaluationColor = periodStart ? COLORES_EVALUACION[periodStart.index % COLORES_EVALUACION.length] : undefined;
+                     // Si coinciden dos marcas (p.ej. inicio de curso y 1ª
+                     // evaluación), los dos chips conservan la información; la
+                     // línea usa el orden más relevante para el día completo.
+                     const accentColor = holidayColor ?? courseBoundary?.color ?? evaluationColor;
 
                     return (
                          // Fixed: Increased minimum height and removed overflow-y-auto to allow full month scrolling
-                         <div key={d.toISOString()} className="relative border-r border-b p-2 min-h-[7rem] group/day" style={{ backgroundColor: cellBackgroundColor }}>
+                         <div
+                            key={d.toISOString()}
+                            className="relative border-r border-b p-2 min-h-0 overflow-y-auto group/day"
+                            style={{ backgroundColor: cellBackgroundColor, boxShadow: accentColor ? `inset 4px 0 0 ${accentColor}` : undefined }}
+                         >
                             {/* Antes el número del día iba suelto y los botones en
                                 absolute top-1 right-1, superpuestos -- en columnas
                                 estrechas (móvil, 5 columnas) se solapaban con el número.
@@ -92,11 +103,30 @@ const MonthView: React.FC<{
                                     className="flex-shrink-0 flex items-center justify-center w-6 h-6 text-xs rounded-full font-bold"
                                     style={isToday
                                         ? { backgroundColor: SEMANTIC.primary.base, color: SEMANTIC.primary.text, fontWeight: 700 }
-                                        : { color: dayNumberColor, boxShadow: ringColor ? `inset 0 0 0 2px ${ringColor}` : undefined }}
+                                        : { color: dayNumberColor }}
                                     title={periodStart ? `Empieza: ${periodStart.name}` : undefined}
                                 >
                                   {d.getUTCDate()}
                                 </div>
+                                {holidayColor && (
+                                    <span
+                                        className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white"
+                                        style={{ backgroundColor: holidayColor }}
+                                        title={holiday?.name}
+                                    >
+                                        {ETIQUETA_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo']}
+                                    </span>
+                                )}
+                                {courseBoundary && (
+                                    <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: courseBoundary.color }}>
+                                        {courseBoundary.label}
+                                    </span>
+                                )}
+                                {periodStart && evaluationColor && (
+                                    <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: evaluationColor }} title={`Empieza: ${periodStart.name}`}>
+                                        {periodStart.name}
+                                    </span>
+                                )}
                                 {/* Tarea/reunión no tienen sentido en un día no lectivo
                                     (no hay clase, no se califica), pero una nota libre
                                     sí -- p.ej. "reunión con la familia" puede caer en

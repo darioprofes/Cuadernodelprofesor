@@ -4,7 +4,7 @@ import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenI
 import { CalendarEvent, NOTE_COLOR, startOfWeekUTC, addDaysUTC, toYYYYMMDD_UTC, getContrastingTextColor } from './calendarEvents';
 import { SEMANTIC } from '../../theme/palette';
 import {
-    COLOR_INICIO_CURSO, COLOR_FIN_CURSO, COLOR_POR_TIPO_FESTIVO, COLORES_EVALUACION,
+    COLOR_INICIO_CURSO, COLOR_FIN_CURSO, COLOR_POR_TIPO_FESTIVO, ETIQUETA_POR_TIPO_FESTIVO, COLORES_EVALUACION,
 } from './calendarColors';
 
 const DayColumn: React.FC<{
@@ -12,29 +12,32 @@ const DayColumn: React.FC<{
     events: CalendarEvent[];
     isHoliday: (date: Date) => boolean;
     getHoliday: (dateStr: string) => Holiday | undefined;
+    getPeriodStart: (dateStr: string) => { index: number; name: string } | null;
     academicYearStart?: string;
     academicYearEnd?: string;
     onEventClick: (event: CalendarEvent) => void;
     onDeleteNote: (noteId: string) => void;
     getCategoryName: (classId: string, categoryId: string) => string | undefined;
     getAssignmentCategoryName: (classId: string, assignmentId: string) => string | undefined;
-}> = ({ date: d, events, isHoliday, getHoliday, academicYearStart, academicYearEnd, onEventClick, onDeleteNote, getCategoryName, getAssignmentCategoryName }) => {
+}> = ({ date: d, events, isHoliday, getHoliday, getPeriodStart, academicYearStart, academicYearEnd, onEventClick, onDeleteNote, getCategoryName, getAssignmentCategoryName }) => {
     const dayStr = toYYYYMMDD_UTC(d);
     const eventsForDay = events.filter(e => toYYYYMMDD_UTC(e.date) === dayStr);
     const isDayHoliday = isHoliday(d);
     const holiday = isDayHoliday ? getHoliday(dayStr) : undefined;
     const isStart = dayStr === academicYearStart;
     const isEnd = dayStr === academicYearEnd;
-    // Mismo esquema que AnnualCalendarView.tsx (Calendario) -- pedido
-    // explícito del usuario: el fondo de la Agenda debe ser igual que el
-    // del Calendario.
+    const periodStart = getPeriodStart(dayStr);
+    // Las columnas semanales son altas: igual que en Mes, el festivo se
+    // reconoce por la línea lateral y el chip de la cabecera, no por un
+    // fondo saturado que ocuparía toda la jornada.
     let backgroundColor = '#ffffff';
-    if (isDayHoliday) backgroundColor = COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo'];
-    if (isStart) backgroundColor = COLOR_INICIO_CURSO;
-    if (isEnd) backgroundColor = COLOR_FIN_CURSO;
+    const holidayColor = isDayHoliday ? COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo'] : undefined;
+    const courseBoundary = isStart ? COLOR_INICIO_CURSO : (isEnd ? COLOR_FIN_CURSO : undefined);
+    const evaluationColor = periodStart ? COLORES_EVALUACION[periodStart.index % COLORES_EVALUACION.length] : undefined;
+    const accentColor = holidayColor ?? courseBoundary ?? evaluationColor;
 
     return (
-        <div className="border-r p-1.5 overflow-y-auto" style={{ backgroundColor }}>
+        <div className="border-r p-1.5 overflow-y-auto" style={{ backgroundColor, boxShadow: accentColor ? `inset 4px 0 0 ${accentColor}` : undefined }}>
             <div className="space-y-1 mt-1">
             {eventsForDay.map(event => {
                 let style: React.CSSProperties;
@@ -159,14 +162,18 @@ const WeekView: React.FC<{
                     const isToday = d.getUTCFullYear() === today.getUTCFullYear() && d.getUTCMonth() === today.getUTCMonth() && d.getUTCDate() === today.getUTCDate();
                     const dayStr = toYYYYMMDD_UTC(d);
                     const isDayHoliday = isHoliday(d);
-                    // Mismo criterio de color que MonthView.tsx: por
-                    // evaluación, blanco si es festivo (el fondo de la
-                    // columna ya avisa de eso).
+                    const holiday = isDayHoliday ? getHoliday(dayStr) : undefined;
+                    const holidayColor = isDayHoliday ? COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo'] : undefined;
+                    // La evaluación sigue coloreando el día; el festivo se
+                    // identifica con un chip, no invirtiendo el texto.
                     const periodInfo = getPeriodForDate(d);
                     const periodStart = getPeriodStart(dayStr);
-                    const dayNumberColor = isDayHoliday
-                        ? '#ffffff'
-                        : periodInfo ? COLORES_EVALUACION[periodInfo.index % COLORES_EVALUACION.length] : undefined;
+                    const isStart = dayStr === academicYearStart;
+                    const isEnd = dayStr === academicYearEnd;
+                    const courseBoundary = isStart
+                        ? { color: COLOR_INICIO_CURSO, label: 'Inicio de curso' }
+                        : isEnd ? { color: COLOR_FIN_CURSO, label: 'Fin de curso' } : undefined;
+                    const dayNumberColor = periodInfo ? COLORES_EVALUACION[periodInfo.index % COLORES_EVALUACION.length] : undefined;
                     const ringColor = !isToday && periodStart ? COLORES_EVALUACION[periodStart.index % COLORES_EVALUACION.length] : undefined;
                     return (
                         <div key={d.toISOString()} className="relative py-2 border-r group/day">
@@ -190,6 +197,25 @@ const WeekView: React.FC<{
                                 >
                                     {d.getUTCDate()}
                                 </div>
+                                {holidayColor && (
+                                    <span
+                                        className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white"
+                                        style={{ backgroundColor: holidayColor }}
+                                        title={holiday?.name}
+                                    >
+                                        {ETIQUETA_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo']}
+                                    </span>
+                                )}
+                                {courseBoundary && (
+                                    <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: courseBoundary.color }}>
+                                        {courseBoundary.label}
+                                    </span>
+                                )}
+                                {periodStart && (
+                                    <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: COLORES_EVALUACION[periodStart.index % COLORES_EVALUACION.length] }}>
+                                        {periodStart.name}
+                                    </span>
+                                )}
                                 {/* Mismos 3 botones que MonthView.tsx (tarea/nota/reunión),
                                     pedido explícito del usuario -- antes solo estaban en la
                                     vista Mes. Tarea/reunión no tienen sentido en un día no
@@ -237,6 +263,7 @@ const WeekView: React.FC<{
                         events={events}
                         isHoliday={isHoliday}
                         getHoliday={getHoliday}
+                        getPeriodStart={getPeriodStart}
                         academicYearStart={academicYearStart}
                         academicYearEnd={academicYearEnd}
                         onEventClick={onEventClick}

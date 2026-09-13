@@ -3,7 +3,7 @@ import type { Holiday } from '../../types';
 import { PencilIcon, ClipboardDocumentIcon, ListBulletIcon, TrashIcon, BookOpenIcon, UsersIcon, PlusIcon } from '../Icons';
 import { CalendarEvent, NOTE_COLOR, toYYYYMMDD_UTC, getContrastingTextColor } from './calendarEvents';
 import { TYPOGRAPHY } from '../../theme/typography';
-import { COLOR_INICIO_CURSO, COLOR_FIN_CURSO, COLOR_POR_TIPO_FESTIVO } from './calendarColors';
+import { COLOR_INICIO_CURSO, COLOR_FIN_CURSO, COLOR_POR_TIPO_FESTIVO, ETIQUETA_POR_TIPO_FESTIVO, COLORES_EVALUACION } from './calendarColors';
 
 const DayView: React.FC<{
     currentDate: Date;
@@ -31,19 +31,47 @@ const DayView: React.FC<{
     const isEnd = currentDateStr === academicYearEnd;
     const periodStart = getPeriodStart(currentDateStr);
 
-    // Mismo esquema que AnnualCalendarView.tsx (Calendario) -- pedido
-    // explícito del usuario: el fondo de la Agenda debe ser igual que el
-    // del Calendario. Los fines de semana sin festivo asociado se quedan
-    // en blanco (el aviso "Día no lectivo" de abajo ya avisa de esos).
+    // En la Agenda diaria el área es grande: se aplica la misma señal suave
+    // que en Mes/Semana (línea + chip), no un fondo de festivo a pantalla
+    // completa. Los fines de semana sin festivo asociado se quedan blancos.
     let backgroundColor = '#ffffff';
-    if (isDayHoliday) backgroundColor = COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo'];
-    if (isStart) backgroundColor = COLOR_INICIO_CURSO;
-    if (isEnd) backgroundColor = COLOR_FIN_CURSO;
+    const holidayColor = isDayHoliday ? COLOR_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo'] : undefined;
+    const courseBoundary = isStart
+        ? { color: COLOR_INICIO_CURSO, label: 'Inicio de curso' }
+        : isEnd ? { color: COLOR_FIN_CURSO, label: 'Fin de curso' } : undefined;
+    const evaluationColor = periodStart ? COLORES_EVALUACION[periodStart.index % COLORES_EVALUACION.length] : undefined;
+    // Sábado y domingo son no lectivos aunque no se hayan añadido como un
+    // festivo al calendario. Se distinguen con un gris neutro para no
+    // confundirlos con un festivo, vacaciones o una fecha de curso.
+    const weekendMarker = isWeekend && !isDayHoliday ? { color: '#94a3b8', label: 'Fin de semana' } : undefined;
+    const accentColor = holidayColor ?? courseBoundary?.color ?? evaluationColor ?? weekendMarker?.color;
 
     return (
-        <div className="p-4 h-[70vh] overflow-y-auto" style={{ backgroundColor }}>
+        <div className="p-4 h-[70vh] overflow-y-auto" style={{ backgroundColor, boxShadow: accentColor ? `inset 6px 0 0 ${accentColor}` : undefined }}>
              <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
-                 <h3 className={TYPOGRAPHY.sectionTitle}>{currentDate.toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}</h3>
+                 <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className={TYPOGRAPHY.sectionTitle}>{currentDate.toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}</h3>
+                    {holidayColor && (
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold text-white" style={{ backgroundColor: holidayColor }} title={holiday?.name}>
+                            {ETIQUETA_POR_TIPO_FESTIVO[holiday?.type ?? 'festivo']}
+                        </span>
+                    )}
+                    {courseBoundary && (
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold text-white" style={{ backgroundColor: courseBoundary.color }}>
+                            {courseBoundary.label}
+                        </span>
+                    )}
+                    {periodStart && evaluationColor && (
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold text-white" style={{ backgroundColor: evaluationColor }}>
+                            {periodStart.name}
+                        </span>
+                    )}
+                    {weekendMarker && (
+                        <span className="px-2 py-1 rounded-full text-xs font-semibold text-white" style={{ backgroundColor: weekendMarker.color }}>
+                            {weekendMarker.label}
+                        </span>
+                    )}
+                 </div>
                  {/* Mismos 3 botones que Mes/Semana, pedido explícito del
                      usuario -- antes esta vista solo tenía "Añadir nota".
                      Tarea/reunión no tienen sentido en un día no lectivo,
@@ -73,10 +101,7 @@ const DayView: React.FC<{
                      )}
                  </div>
              </div>
-             {(isDayHoliday || isWeekend) && <p className="text-center font-semibold text-rose-700 mb-4">Día no lectivo{holiday?.name ? ` — ${holiday.name}` : ''}</p>}
-             {isStart && <p className="text-center font-semibold text-white mb-4">Inicio de curso</p>}
-             {isEnd && <p className="text-center font-semibold text-white mb-4">Fin de curso</p>}
-             {periodStart && <p className={`text-center font-semibold mb-4 ${isDayHoliday || isStart || isEnd ? 'text-white' : 'text-slate-700'}`}>Empieza: {periodStart.name}</p>}
+             {(isDayHoliday || isWeekend) && <p className="text-center font-semibold mb-4" style={accentColor ? { color: accentColor } : undefined}>Día no lectivo{holiday?.name ? ` — ${holiday.name}` : ''}</p>}
              {eventsForDay.length > 0 ? (
                 <div className="space-y-3">
                 {eventsForDay.map(event => {
