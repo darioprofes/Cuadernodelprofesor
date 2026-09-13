@@ -1,13 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import type { ClassData, Course, AcademicConfiguration, View } from '../types';
-import { getMateria, getSiglas, addDays, getClassAccentColor, toYYYYMMDD } from '../utils';
-import { CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon } from './Icons';
+import { getMateria, getSiglas, getClassAccentColor } from '../utils';
+import { ClockIcon } from './Icons';
 import { SIDEBAR_BG } from '../theme/palette';
 import { tableBaseClassName, tableCellClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../theme/components/Table';
 import EmptyState from './EmptyState';
 import { pageHeaderMinHeight } from '../theme/components/PageHeader';
 import { headerPatternStyle } from '../theme/headerPattern';
-import DateNavButton from './DateNavButton';
 
 interface HorarioViewProps {
     classes: ClassData[];
@@ -25,50 +24,16 @@ const DAYS = [
     { label: 'Viernes', value: 5 },
 ];
 
-const startOfWeekMonday = (date: Date): Date => {
-    const d = new Date(date);
-    const dow = d.getDay(); // 0 = domingo
-    d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
-    d.setHours(0, 0, 0, 0);
-    return d;
-};
-
 // Vista de solo lectura del horario semanal: la edición (añadir/mover/
 // borrar franjas) se queda en Ajustes → Horario Semanal (ScheduleManager).
 // Aquí pinchar una clase lleva directo a su Cuaderno.
 //
 // El horario es una PLANTILLA semanal recurrente (ClassData.schedule no
-// tiene fecha, solo día de la semana): moverse a la semana anterior/
-// siguiente no cambia qué se muestra, solo el rango de fechas de la
-// cabecera — es orientativo, para saber "qué semana es esta".
+// tiene fecha, solo día de la semana), así que se presenta como una única
+// tabla estable para todo el curso, sin controles que sugieran versiones
+// distintas según la fecha.
 const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicConfiguration, setActiveView, setActiveClassId }) => {
     const periods = academicConfiguration.periods || [];
-
-    const [weekOffset, setWeekOffset] = useState(0);
-    const inicioSemanaReal = useMemo(() => startOfWeekMonday(new Date()), []);
-    const inicioSemana = useMemo(() => addDays(inicioSemanaReal, weekOffset * 7), [inicioSemanaReal, weekOffset]);
-    const finSemana = useMemo(() => addDays(inicioSemana, 4), [inicioSemana]);
-
-    const rangoTexto = useMemo(() => {
-        const mesInicio = inicioSemana.toLocaleDateString('es-ES', { month: 'long' });
-        const mesFin = finSemana.toLocaleDateString('es-ES', { month: 'long' });
-        const anio = finSemana.getFullYear();
-        const rango = mesInicio === mesFin
-            ? `${inicioSemana.getDate()} - ${finSemana.getDate()} de ${mesFin}`
-            : `${inicioSemana.getDate()} de ${mesInicio} - ${finSemana.getDate()} de ${mesFin}`;
-        return `${rango}, ${anio}`;
-    }, [inicioSemana, finSemana]);
-
-    // El horario es una plantilla semanal recurrente (arriba): elegir una
-    // fecha aquí no cambia el contenido, solo salta a la semana a la que
-    // pertenece esa fecha (igual que hacían antes las flechas, pero directo
-    // en vez de una a una).
-    const handleJumpToDate = (dateStr: string) => {
-        const picked = new Date(dateStr + 'T00:00:00');
-        const pickedWeekStart = startOfWeekMonday(picked);
-        const diffDays = Math.round((pickedWeekStart.getTime() - inicioSemanaReal.getTime()) / 86400000);
-        setWeekOffset(Math.round(diffDays / 7));
-    };
 
     const grid = useMemo(() => {
         const map = new Map<string, { classId: string; aula?: string; nota?: string }>();
@@ -97,43 +62,15 @@ const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicCon
     return (
         <div className="space-y-4">
             <div
-                className={`rounded-xl p-4 sm:p-5 ${pageHeaderMinHeight} flex items-center justify-between flex-wrap gap-3`}
+                className={`rounded-xl p-4 sm:p-5 ${pageHeaderMinHeight} flex items-center`}
                 style={{ backgroundColor: SIDEBAR_BG, ...headerPatternStyle }}
             >
                 <div className="flex items-center gap-3">
                     <ClockIcon className="w-6 h-6 flex-shrink-0 text-white/90" />
                     <div>
                         <h2 className="text-xl font-bold text-white">Horario semanal</h2>
-                        <p className="text-sm text-white/80">Consulta tu horario semanal de clases y actividades.</p>
+                        <p className="text-sm text-white/80">El mismo horario se aplica durante todo el curso.</p>
                     </div>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => setWeekOffset(w => w - 1)} className="p-1.5 rounded-lg bg-white hover:bg-white/90 text-slate-600" title="Semana anterior">
-                        <ChevronLeftIcon className="w-4 h-4" />
-                    </button>
-                    <DateNavButton
-                        value={toYYYYMMDD(inicioSemana)}
-                        onChange={handleJumpToDate}
-                        title="Ir a la semana de una fecha concreta"
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white text-sm font-medium text-slate-700 hover:bg-white/90"
-                        label={
-                            <>
-                                <CalendarDaysIcon className="w-4 h-4 text-slate-400" />
-                                {rangoTexto}
-                            </>
-                        }
-                    />
-                    <button onClick={() => setWeekOffset(w => w + 1)} className="p-1.5 rounded-lg bg-white hover:bg-white/90 text-slate-600" title="Semana siguiente">
-                        <ChevronRightIcon className="w-4 h-4" />
-                    </button>
-                    {weekOffset !== 0 && (
-                        <button
-                            onClick={() => setWeekOffset(0)}
-                            className="text-xs font-semibold text-white/90 hover:text-white underline underline-offset-2"
-                        >
-                            Ir a esta semana
-                        </button>
-                    )}
                 </div>
             </div>
 
