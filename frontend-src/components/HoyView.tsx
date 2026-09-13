@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
-import type { ClassData, Course, AcademicConfiguration, AgendaNote, Task, Meeting, View } from '../types';
+import type { ClassData, Course, AcademicConfiguration, AgendaNote, Task, Meeting, View, Holiday } from '../types';
 import type { Absence } from '../types/api';
 import ClassLabel from './ClassLabel';
 import BannerCostero from './BannerCostero';
@@ -8,6 +8,7 @@ import Input from './Input';
 import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange, formatFechaEs, formatClassLabel, TIPO_REUNION_LABEL } from '../utils';
 import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon, ArrowUpTrayIcon, ExclamationTriangleIcon, SparklesIcon, ListBulletIcon } from './Icons';
 import { PALETTE } from '../theme/palette';
+import { COLOR_POR_TIPO_FESTIVO } from './calendar/calendarColors';
 import DateNavButton from './DateNavButton';
 import { computeDashboardNotices, type DashboardNoticeKind } from '../services/dashboardNotices';
 import { useTrabajosIA, type ResultadoTrabajoSA, type ResultadoTrabajoInstrumento } from '../hooks/useTrabajosIA';
@@ -56,6 +57,12 @@ const NOTICE_TONE_CLASS: Record<'warn' | 'alert', string> = {
 const NOTICE_TONE_STYLE: Record<'warn' | 'alert', React.CSSProperties | undefined> = {
     warn: { color: PALETTE.sand.header },
     alert: undefined,
+};
+
+const HOLIDAY_LABEL: Record<NonNullable<Holiday['type']>, string> = {
+    festivo: 'Festivo',
+    no_lectivo: 'Día no lectivo',
+    vacaciones: 'Vacaciones',
 };
 
 interface HoyViewProps {
@@ -112,6 +119,17 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     const viewDate = new Date(fechaSeleccionada);
     const dow = getDayOfWeek1a7(viewDate);
 
+    // El criterio es el mismo que Agenda y Calendario: los rangos incluyen
+    // ambos extremos. Así, al navegar a un día no lectivo no se aparenta que
+    // el horario sigue teniendo clases.
+    const holidaySelected = useMemo((): Holiday | undefined => {
+        const ranges = (academicConfiguration.holidays ?? []).filter(h => h.startDate && h.endDate);
+        return ranges.find(h => h.startDate <= fechaSeleccionada && fechaSeleccionada <= h.endDate);
+    }, [academicConfiguration.holidays, fechaSeleccionada]);
+    const holidayType = holidaySelected?.type ?? 'festivo';
+    const holidayLabel = HOLIDAY_LABEL[holidayType];
+    const holidayColor = COLOR_POR_TIPO_FESTIVO[holidayType];
+
     // Fecha del día mostrado (sigue al selector de día), en formato largo.
     // En español los días de la semana van en minúscula salvo que empiecen
     // la frase — aquí siempre van a mitad ("Horario de hoy, miércoles..."),
@@ -128,7 +146,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     const handleDiaSiguiente = () => setFechaSeleccionada(toYYYYMMDD(addDays(viewDate, 1)));
 
     const construirSlots = (diaSemana: number): SlotHoy[] => {
-        if (diaSemana > 5) return [];
+        if (diaSemana > 5 || holidaySelected) return [];
         const rows: SlotHoy[] = [];
         classes.forEach(c => {
             (c.schedule || []).forEach(slot => {
@@ -148,10 +166,10 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     // Horario del día que se está navegando (para el panel "Horario de...").
     // construirSlots excluida a propósito: es una función recreada en cada
     // render, pero solo lee `classes` y `periods` (además de su propio
-    // parámetro `dow`), y las tres ya están en este array — no hay nada más
-    // de lo que depender.
+    // parámetro `dow`), y las tres ya están en este array — junto con el
+    // festivo de la fecha navegada, que también anula el horario.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const slotsDia: SlotHoy[] = useMemo(() => construirSlots(dow), [classes, dow, periods]);
+    const slotsDia: SlotHoy[] = useMemo(() => construirSlots(dow), [classes, dow, periods, holidaySelected]);
 
     // Compara la hora REAL contra el horario del día navegado (no
     // necesariamente hoy) para saber qué franja está en curso ahora mismo;
@@ -468,7 +486,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                 </div>
 
                 <div className="bg-white rounded-xl shadow-sm border overflow-hidden h-full flex flex-col">
-                    <div className="px-4 py-2 flex items-center gap-1.5 text-white text-sm font-semibold" style={{ backgroundColor: PALETTE.blue.header }}>
+                    <div className="px-4 py-2 flex items-center gap-1.5 text-white text-sm font-semibold" style={{ backgroundColor: holidaySelected ? holidayColor : PALETTE.blue.header }}>
                         <ClockIcon className="w-4 h-4 flex-shrink-0" />
                         <h3>{esHoy ? `Horario de hoy, ${diaSemanaLargo} ${fechaLarga}` : `Horario del ${diaSemanaLargo} ${fechaLarga}`}</h3>
                     </div>
@@ -476,7 +494,11 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                     {slotsDia.length === 0 ? (
                         <div className="flex flex-col items-center justify-center text-center py-4">
                             <img src="/illustrations/calendar-check.png" alt="" className="w-40 h-40 object-contain pointer-events-none select-none mb-2" />
-                            <p className="text-sm text-slate-400">{esHoy ? 'No hay clases hoy.' : 'No hay clases ese día.'}</p>
+                            <p className="text-sm text-slate-400">
+                                {holidaySelected
+                                    ? `${holidayLabel}${holidaySelected.name ? `: ${holidaySelected.name}` : ''}.`
+                                    : (esHoy ? 'No hay clases hoy.' : 'No hay clases ese día.')}
+                            </p>
                         </div>
                     ) : (
                         <div className="space-y-1">

@@ -27,47 +27,65 @@ concreta, es exactamente el caso de uso previsto.
 
 ## Estructura del repositorio
 
-- [`frontend-src/`](frontend-src/) — la aplicación (React + TypeScript + Vite): toda
-  la lógica de dominio (clases, calificaciones, currículo, programación...) vive aquí,
-  serializada como una base SQLite completa en el propio navegador (`sql.js`) que se
-  sube/descarga entera del backend. Ver su [README](frontend-src/README.md) para
-  desarrollo local.
-- [`api/`](api/) — backend mínimo (FastAPI + PostgreSQL) que solo guarda/lee ese blob
-  SQLite tal cual, más un endpoint para parsear el PDF oficial de horario del
-  profesorado. Sin lógica de dominio propia: toda vive en el frontend.
+- [`frontend-src/`](frontend-src/) — aplicación React + TypeScript + Vite. En web
+  consume una API REST granular; en escritorio usa Tauri con el mismo contrato de API.
+- [`api/`](api/) — API FastAPI respaldada por PostgreSQL. Persiste alumnado, cursos,
+  matrículas, calificaciones, currículo, agenda, reuniones y demás entidades en tablas
+  relacionales, versionadas mediante migraciones SQL.
+- [`frontend-src/src-tauri/`](frontend-src/src-tauri/) — variante de escritorio con
+  SQLite local y el mismo modelo relacional.
 - [`compose.yaml`](compose.yaml) y [`nginx/`](nginx/) — ejemplo de despliegue con
   Docker Compose (nginx sirviendo los estáticos + proxy a la API). Sirve como
   referencia, no como receta única: cada centro puede desplegar esto como prefiera.
 
 ## Arquitectura y persistencia
 
-El frontend mantiene una base de datos SQLite completa en memoria en el navegador
-(vía `sql.js`) con autoguardado a los 1.5s de cada cambio: exporta la base entera y la
-sube al backend (`PUT /api/db`), que la persiste como un único blob binario en
-Postgres (una fila, sin modelo relacional propio — todo el dominio vive en el SQLite
-serializado). Al cargar, el frontend descarga ese blob (`GET /api/db`) y lo abre en
-memoria. Esto permite acceder desde varios dispositivos y hacer copias de seguridad
-centralizadas, a costa de necesitar un backend desplegado (a diferencia del
-CuadernMestre original, que no necesita servidor alguno).
+La arquitectura del blob SQLite único se retiró en la migración
+`0006_retire_blob_and_student_photos.sql`. En web, cada operación se realiza contra
+la API y las tablas relacionales de PostgreSQL. En escritorio, Tauri usa un archivo
+SQLite local también relacional. Las menciones a “blob” que aún aparezcan en comentarios
+son contexto de la migración, no el mecanismo de persistencia actual.
+
+Las copias de seguridad son exportaciones JSON de las tablas de dominio. Una
+restauración sustituye el contenido actual de esas tablas: conserva una exportación
+reciente antes de actualizar o importar datos y prueba primero sobre una copia de la
+base de datos. Las migraciones se aplican al iniciar la API y son solo hacia delante;
+para una actualización despliega una única instancia de la API hasta confirmar que han
+terminado.
 
 ## Desplegar tu propia instancia
 
 ```bash
-# Backend: aplica el esquema de la base de datos automáticamente al arrancar
-docker compose up -d --build profe-api
-
-# Frontend: compilar y servir los estáticos (sin pipeline de CI en este repo)
 cd frontend-src
-npm install
+npm ci
+npm run lint
+npm test
 npm run build
-# copiar dist/* al directorio que sirva tu nginx (ver compose.yaml/nginx/default.conf)
+cd ..
+docker compose up -d --build profe-api
 ```
 
 Necesitas además una base de datos PostgreSQL accesible y un archivo `.env` (no
-incluido, contiene credenciales) en la raíz con `DATABASE_URL` para `profe-api` — ver
-`compose.yaml` y `api/app/services/db.py`. `X-authentik-username` (o adaptar
-`api/app/services/auth.py`) si quieres poner autenticación delante; el backend no
-implementa su propio login.
+incluido, contiene credenciales) en la raíz con `DATABASE_URL` para `profe-api`.
+`GROQ_API_KEY` es opcional y habilita las funciones que usan Groq.
+
+`compose.yaml` no es una instalación autónoma: presupone una PostgreSQL y las redes
+Docker externas `proxy` y `db-shared`; también presupone que el volumen de Nginx ya
+contiene `frontend-src/dist/`.
+
+### Autenticación y exposición de red
+
+El backend no implementa inicio de sesión propio: sus rutas de datos comprueban
+`X-authentik-username`, que debe inyectar un proxy de confianza como Authentik mediante
+forward auth. No expongas `profe-api` directamente ni permitas que clientes no
+confiables lleguen a ella: una petición que pueda definir esa cabecera puede suplantar
+una identidad. El proxy perimetral debe autenticar, eliminar o sobrescribir cualquier
+`X-authentik-username` recibido del cliente y reenviar la API solo desde una red
+interna.
+
+El endpoint `/health` únicamente confirma que el proceso HTTP responde; no comprueba
+PostgreSQL. Añade una comprobación de base de datos en la monitorización antes de usarlo
+como señal de disponibilidad.
 
 ## Licencia y atribución
 

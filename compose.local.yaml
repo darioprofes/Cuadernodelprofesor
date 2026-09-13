@@ -1,0 +1,37 @@
+# Base de datos exclusiva para desarrollo en este equipo.
+# Arranque: docker compose --env-file .env.local -f compose.local.yaml up -d
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cuaderno-local-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-cuaderno_dev}
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-cuaderno}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Define LOCAL_POSTGRES_PASSWORD en .env.local}
+    ports:
+      # Solo el propio PC puede conectarse; no se publica en la red local.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - cuaderno_local_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build: ./api
+    container_name: cuaderno-local-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${LOCAL_POSTGRES_USER:-cuaderno}:${LOCAL_POSTGRES_PASSWORD:?Define LOCAL_POSTGRES_PASSWORD en .env.local}@db:5432/${LOCAL_POSTGRES_DB:-cuaderno_dev}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # La API solo se publica al propio PC; Vite la usa mediante su proxy.
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  cuaderno_local_postgres:

@@ -5,12 +5,15 @@ elCordones (licencia CC BY-NC 4.0, ver [LICENSE](LICENSE)). Es una aplicación w
 la gestión académica diaria del profesorado: clases y alumnado, calificaciones por
 criterios LOMLOE, currículo, programación didáctica, horario, agenda y diario de clase.
 
-**Esta carpeta es solo el frontend.** A diferencia del CuadernMestre original —que
-guarda todo en el propio navegador (IndexedDB) sin ningún servidor—, esta variante
-persiste los datos en un backend propio (ver [`../api`](../api)) respaldado por
-PostgreSQL, para poder acceder desde varios dispositivos y hacer copias de seguridad
-centralizadas. Ver el [README de la raíz del repositorio](../README.md) para la
-arquitectura completa y cómo desplegar ambas partes juntas.
+**Esta carpeta es solo el frontend.** La aplicación web usa una API REST granular
+respaldada por PostgreSQL (ver [`../api`](../api)); la variante de escritorio Tauri
+resuelve ese mismo contrato contra un SQLite local relacional. Ya no se sincroniza un
+blob SQLite completo. Ver el [README de la raíz](../README.md) para la arquitectura y
+el despliegue.
+
+Las copias de seguridad son exportaciones JSON de las tablas de dominio. Restaurarlas
+sustituye los datos actuales, así que conviene exportar una copia antes de importar y
+usar archivos de una versión compatible.
 
 ## Desarrollo local del frontend
 
@@ -19,13 +22,26 @@ proxy como Nginx, ver el README raíz) para que la aplicación pueda cargar y gu
 datos — sin él, la app arranca pero no persiste nada entre recargas.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Node.js 20+ recomendado. `npm run build` genera los estáticos en `dist/`, listos para
-servir con cualquier servidor web (ver el README raíz para el despliegue completo con
-Docker Compose).
+Node.js 20+ recomendado. Las comprobaciones disponibles son:
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+`npm run build` genera los estáticos en `dist/`, listos para servir con cualquier
+servidor web (ver el README raíz para el despliegue completo con Docker Compose).
+
+La API web requiere una cabecera de identidad inyectada por un proxy de autenticación.
+En desarrollo, usa un proxy local que reproduzca ese contrato; llamar a la API
+directamente sin él devuelve `401`. No configures secretos del servidor en el
+frontend: `DATABASE_URL` y las claves de proveedores pertenecen al `.env` de la
+raíz y no se versionan.
 
 ## Vista previa de la aplicación
 
