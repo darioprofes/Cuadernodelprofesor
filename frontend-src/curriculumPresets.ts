@@ -166,6 +166,20 @@ export const CURRICULOS_PROPIOS: CurriculumPreset[] = [
     { id: 'tcb2', codigo: 'TCB', curso: 2, variante: null, ruta: '/curriculos-propios/tcb2.csv', etiqueta: 'TCB · 2º ESO (Taller de Competencias Básicas)', oficial: false, etapa: 'eso' , materia: 'Taller de Competencias Básicas' },
 ];
 
+// Nomenclatura usada por SAUCE/Peñalara en los horarios del centro. Solo
+// afecta al código mostrado y a su etiqueta; ni los ids ni los CSV cambian.
+const SIGLAS_SAUCE: Record<string, string> = {
+    'Biología y Geología': 'ByG', 'Cultura Clásica': 'CCL', 'Digitalización': 'DIG', 'Digitalización Aplicada': 'DIA', 'Expresión Artística': 'EAR', 'Economía y Emprendimiento': 'EyE', 'Educación Física': 'EDF', 'Educación Plástica, Visual y Audiovisual': 'EPV', 'Educación en Valores Cívicos y Éticos': 'VCE', 'Formación y Orientación Personal y Profesional': 'FOP', 'Física y Química': 'FyQ', 'Geografía e Historia': 'GeH', 'Proyecto de Emprendimiento Social o Empresarial': 'PES', 'Tecnología y Digitalización': 'TyD',
+    'Anatomía Aplicada': 'ANA', 'Ciencias Generales': 'CCG', 'Empresa y Diseño de Modelos de Negocio': 'EDM', 'Historia de España': 'HIE', 'Literatura Universal': 'LUN', 'Matemáticas Generales': 'MG', 'Psicología y Sociedad': 'PSI',
+};
+const SIGLAS_SAUCE_POR_CURSO: Record<string, string> = {
+    'bachillerato:1:Dibujo Técnico': 'DITI', 'bachillerato:2:Dibujo Técnico': 'DITII', 'bachillerato:1:Latín': 'LATI', 'bachillerato:2:Latín': 'LATII', 'bachillerato:1:Lengua Asturiana y Literatura': 'LALI', 'bachillerato:2:Lengua Asturiana y Literatura': 'LALII', 'bachillerato:1:Lengua Castellana y Literatura': 'LCLI', 'bachillerato:2:Lengua Castellana y Literatura': 'LCLII', 'bachillerato:1:Matemáticas': 'MATI', 'bachillerato:2:Matemáticas': 'MATII', 'bachillerato:1:Matemáticas Aplicadas a las Ciencias Sociales': 'MCSI', 'bachillerato:2:Matemáticas Aplicadas a las Ciencias Sociales': 'MCSII', 'bachillerato:1:Tecnología e Ingeniería': 'TII', 'bachillerato:2:Tecnología e Ingeniería': 'TIII',
+};
+for (const preset of [...CURRICULOS_OFICIALES, ...CURRICULOS_OFICIALES_BACHILLERATO]) {
+    const code = SIGLAS_SAUCE_POR_CURSO[`${preset.etapa}:${preset.curso}:${preset.materia}`] || SIGLAS_SAUCE[preset.materia];
+    if (code) { preset.codigo = code; preset.etiqueta = preset.etiqueta.replace(/^[^·]+(?= · )/, code); }
+}
+
 export const TODOS_LOS_PRESETS: CurriculumPreset[] = [...CURRICULOS_OFICIALES, ...CURRICULOS_OFICIALES_BACHILLERATO, ...CURRICULOS_PROPIOS];
 
 // ESO y Bachillerato comparten numeración de curso (1º-2º de Bachillerato
