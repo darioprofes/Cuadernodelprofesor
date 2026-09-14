@@ -21,6 +21,12 @@ Necesita el backend (`../api`) corriendo y accesible en `/api/` (normalmente ví
 proxy como Nginx, ver el README raíz) para que la aplicación pueda cargar y guardar
 datos — sin él, la app arranca pero no persiste nada entre recargas.
 
+### Gestor de dependencias
+
+Este proyecto usa exclusivamente **npm**. El archivo que fija las versiones es
+`package-lock.json`; no se debe ejecutar `pnpm` ni `yarn` en esta carpeta. Una
+protección de `preinstall` cancela esas instalaciones por error.
+
 ```bash
 npm ci
 npm run dev

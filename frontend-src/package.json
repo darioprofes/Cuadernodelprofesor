@@ -3,7 +3,13 @@
   "private": true,
   "version": "0.3.1",
   "type": "module",
+  "packageManager": "npm@11.17.0",
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
   "scripts": {
+    "preinstall": "node -e \"if (!process.env.npm_config_user_agent?.startsWith('npm/')) { console.error('Este proyecto usa npm. Ejecuta npm ci o npm install, no pnpm ni yarn.'); process.exit(1) }\"",
     "dev": "vite",
     "dev:tauri": "vite --port 3001 --strictPort",
     "build": "vite build",
