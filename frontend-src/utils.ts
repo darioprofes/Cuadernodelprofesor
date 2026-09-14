@@ -2,6 +2,7 @@ import type { MouseEvent } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { Category, ClassData, Course, EvaluationPeriod, Meeting, SessionDetail, Student } from './types';
+import { TODOS_LOS_PRESETS } from './curriculumPresets';
 
 // Nombre para mostrar al usuario: orden natural "Nombre Apellido1 Apellido2"
 export const getNombreCompleto = (student: Student): string =>
@@ -171,7 +172,21 @@ export const getClassAccentColor = (materia: string, hueOverride?: number): Clas
     };
 };
 
-const CONECTORES = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'y', 'en', 'a', 'para', 'con', 'al']);
+const CONECTORES = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'y', 'o', 'en', 'a', 'para', 'con', 'al']);
+const CONJUNCIONES_SIGLA = new Set(['y', 'o']);
+
+// Las materias con currículo oficial ya traen su abreviatura publicada. Se
+// prefiere a cualquier regla automática: evita colisiones y conserva los
+// códigos que el profesorado reconoce (p.ej. "Física" -> "FIS").
+const SIGLAS_PREFERIDAS = new Map<string, string>();
+
+TODOS_LOS_PRESETS
+    .filter(preset => preset.oficial)
+    .forEach(preset => {
+        if (!SIGLAS_PREFERIDAS.has(preset.materia)) {
+            SIGLAS_PREFERIDAS.set(preset.materia, preset.codigo);
+        }
+    });
 
 // Siglas calculadas solo para mostrar en sitios muy justos de espacio (la
 // cuadrícula del Horario Semanal, la Agenda o el aviso de grupo/nivel de
@@ -181,6 +196,9 @@ const CONECTORES = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'y', 'en', 'a
 // grupo importadas del PDF) se conservan tal cual.
 export const getSiglas = (materia: string): string => {
     const limpio = materia.trim();
+    const siglaPreferida = SIGLAS_PREFERIDAS.get(limpio);
+
+    if (siglaPreferida) return siglaPreferida;
 
     if (limpio.length <= 4) return limpio;
 
@@ -191,25 +209,35 @@ export const getSiglas = (materia: string): string => {
         // si no, un nivel de referencia como "1º Bachillerato (Ciencias y
         // Tecnología)" sacaba siglas con un "(" suelto en medio.
         .map(w => w.replace(/^[^\p{L}\p{N}]+/u, ''))
-        .filter(w => w.length > 0 && !CONECTORES.has(w.toLowerCase()));
+        .filter(w => w.length > 0);
 
     if (palabras.length === 0) return limpio.slice(0, 4).toUpperCase();
 
-    // Una materia de una sola palabra se recorta directamente. Para dos
-    // palabras, una inicial por palabra se quedaba demasiado críptica (p.ej.
-    // "Física y Química" -> "FQ"), así que se toma también una segunda
-    // letra de la primera. Con tres o más, las iniciales son más legibles.
-    if (palabras.length === 1) return palabras[0].slice(0, 4).toUpperCase();
+    const palabrasSignificativas = palabras.filter(w => !CONECTORES.has(w.toLowerCase()));
 
-    const siglas = palabras.map(w => w[0].toUpperCase()).join('');
-
-    if (siglas.length === 2) {
-        return `${palabras[0].slice(0, 2)}${palabras[1][0]}`.toUpperCase();
+    // Una materia de una sola palabra se recorta directamente. En las
+    // compuestas se usa solo una letra por cada palabra significativa. Las
+    // conjunciones "y" y "o" se conservan en minúscula si aún caben en cuatro
+    // caracteres ("Biología y Geología" -> "ByG"); si no, se omiten para
+    // mantener un código compacto ("Biología Geología y Ciencias Ambientales"
+    // -> "BGCA"). Los demás conectores nunca aportan una inicial.
+    if (palabrasSignificativas.length <= 1) {
+        return (palabrasSignificativas[0] || palabras[0]).slice(0, 4).toUpperCase();
     }
 
-    if (siglas.length >= 3) return siglas.slice(0, 4);
+    const siglasSinConjuncion = palabras
+        .filter(w => !CONECTORES.has(w.toLowerCase()))
+        .map(w => w[0].toUpperCase())
+        .join('');
 
-    return limpio.slice(0, 4).toUpperCase();
+    const siglasConConjuncion = palabras
+        .filter(w => !CONECTORES.has(w.toLowerCase()) || CONJUNCIONES_SIGLA.has(w.toLowerCase()))
+        .map(w => CONJUNCIONES_SIGLA.has(w.toLowerCase()) ? w.toLowerCase() : w[0].toUpperCase())
+        .join('');
+
+    if (siglasConConjuncion.length <= 4) return siglasConConjuncion;
+
+    return siglasSinConjuncion.slice(0, 4);
 };
 
 // Divide un nombre completo en sus partes. Formatos aceptados:

@@ -31,7 +31,7 @@ export const CURRICULOS_OFICIALES: CurriculumPreset[] = [
     { id: 'bg4', codigo: 'BG', curso: 4, variante: null, ruta: '/curriculos-oficiales/bg4.csv', etiqueta: 'BG · 4º ESO', oficial: true, etapa: 'eso' , materia: 'Biología y Geología' },
     { id: 'cc2', codigo: 'CC', curso: 2, variante: null, ruta: '/curriculos-oficiales/cc2.csv', etiqueta: 'CC · 2º ESO', oficial: true, etapa: 'eso' , materia: 'Cultura Clásica' },
     { id: 'dig4', codigo: 'DIG', curso: 4, variante: null, ruta: '/curriculos-oficiales/dig4.csv', etiqueta: 'DIG · 4º ESO', oficial: true, etapa: 'eso' , materia: 'Digitalización' },
-    { id: 'diga1', codigo: 'DIGA', curso: 1, variante: null, ruta: '/curriculos-oficiales/diga1.csv', etiqueta: 'DIGA · 1º ESO', oficial: true, etapa: 'eso' , materia: 'Digitalización Aplicada' },
+    { id: 'diga1', codigo: 'DIA', curso: 1, variante: null, ruta: '/curriculos-oficiales/diga1.csv', etiqueta: 'DIA · 1º ESO', oficial: true, etapa: 'eso' , materia: 'Digitalización Aplicada' },
     { id: 'eart4', codigo: 'EART', curso: 4, variante: null, ruta: '/curriculos-oficiales/eart4.csv', etiqueta: 'EART · 4º ESO', oficial: true, etapa: 'eso' , materia: 'Expresión Artística' },
     { id: 'eco4', codigo: 'ECO', curso: 4, variante: null, ruta: '/curriculos-oficiales/eco4.csv', etiqueta: 'ECO · 4º ESO', oficial: true, etapa: 'eso' , materia: 'Economía y Emprendimiento' },
     { id: 'ef1', codigo: 'EF', curso: 1, variante: null, ruta: '/curriculos-oficiales/ef1.csv', etiqueta: 'EF · 1º ESO', oficial: true, etapa: 'eso' , materia: 'Educación Física' },
