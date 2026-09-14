@@ -75,6 +75,135 @@ const toYYYYMMDD = (date: Date): string => {
     return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 };
 
+// En vertical, una tabla con alumnado × actividades convierte la calificación
+// en un desplazamiento horizontal continuo. Esta alternativa conserva el
+// mismo modal de nota, pero presenta una única actividad y toda la clase en
+// una lista táctil. Solo se muestra por CSS en móvil vertical: ver index.css.
+interface MobileActivityGradebookProps {
+  assignments: Assignment[];
+  categories: Category[];
+  students: Student[];
+  gradesMap: Map<string, Grade>;
+  studentAssignmentScores: Map<string, Map<string, number | null>>;
+  academicConfiguration: AcademicConfiguration;
+  mostrarFotos: boolean;
+  accentColor: string;
+  onOpenGradeEntry: (student: Student, assignment: Assignment) => void;
+  onEditAssignment: (assignment: Assignment) => void;
+  onImportGrades: (assignment: Assignment) => void;
+  onCreateCategory: () => void;
+  onCreateAssignment: (category: Category) => void;
+}
+
+const MobileActivityGradebook: React.FC<MobileActivityGradebookProps> = ({
+  assignments, categories, students, gradesMap, studentAssignmentScores,
+  academicConfiguration, mostrarFotos, accentColor, onOpenGradeEntry,
+  onEditAssignment, onImportGrades, onCreateCategory, onCreateAssignment,
+}) => {
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState('');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (!categories.some(category => category.id === selectedCategoryId)) {
+      setSelectedCategoryId(categories[0]?.id ?? '');
+    }
+  }, [categories, selectedCategoryId]);
+
+  const selectedCategory = categories.find(category => category.id === selectedCategoryId);
+  const assignmentsForCategory = assignments.filter(assignment => assignment.categoryId === selectedCategoryId);
+  useEffect(() => {
+    if (!assignmentsForCategory.some(assignment => assignment.id === selectedAssignmentId)) {
+      setSelectedAssignmentId(assignmentsForCategory[0]?.id ?? '');
+    }
+  }, [assignmentsForCategory, selectedAssignmentId]);
+
+  const selectedAssignment = assignmentsForCategory.find(assignment => assignment.id === selectedAssignmentId);
+  const visibleStudents = students.filter(student =>
+    getNombreCompleto(student).toLocaleLowerCase('es-ES').includes(search.trim().toLocaleLowerCase('es-ES')),
+  );
+
+  if (categories.length === 0) {
+    return (
+      <div className="gradebook-mobile-activity p-4 space-y-3">
+        <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+          No hay categorías en esta evaluación todavía.
+        </p>
+        <button type="button" onClick={onCreateCategory} className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">Nueva categoría</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="gradebook-mobile-activity p-4 space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={onCreateCategory} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Nueva categoría</button>
+        <button type="button" onClick={() => selectedCategory && onCreateAssignment(selectedCategory)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40" disabled={!selectedCategory}>Nueva actividad</button>
+      </div>
+
+      <div>
+        <label htmlFor="mobile-category-picker" className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Categoría</label>
+        <Select id="mobile-category-picker" value={selectedCategoryId} onChange={event => setSelectedCategoryId(event.target.value)} className="w-full font-semibold">
+          {categories.map(category => <option key={category.id} value={category.id}>{category.name} ({category.weight}%)</option>)}
+        </Select>
+      </div>
+
+      {assignmentsForCategory.length === 0 || !selectedAssignment ? (
+        <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">Esta categoría aún no tiene actividades.</p>
+      ) : (
+        <>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="mobile-assignment-picker" className="text-xs font-semibold uppercase tracking-wide text-slate-500">Actividad</label>
+              <div className="flex items-center gap-1">
+                <IconButton label="Editar actividad" size="sm" onClick={() => onEditAssignment(selectedAssignment)}><PencilIcon className="w-3.5 h-3.5" /></IconButton>
+                <IconButton label="Importar notas en lote" tone="primary" size="sm" onClick={() => onImportGrades(selectedAssignment)}><ArrowUpTrayIcon className="w-3.5 h-3.5" /></IconButton>
+              </div>
+            </div>
+            <Select id="mobile-assignment-picker" value={selectedAssignmentId} onChange={event => setSelectedAssignmentId(event.target.value)} className="w-full font-semibold">
+              {assignmentsForCategory.map(assignment => <option key={assignment.id} value={assignment.id}>{assignment.shortName || assignment.name}</option>)}
+            </Select>
+          </div>
+
+          {students.length > 6 && (
+        <div className="relative">
+          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar alumn@…" className="w-full pl-9" />
+        </div>
+          )}
+
+          <p className="text-xs text-slate-500">Toca un alumno para registrar o revisar su calificación.</p>
+          <div className="space-y-1.5">
+        {visibleStudents.map((student, index) => {
+          const score = studentAssignmentScores.get(student.id)?.get(selectedAssignment.id) ?? null;
+          const rawGrade = selectedAssignment.puntuacionMaxima != null
+            ? gradesMap.get(`${student.id}-${selectedAssignment.id}`)?.directScoreRaw
+            : undefined;
+          const displayValue = rawGrade != null ? String(rawGrade) : (score?.toFixed(2) ?? '—');
+          return (
+            <button
+              key={student.id}
+              type="button"
+              onClick={() => onOpenGradeEntry(student, selectedAssignment)}
+              className="w-full min-h-12 rounded-lg border border-slate-200 bg-white px-3 py-2 flex items-center gap-2 text-left shadow-sm hover:border-blue-300 hover:bg-blue-50/40 active:bg-blue-100/50 transition-colors"
+            >
+              <span className="w-5 text-right text-xs font-mono text-slate-400 flex-shrink-0">{index + 1}</span>
+              {mostrarFotos && <StudentAvatar student={student} bgColor={accentColor} className="w-8 h-8 text-[10px]" />}
+              <span className="min-w-0 flex-1 truncate font-medium text-sm text-slate-800">{getNombreCompleto(student)}</span>
+              <span className={`min-w-12 rounded-md px-2 py-1 text-center text-sm font-bold ${getGradeStyleClasses(score, academicConfiguration)}`}>
+                {displayValue}
+              </span>
+            </button>
+          );
+        })}
+        {visibleStudents.length === 0 && <p className="py-4 text-center text-sm text-slate-500">No hay alumnado que coincida con la búsqueda.</p>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const { classData, allClasses, allCourses, criteria, specificCompetences, keyCompetences, programmingUnits, academicConfiguration, evaluationTools, setActiveClassId, onCopyAssignment } = props;
   const { evaluationPeriods } = academicConfiguration;
@@ -1077,7 +1206,24 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
 
       {gradebookTab === 'calificaciones' && (
       <>
-      <div className="overflow-x-auto">
+      {activePeriodId !== 'final' && (
+        <MobileActivityGradebook
+          assignments={assignmentsForPeriod}
+          categories={categoriesForPeriod}
+          students={sortedStudents}
+          gradesMap={gradesMap}
+          studentAssignmentScores={studentAssignmentScores}
+          academicConfiguration={academicConfiguration}
+          mostrarFotos={mostrarFotos}
+          accentColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg}
+          onOpenGradeEntry={handleOpenGradeEntry}
+          onEditAssignment={handleEditAssignment}
+          onImportGrades={assignment => { setAssignmentForImport(assignment); setIsBulkImportModalOpen(true); }}
+          onCreateCategory={() => { setCategoryToEdit(null); setIsCategoryModalOpen(true); }}
+          onCreateAssignment={category => { setActiveCategory(category); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }}
+        />
+      )}
+      <div className={activePeriodId === 'final' ? 'overflow-x-auto' : 'gradebook-desktop-table overflow-x-auto'}>
         <table className="min-w-full text-sm text-left">
           {/* Fix: Header set to sticky top-0 to stick to the very top of scroll view area */}
           <thead className="text-xs uppercase sticky top-0 z-20 shadow-sm">

@@ -20,3 +20,19 @@
   --color-primary: #092152;
   --color-green-header: #0a9335;
 }
+
+/* El Cuaderno conserva su tabla completa salvo en móvil vertical. Ahí una
+   actividad cada vez permite calificar sin desplazar columnas lateralmente. */
+.gradebook-mobile-activity {
+  display: none;
+}
+
+@media (max-width: 767px) and (orientation: portrait) {
+  .gradebook-mobile-activity {
+    display: block;
+  }
+
+  .gradebook-desktop-table {
+    display: none;
+  }
+}
