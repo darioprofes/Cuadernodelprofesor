@@ -158,7 +158,7 @@ const SidebarContent: React.FC<{
                 <p className="lowercase leading-none mt-0.5" style={{ fontFamily: '"Baloo 2", sans-serif', fontWeight: 600, fontSize: '16px', color: PALETTE.blue.base }}>docente</p>
             </div>
         </div>
-        <nav className="flex-1 p-2 space-y-1.5">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
             {NAV_SECTIONS.map(section => {
                 const color = SECTION_COLOR[section.label];
                 const items = section.items.map(item => {
@@ -231,7 +231,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenFavo
         <>
             {/* Escritorio: columna fija lateral */}
             {!hidden && (
-                <aside className="hidden md:flex flex-col w-56 flex-shrink-0 border-r border-white/10 sticky top-0 min-h-screen" style={{ backgroundColor: SIDEBAR_BG }}>
+                <aside className="hidden md:flex flex-col w-56 flex-shrink-0 h-full border-r border-white/10" style={{ backgroundColor: SIDEBAR_BG }}>
                     <SidebarContent activeView={activeView} onNavigate={handleNavigateDesktop} onOpenFavoritos={onOpenFavoritos} />
                 </aside>
             )}

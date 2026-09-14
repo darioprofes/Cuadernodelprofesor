@@ -1089,7 +1089,7 @@ const App = () => {
     };
 
     return (
-        <div className="app-container font-sans text-slate-800 bg-slate-100 min-h-screen flex">
+        <div className="app-container font-sans text-slate-800 bg-slate-100 h-[100dvh] overflow-hidden flex">
             <Sidebar activeView={activeView} setActiveView={setActiveView} onOpenFavoritos={() => setIsFavoritosOpen(true)} hidden={sidebarHidden} />
 
             {/* Un único control tipo "colapsar ribbon" por zona, con flecha
@@ -1116,7 +1116,7 @@ const App = () => {
                 {topBarHidden ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4 rotate-180" />}
             </button>
 
-            <div className="flex-1 flex flex-col min-w-0 pt-14 md:pt-0">
+            <div className="flex-1 flex flex-col min-w-0 min-h-0 pt-14 md:pt-0">
                 <header className={`${topBarHidden ? 'flex md:hidden' : 'flex'} border-b border-white/10 px-4 py-2 items-center justify-end sticky top-0 z-30`} style={{ backgroundColor: SIDEBAR_BG }}>
                     <div className="flex items-center gap-2">
                         {/* Icono de enlace genérico junto a perfil/ajustes (pedido
@@ -1172,7 +1172,7 @@ const App = () => {
                     columna del alumnado, sin poder desplazarla (bug real
                     reportado, 2026-09-09) -- <main> solo debe manejar scroll
                     vertical, el horizontal es cosa de cada vista. */}
-                <main ref={mainRef} className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto overflow-x-hidden" style={backgroundPatternStyle}>
+                <main ref={mainRef} className="flex-1 min-h-0 p-4 sm:p-6 lg:p-8 overflow-y-auto overflow-x-hidden" style={backgroundPatternStyle}>
                     {renderContent()}
                 </main>
             </div>

@@ -69,7 +69,6 @@ const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicCon
                     <ClockIcon className="w-6 h-6 flex-shrink-0 text-white/90" />
                     <div>
                         <h2 className="text-xl font-bold text-white">Horario semanal</h2>
-                        <p className="text-sm text-white/80">El mismo horario se aplica durante todo el curso.</p>
                     </div>
                 </div>
             </div>
