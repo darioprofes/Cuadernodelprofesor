@@ -34,6 +34,7 @@ const DAYS = [
 // distintas según la fecha.
 const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicConfiguration, setActiveView, setActiveClassId }) => {
     const periods = academicConfiguration.periods || [];
+    const breakPeriodIndexes = academicConfiguration.breakPeriodIndexes || [];
 
     const grid = useMemo(() => {
         const map = new Map<string, { classId: string; aula?: string; nota?: string }>();
@@ -84,9 +85,11 @@ const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicCon
                         </tr>
                     </thead>
                     <tbody>
-                        {periods.map((periodName, periodIndex) => (
-                            <tr key={periodIndex} className={tableRowClassName}>
-                                <td className={`${tableCellClassName} font-medium text-slate-500 whitespace-nowrap`}>{periodName}</td>
+                        {periods.map((periodName, periodIndex) => {
+                            const isBreak = breakPeriodIndexes.includes(periodIndex);
+                            return (
+                            <tr key={periodIndex} className={`${tableRowClassName} ${isBreak ? 'bg-amber-50/80' : ''}`}>
+                                <td className={`${tableCellClassName} font-medium whitespace-nowrap ${isBreak ? 'border-l-4 border-amber-400 text-amber-900' : 'text-slate-500'}`}>{periodName}</td>
                                 {DAYS.map(day => {
                                     const slot = grid.get(`${day.value}-${periodIndex}`);
                                     const cls = slot ? classes.find(c => c.id === slot.classId) : undefined;
@@ -117,7 +120,7 @@ const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicCon
                                         </>
                                     ) : null;
                                     return (
-                                        <td key={`${day.value}-${periodIndex}`} className="p-1.5 align-top">
+                                        <td key={`${day.value}-${periodIndex}`} className={`p-1.5 align-top ${isBreak ? 'bg-amber-50/80' : ''}`}>
                                             {cls && color ? (
                                                 esAcademica ? (
                                                     <button
@@ -145,7 +148,8 @@ const HorarioView: React.FC<HorarioViewProps> = ({ classes, courses, academicCon
                                     );
                                 })}
                             </tr>
-                        ))}
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>

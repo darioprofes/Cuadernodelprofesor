@@ -1,6 +1,6 @@
 import type { ClassData, Course, EvaluationPeriod, View } from '../types';
 import type { Absence } from '../types/api';
-import { addDays, getMateria, getNombreCompleto, periodoActivoEn, toYYYYMMDD } from '../utils';
+import { addDays, getMateria, getNombreCompleto, getSiglas, periodoActivoEn, toYYYYMMDD } from '../utils';
 
 // Avisos de la franja "Hoy" que van más allá de "próximos eventos": algo
 // excepcional que necesita atención, no estado normal (ver plan). Cada
@@ -51,10 +51,13 @@ export const detectUngradedOverdueAssignments = (
         if (overdueCount === 0) return;
 
         const materia = getMateria(classData, courses);
+        const etiquetaClase = classData.grupo
+            ? `${classData.grupo} - ${getSiglas(materia)}`
+            : getSiglas(materia);
         notices.push({
             id: `ungraded-${classData.id}`,
             kind: 'ungraded',
-            label: `${overdueCount} sin calificar en ${materia}`,
+            label: `Sin calificar en ${etiquetaClase}: ${overdueCount}`,
             tone: 'warn',
             target: { view: 'gradebook', classId: classData.id },
         });

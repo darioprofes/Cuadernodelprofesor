@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { ClassData, Course, AcademicConfiguration } from '../../types';
 import { formatClassLabel } from '../../utils';
 import Modal from '../Modal';
 import Button from '../Button';
 import Input from '../Input';
 import Select from '../Select';
-import BufferedInput from '../BufferedInput';
 import ClassLabel from '../ClassLabel';
 import ImportScheduleModal from '../ImportScheduleModal';
-import { TrashIcon, ChevronDownIcon } from '../Icons';
+import { ChevronDownIcon } from '../Icons';
 import { tableBaseClassName, tableHeadCellClassName, tableHeadRowClassName, tableRowClassName, tableWrapperClassName } from '../../theme/components/Table';
 import { linkClassName } from '../../theme/components/Link';
 import { useCurrentAcademicYear } from '../../hooks/useAcademicYears';
@@ -20,6 +20,60 @@ interface ScheduleSlotInfo {
     aula?: string;
     nota?: string;
 }
+
+const PeriodModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    initialLabel?: string;
+    initialIsBreak?: boolean;
+    onSave: (label: string, isBreak: boolean) => void;
+}> = ({ isOpen, onClose, initialLabel = '', initialIsBreak = false, onSave }) => {
+    const [label, setLabel] = useState(initialLabel);
+    const [isBreak, setIsBreak] = useState(initialIsBreak);
+
+    useEffect(() => {
+        if (isOpen) {
+            setLabel(initialLabel);
+            setIsBreak(initialIsBreak);
+        }
+    }, [isOpen, initialLabel, initialIsBreak]);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const nextLabel = label.trim();
+        if (!nextLabel) return;
+        onSave(nextLabel, isBreak);
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={initialLabel ? 'Editar franja horaria' : 'Añadir franja horaria'} size="md">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="text-xs font-medium text-slate-600">Intervalo de horas</label>
+                    <Input
+                        type="text"
+                        value={label}
+                        onChange={e => setLabel(e.target.value)}
+                        placeholder="Ej.: 11:00-11:30"
+                        className="w-full mt-1"
+                        autoFocus
+                        required
+                    />
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
+                    <input type="checkbox" checked={isBreak} onChange={e => setIsBreak(e.target.checked)} className="rounded border-slate-300 text-amber-500 focus:ring-amber-400" />
+                    Es una franja de recreo
+                </label>
+                <p className="text-xs text-slate-500">Una franja de recreo puede tener asignada una guardia u otra ocupación.</p>
+                <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+                    <Button type="submit" variant="primary">Guardar</Button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
 
 const ScheduleSlotModal: React.FC<{
     isOpen: boolean;
@@ -86,6 +140,20 @@ const ScheduleManager: React.FC<{
     const breakPeriodIndexes = academicConfiguration.breakPeriodIndexes || [];
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [editingSlot, setEditingSlot] = useState<{ day: number; periodIndex: number } | null>(null);
+    const [editingPeriodIndex, setEditingPeriodIndex] = useState<number | null>(null);
+    const [isAddingPeriod, setIsAddingPeriod] = useState(false);
+    const [contextMenu, setContextMenu] = useState<{ index: number; x: number; y: number } | null>(null);
+
+    useEffect(() => {
+        if (!contextMenu) return;
+        const dismiss = () => setContextMenu(null);
+        window.addEventListener('click', dismiss);
+        window.addEventListener('scroll', dismiss, true);
+        return () => {
+            window.removeEventListener('click', dismiss);
+            window.removeEventListener('scroll', dismiss, true);
+        };
+    }, [contextMenu]);
 
     const currentYear = useCurrentAcademicYear();
     const yearId = currentYear.data?.id ?? '';
@@ -133,28 +201,25 @@ const ScheduleManager: React.FC<{
     // cualquier clase de la franja 4 en adelante apuntando a la hora
     // equivocada (mismo tipo de desincronización que el bug real ya
     // encontrado y arreglado en la sincronización desde Excel).
-    const handleRenameFranja = (index: number, value: string) => {
+    const handleSavePeriod = (index: number, value: string, isBreak: boolean) => {
         setAcademicConfiguration(prev => {
             const next = [...(prev.periods || [])];
             next[index] = value;
-            return { ...prev, periods: next };
+            const marked = new Set(prev.breakPeriodIndexes || []);
+            if (isBreak) marked.add(index);
+            else marked.delete(index);
+            return { ...prev, periods: next, breakPeriodIndexes: [...marked].sort((a, b) => a - b) };
         });
     };
 
-    const handleAddFranja = () => {
+    const handleAddFranja = (value: string, isBreak: boolean) => {
         setAcademicConfiguration(prev => ({
             ...prev,
-            periods: [...(prev.periods || []), `Nueva Franja ${(prev.periods?.length ?? 0) + 1}`],
+            periods: [...(prev.periods || []), value],
+            breakPeriodIndexes: isBreak
+                ? [...(prev.breakPeriodIndexes || []), prev.periods?.length ?? 0]
+                : prev.breakPeriodIndexes,
         }));
-    };
-
-    const handleToggleRecreo = (index: number) => {
-        setAcademicConfiguration(prev => {
-            const marked = new Set(prev.breakPeriodIndexes || []);
-            if (marked.has(index)) marked.delete(index);
-            else marked.add(index);
-            return { ...prev, breakPeriodIndexes: [...marked].sort((a, b) => a - b) };
-        });
     };
 
     const handleDeleteFranja = async (index: number) => {
@@ -242,50 +307,29 @@ const ScheduleManager: React.FC<{
                             const isBreak = breakPeriodIndexes.includes(periodIndex);
                             return (
                             <tr key={periodIndex} className={`${tableRowClassName} ${isBreak ? 'bg-amber-50/70' : ''}`}>
-                                <td className="p-1 border-r">
-                                    <div className="flex items-center gap-1">
-                                        <BufferedInput
-                                            value={periodName}
-                                            onCommit={v => handleRenameFranja(periodIndex, v)}
-                                            className="flex-grow text-sm font-medium text-slate-600"
-                                        />
+                                <td
+                                    className={`relative overflow-visible px-3 py-2 border-r text-sm font-medium ${isBreak ? 'text-amber-800' : 'text-slate-600'}`}
+                                    onContextMenu={event => {
+                                        event.preventDefault();
+                                        const rect = event.currentTarget.getBoundingClientRect();
+                                        setContextMenu({
+                                            index: periodIndex,
+                                            x: Math.min(rect.left, window.innerWidth - 180),
+                                            y: Math.min(rect.bottom + 4, window.innerHeight - 96),
+                                        });
+                                    }}
+                                    title="Clic derecho para editar o borrar"
+                                >
+                                    <div className="flex items-center justify-between gap-1">
+                                        <span>{periodName}</span>
                                         <div className="flex flex-col flex-shrink-0">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleMoveFranja(periodIndex, -1)}
-                                                disabled={periodIndex === 0}
-                                                className="text-slate-400 hover:text-slate-700 disabled:opacity-20 disabled:hover:text-slate-400"
-                                                title="Mover arriba"
-                                            >
+                                            <button type="button" onClick={() => void handleMoveFranja(periodIndex, -1)} disabled={periodIndex === 0} className="text-slate-400 hover:text-slate-700 disabled:opacity-20 disabled:hover:text-slate-400" title="Mover arriba">
                                                 <ChevronDownIcon className="w-3 h-3 rotate-180" />
                                             </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleMoveFranja(periodIndex, 1)}
-                                                disabled={periodIndex === periods.length - 1}
-                                                className="text-slate-400 hover:text-slate-700 disabled:opacity-20 disabled:hover:text-slate-400"
-                                                title="Mover abajo"
-                                            >
+                                            <button type="button" onClick={() => void handleMoveFranja(periodIndex, 1)} disabled={periodIndex === periods.length - 1} className="text-slate-400 hover:text-slate-700 disabled:opacity-20 disabled:hover:text-slate-400" title="Mover abajo">
                                                 <ChevronDownIcon className="w-3 h-3" />
                                             </button>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleToggleRecreo(periodIndex)}
-                                            className={`flex-shrink-0 rounded px-1.5 py-1 text-xs font-semibold transition-colors ${isBreak ? 'bg-amber-200 text-amber-900 hover:bg-amber-300' : 'text-slate-400 hover:bg-amber-50 hover:text-amber-800'}`}
-                                            title={isBreak ? 'Quitar la marca de recreo' : 'Marcar como recreo'}
-                                            aria-pressed={isBreak}
-                                        >
-                                            ☕
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleDeleteFranja(periodIndex)}
-                                            className="flex-shrink-0 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                            title="Borrar franja"
-                                        >
-                                            <TrashIcon className="w-3.5 h-3.5" />
-                                        </button>
                                     </div>
                                 </td>
                                 {daysOfWeek.map(day => {
@@ -316,7 +360,7 @@ const ScheduleManager: React.FC<{
                         })}
                         <tr>
                             <td colSpan={daysOfWeek.length + 1} className="p-2">
-                                <button type="button" onClick={handleAddFranja} className={`text-sm ${linkClassName}`}>
+                                <button type="button" onClick={() => setIsAddingPeriod(true)} className={`text-sm ${linkClassName}`}>
                                     + Añadir franja horaria
                                 </button>
                             </td>
@@ -324,7 +368,28 @@ const ScheduleManager: React.FC<{
                     </tbody>
                 </table>
             </div>
-            <p className="mt-3 text-xs text-slate-500">Marca con ☕ las franjas de recreo. Seguirán admitiendo una guardia u otra ocupación, pero no se tratarán como una clase.</p>
+            <p className="mt-3 text-xs text-slate-500">Haz clic derecho sobre una franja para editarla o borrarla. El recreo se marca al crear o editar la franja.</p>
+            {contextMenu && createPortal(
+                <div className="fixed z-50 min-w-36 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg" style={{ left: contextMenu.x, top: contextMenu.y }}>
+                    <button type="button" className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={() => { setEditingPeriodIndex(contextMenu.index); setContextMenu(null); }}>Editar franja</button>
+                    <button type="button" className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50" onClick={() => { void handleDeleteFranja(contextMenu.index); setContextMenu(null); }}>Borrar franja</button>
+                </div>,
+                document.body,
+            )}
+            <PeriodModal
+                isOpen={isAddingPeriod}
+                onClose={() => setIsAddingPeriod(false)}
+                onSave={handleAddFranja}
+            />
+            {editingPeriodIndex !== null && (
+                <PeriodModal
+                    isOpen={true}
+                    onClose={() => setEditingPeriodIndex(null)}
+                    initialLabel={periods[editingPeriodIndex] || ''}
+                    initialIsBreak={breakPeriodIndexes.includes(editingPeriodIndex)}
+                    onSave={(label, isBreak) => handleSavePeriod(editingPeriodIndex, label, isBreak)}
+                />
+            )}
             {editingSlot && (
                 <ScheduleSlotModal
                     isOpen={true}

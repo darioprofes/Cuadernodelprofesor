@@ -534,7 +534,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                                 }`;
                                 const contenido = (
                                     <>
-                                        <span className="text-xs text-slate-400 flex-shrink-0 w-24">{slot.periodName}</span>
+                                        {!slot.isBreak && <span className="text-xs text-slate-400 flex-shrink-0 w-24">{slot.periodName}</span>}
                                         {cls && <ClassLabel classData={cls} courses={courses} className="text-sm font-medium text-slate-700 truncate" />}
                                         {slot.aula && <span className="text-xs text-slate-400 flex-shrink-0">Aula {slot.aula}</span>}
                                     </>
