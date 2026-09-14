@@ -466,6 +466,9 @@ export interface AcademicConfiguration {
   evaluationPeriodWeights?: Record<string, number>;
   layoutMode?: 'mobile' | 'tablet' | 'desktop';
   periods?: string[];
+  // Índices de las franjas que son recreo. Se guardan separados del texto
+  // para que "Recreo" sea una propiedad real y no una materia ficticia.
+  breakPeriodIndexes?: number[];
   defaultStartView?: 'hoy' | 'calendar' | 'gradebook' | 'journal';
   defaultCalendarView?: 'month' | 'week' | 'day';
   gradeScale?: GradeScaleRule[];

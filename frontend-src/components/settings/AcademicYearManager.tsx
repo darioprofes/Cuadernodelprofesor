@@ -139,6 +139,7 @@ const AcademicYearManager: React.FC = () => {
                         yearEndDate={currentYear.data.endDate}
                         yearHolidays={currentYear.data.holidays}
                         yearPeriods={currentYear.data.periods}
+                        yearBreakPeriodIndexes={currentYear.data.breakPeriodIndexes}
                         evaluationPeriods={currentEvaluationPeriods.data ?? []}
                         courses={allCourses.data ?? []}
                         classes={classesLocal}

@@ -16,6 +16,20 @@ import { getMateria, getClassAccentColor, formatFechaEs } from '../utils';
 import { COLOR_POR_TIPO_FESTIVO } from './calendar/calendarColors';
 
 type PlannedContent = { unitName: string, sessionDesc: string, sessionNumber: number } | null;
+type ScheduledJournalItem = {
+    kind: 'class';
+    classData: ClassData;
+    periodIndex: number;
+    periodName: string;
+    plannedContent: PlannedContent;
+    isBreak: boolean;
+};
+type BreakJournalItem = {
+    kind: 'break';
+    periodIndex: number;
+    periodName: string;
+};
+type JournalTimelineItem = ScheduledJournalItem | BreakJournalItem;
 
 interface ClassJournalProps {
   classes: ClassData[];
@@ -201,8 +215,9 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
   // día (p.ej. "RECREO", con el hueco de las 11:00 y el de las 13:20) tiene
   // una anotación independiente por franja, no una compartida para todo el
   // día — JournalEntry incluye periodIndex justo para esto.
-  const scheduledClasses = useMemo(() => {
-      const list: { classData: ClassData, periodIndex: number, periodName: string, plannedContent: PlannedContent }[] = [];
+  const timelineItems = useMemo((): JournalTimelineItem[] => {
+      const list: JournalTimelineItem[] = [];
+      const breakPeriodIndexes = academicConfiguration.breakPeriodIndexes || [];
 
       classes.forEach(c => {
           const slots = c.schedule?.filter(s => s.day === dayOfWeek);
@@ -210,17 +225,28 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
               const planned = getPlannedContent(c, selectedDate);
               slots.forEach(slot => {
                   list.push({
+                      kind: 'class',
                       classData: c,
                       periodIndex: slot.periodIndex,
                       periodName: academicConfiguration.periods?.[slot.periodIndex] || `Hora ${slot.periodIndex + 1}`,
                       plannedContent: planned,
+                      isBreak: breakPeriodIndexes.includes(slot.periodIndex),
                   });
               });
           }
       });
 
+      if (dayOfWeek <= 5) breakPeriodIndexes.forEach(periodIndex => {
+          if (!list.some(item => item.periodIndex === periodIndex)) {
+              list.push({
+                  kind: 'break',
+                  periodIndex,
+                  periodName: academicConfiguration.periods?.[periodIndex] || `Hora ${periodIndex + 1}`,
+              });
+          }
+      });
       return list.sort((a, b) => a.periodIndex - b.periodIndex);
-  }, [classes, dayOfWeek, academicConfiguration.periods, selectedDate, getPlannedContent]);
+  }, [classes, dayOfWeek, academicConfiguration.periods, academicConfiguration.breakPeriodIndexes, selectedDate, getPlannedContent]);
 
   const searchResults = useMemo(() => {
       const query = searchQuery.trim().toLowerCase();
@@ -252,7 +278,8 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
       const newNotes: Record<string, string> = {};
       const newDirty: Record<string, boolean> = {};
 
-      scheduledClasses.forEach(item => {
+      timelineItems.forEach(item => {
+          if (item.kind !== 'class') return;
           const key = entryKey(item.classData.id, item.periodIndex);
           const existingEntry = entries.find(e => e.classId === item.classData.id && e.date === selectedDate && e.periodIndex === item.periodIndex);
           newNotes[key] = existingEntry ? existingEntry.notes : '';
@@ -261,7 +288,7 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
 
       setNotesMap(newNotes);
       setIsDirtyMap(newDirty);
-  }, [selectedDate, scheduledClasses, entries]);
+  }, [selectedDate, timelineItems, entries]);
 
   const saveNote = (item: { classData: ClassData, periodIndex: number }, key: string, text: string) => {
       const classId = item.classData.id;
@@ -403,18 +430,33 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
 
       {/* Timeline / List */}
       <div className="space-y-4">
-        {scheduledClasses.length === 0 ? (
+        {timelineItems.length === 0 ? (
             <EmptyState
                 title={`No hay clases programadas para este día (${new Date(selectedDate).toLocaleDateString('es-ES', { weekday: 'long' })}).`}
                 message="Revisa el horario en Ajustes si esto es incorrecto."
             />
         ) : (
-            scheduledClasses.map((item) => {
+            timelineItems.map((item) => {
+                if (item.kind === 'break') {
+                    return (
+                        <div key={`break-${item.periodIndex}`} className="flex items-center gap-3 rounded-xl border-l-4 border-amber-400 bg-amber-50 px-4 py-2 text-amber-900">
+                            <span className="font-semibold">☕ Recreo</span>
+                            <span className="text-sm text-amber-700">{item.periodName}</span>
+                        </div>
+                    );
+                }
                 const classId = item.classData.id;
                 const key = entryKey(classId, item.periodIndex);
                 const accent = getClassAccentColor(getMateria(item.classData, courses), item.classData.colorAcento);
                 return (
-                    <div key={key} className="bg-white rounded-xl shadow-sm border overflow-hidden flex flex-col md:flex-row">
+                    <div key={key} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                        {item.isBreak && (
+                            <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-100 px-4 py-1.5 text-xs font-semibold text-amber-900">
+                                <span>☕ Recreo</span>
+                                <span className="font-normal text-amber-700">{item.periodName}</span>
+                            </div>
+                        )}
+                        <div className="flex flex-col md:flex-row">
                         {/* Sidebar / Time Info */}
                         <div className="p-4 md:w-48 flex-shrink-0 border-b md:border-b-0 md:border-r flex flex-col justify-center" style={{ backgroundColor: accent.cellBg }}>
                             <div className="flex items-center gap-2 font-bold mb-1" style={{ color: accent.text }}>
@@ -476,6 +518,7 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
                                     className="h-32 resize-y"
                                 />
                             </div>
+                        </div>
                         </div>
                     </div>
                 );

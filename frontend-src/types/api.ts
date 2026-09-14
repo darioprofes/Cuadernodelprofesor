@@ -175,6 +175,7 @@ export interface AcademicYear {
     // en el array ES el periodIndex que usa todo lo demás (horario, notas
     // del diario...), igual que en el AcademicConfiguration.periods viejo.
     periods: string[];
+    breakPeriodIndexes: number[];
 }
 
 export interface AcademicYearInput {
@@ -189,6 +190,7 @@ export interface AcademicYearPatch {
     endDate?: string;
     holidays?: AcademicYearHoliday[];
     periods?: string[];
+    breakPeriodIndexes?: number[];
 }
 
 // Declara "imparto esta materia (course) este curso académico" — ver Fase 8

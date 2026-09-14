@@ -7,7 +7,7 @@ from psycopg.types.json import Json
 from services.db import get_conn
 from services.schemas import ApiModel
 
-_YEAR_COLUMNS = "id, label, start_date, end_date, is_current, holidays, periods"
+_YEAR_COLUMNS = "id, label, start_date, end_date, is_current, holidays, periods, break_period_indexes"
 _PERIOD_COLUMNS = "id, academic_year_id, name, start_date, end_date, weight"
 _YEAR_COURSE_COLUMNS = "id, academic_year_id, course_id, created_at"
 
@@ -24,6 +24,7 @@ class AcademicYearPatch(ApiModel):
     end_date: Optional[date] = None
     holidays: Optional[list] = None
     periods: Optional[list] = None
+    break_period_indexes: Optional[list[int]] = None
 
 
 class AcademicYear(ApiModel):
@@ -34,6 +35,7 @@ class AcademicYear(ApiModel):
     is_current: bool
     holidays: list = []
     periods: list = []
+    break_period_indexes: list[int] = []
 
 
 class EvaluationPeriodInput(ApiModel):
@@ -148,10 +150,10 @@ def create_academic_year(data: AcademicYearInput) -> AcademicYear:
 
             cur.execute(
                 f"""
-                INSERT INTO academic_years (label, start_date, end_date, is_current, periods)
-                VALUES (%s, %s, %s, true, %s) RETURNING {_YEAR_COLUMNS}
+                INSERT INTO academic_years (label, start_date, end_date, is_current, periods, break_period_indexes)
+                VALUES (%s, %s, %s, true, %s, %s) RETURNING {_YEAR_COLUMNS}
                 """,
-                [data.label, data.start_date, data.end_date, Json(_DEFAULT_PERIODS)]
+                [data.label, data.start_date, data.end_date, Json(_DEFAULT_PERIODS), Json([3])]
             )
 
             year = AcademicYear.model_validate(cur.fetchone())
@@ -172,7 +174,7 @@ def update_academic_year(year_id: str, data: AcademicYearPatch) -> Optional[Acad
 
     fields = data.model_dump(exclude_unset=True)
 
-    processed = {k: (Json(v) if k in ("holidays", "periods") else v) for k, v in fields.items()}
+    processed = {k: (Json(v) if k in ("holidays", "periods", "break_period_indexes") else v) for k, v in fields.items()}
 
     with get_conn() as conn:
 

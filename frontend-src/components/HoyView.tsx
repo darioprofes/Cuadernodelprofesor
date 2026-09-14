@@ -93,10 +93,11 @@ const saludo = (hora: number): string => {
 };
 
 interface SlotHoy {
-    classId: string;
+    classId?: string;
     periodIndex: number;
     periodName: string;
     aula?: string;
+    isBreak?: boolean;
 }
 
 const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfiguration, tasks, setTasks, meetings, agendaNotes, absencesByClassId, setActiveView, setActiveClassId, onOpenSettings, onOpenDay, onAbrirBorradorSA, onAbrirBorradorInstrumento }) => {
@@ -111,6 +112,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     }, []);
 
     const periods = academicConfiguration.periods || [];
+    const breakPeriodIndexes = academicConfiguration.breakPeriodIndexes || [];
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const hoyStr = toYYYYMMDD(now);
 
@@ -160,6 +162,20 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                 }
             });
         });
+        // El recreo pertenece a la franja, aunque no haya ninguna clase ni
+        // guardia asignada. Si hay una ocupación en esa hora, la misma fila
+        // conserva ambos significados: recreo + lo programado.
+        breakPeriodIndexes.forEach(periodIndex => {
+            if (!rows.some(row => row.periodIndex === periodIndex)) {
+                rows.push({
+                    periodIndex,
+                    periodName: periods[periodIndex] || `Periodo ${periodIndex + 1}`,
+                    isBreak: true,
+                });
+            } else {
+                rows.filter(row => row.periodIndex === periodIndex).forEach(row => { row.isBreak = true; });
+            }
+        });
         return rows.sort((a, b) => a.periodIndex - b.periodIndex);
     };
 
@@ -169,7 +185,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     // parámetro `dow`), y las tres ya están en este array — junto con el
     // festivo de la fecha navegada, que también anula el horario.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const slotsDia: SlotHoy[] = useMemo(() => construirSlots(dow), [classes, dow, periods, holidaySelected]);
+    const slotsDia: SlotHoy[] = useMemo(() => construirSlots(dow), [classes, dow, periods, breakPeriodIndexes, holidaySelected]);
 
     // Compara la hora REAL contra el horario del día navegado (no
     // necesariamente hoy) para saber qué franja está en curso ahora mismo;
@@ -503,17 +519,15 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                     ) : (
                         <div className="space-y-1">
                             {slotsDia.map(slot => {
-                                const cls = classes.find(c => c.id === slot.classId);
-                                if (!cls) return null;
+                                const cls = slot.classId ? classes.find(c => c.id === slot.classId) : undefined;
                                 // Solo se destaca cuando de verdad es "ahora": el día
                                 // navegado es hoy Y esta es la franja en curso (nunca
                                 // al navegar a otro día, aunque coincida la hora).
                                 const esFranjaActual = esHoy && actual !== null
-                                    && actual.classId === slot.classId
                                     && actual.periodIndex === slot.periodIndex;
                                 // "Otras ocupaciones" (guardias, recreo...) no tienen
                                 // alumnado ni Cuaderno que abrir.
-                                const course = courses.find(c => c.id === cls.courseId);
+                                const course = cls ? courses.find(c => c.id === cls.courseId) : undefined;
                                 const esAcademica = course?.type !== 'other';
                                 const claseComun = `w-full flex items-center gap-2 text-left p-2 rounded-lg border-l-2 transition-colors ${
                                     esFranjaActual ? 'bg-[#fbf1dc] border-[#d9b878]' : (esAcademica ? 'hover:bg-slate-50 border-blue-400' : 'border-slate-300')
@@ -521,14 +535,38 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                                 const contenido = (
                                     <>
                                         <span className="text-xs text-slate-400 flex-shrink-0 w-24">{slot.periodName}</span>
-                                        <ClassLabel classData={cls} courses={courses} className="text-sm font-medium text-slate-700 truncate" />
+                                        {cls && <ClassLabel classData={cls} courses={courses} className="text-sm font-medium text-slate-700 truncate" />}
                                         {slot.aula && <span className="text-xs text-slate-400 flex-shrink-0">Aula {slot.aula}</span>}
                                     </>
                                 );
+                                const scheduledContent = cls ? (esAcademica ? (
+                                    <button
+                                        onClick={() => handleOpenCuaderno(cls.id)}
+                                        className={claseComun}
+                                    >
+                                        {contenido}
+                                    </button>
+                                ) : (
+                                    <div className={claseComun}>
+                                        {contenido}
+                                    </div>
+                                )) : null;
+                                if (slot.isBreak) {
+                                    return (
+                                        <div key={`${slot.classId ?? 'recreo'}-${slot.periodIndex}`} className={`rounded-lg border-l-4 border-amber-400 bg-amber-50/80 ${esFranjaActual ? 'ring-1 ring-amber-300' : ''}`}>
+                                            <div className="flex items-center gap-2 px-2 py-1 text-xs font-semibold text-amber-900">
+                                                <span>☕ Recreo</span>
+                                                <span className="font-normal text-amber-700">{slot.periodName}</span>
+                                            </div>
+                                            {scheduledContent && <div className="px-1 pb-1">{scheduledContent}</div>}
+                                        </div>
+                                    );
+                                }
+                                if (!cls) return null;
                                 return esAcademica ? (
                                     <button
                                         key={`${slot.classId}-${slot.periodIndex}`}
-                                        onClick={() => handleOpenCuaderno(slot.classId)}
+                                        onClick={() => handleOpenCuaderno(cls.id)}
                                         className={claseComun}
                                     >
                                         {contenido}

@@ -105,10 +105,9 @@ export const normalizarNivel = (raw: string): string => {
 // franjas reales del curso (`academicYear.periods`), en su orden real, y se
 // usan tal cual — ninguna franja desaparece ni cambia de índice solo por no
 // tener contenido esta semana.
-export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[], evaluationPeriods: AcademicConfiguration['evaluationPeriods'], borrarAcademicasSinUsar: boolean, sustituirOtrasOcupaciones: boolean = true, periodosReferencia?: string[]) => {
-    // La materia puede venir vacía (franja sin nada asignado en el PDF,
-    // p.ej. el recreo): se importa igual, sin nombre por defecto.
+export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes: ClassData[], evaluationPeriods: AcademicConfiguration['evaluationPeriods'], borrarAcademicasSinUsar: boolean, sustituirOtrasOcupaciones: boolean = true, periodosReferencia?: string[], recreosReferencia?: number[]) => {
     const filasValidas = filas.filter(f => f.hora_inicio && f.hora_fin);
+    const esFilaRecreo = (fila: FilaHorario) => /\brecreo\b/i.test(fila.asignatura || '');
 
     const idsOtrasOcupaciones = sustituirOtrasOcupaciones
         ? new Set(courses.filter(c => c.type === 'other').map(c => c.id))
@@ -140,6 +139,22 @@ export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes
         const porPar = new Map(parejasUnicas.map((p, i) => [`${p.inicio}|${p.fin}`, i]));
         periodIndexOf = fila => porPar.get(`${fila.hora_inicio}|${fila.hora_fin}`);
     }
+
+    // El asistente reconoce explícitamente un recreo escrito en el fichero,
+    // pero no crea por ello una materia ni una clase. Si se sincroniza un
+    // horario existente, conserva además las marcas ya configuradas.
+    const breakPeriodIndexes = new Set<number>();
+    if (periodosReferencia) {
+        (recreosReferencia || []).forEach(index => {
+            const label = periodosReferencia[index];
+            const target = label === undefined ? undefined : periods.indexOf(label);
+            if (target !== undefined && target >= 0) breakPeriodIndexes.add(target);
+        });
+    }
+    filasValidas.filter(esFilaRecreo).forEach(fila => {
+        const index = periodIndexOf(fila);
+        if (index !== undefined) breakPeriodIndexes.add(index);
+    });
 
     let newCourses = courses.filter(c => !idsOtrasOcupaciones.has(c.id));
     let newClasses = classes.filter(cl => !idsOtrasOcupaciones.has(cl.courseId));
@@ -197,7 +212,7 @@ export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes
         return cls;
     };
 
-    for (const fila of filasValidas) {
+    for (const fila of filasValidas.filter(fila => !esFilaRecreo(fila))) {
         const day = fila.dia + 1; // el backend usa 0=Lunes; ClassData.schedule usa 1=Lunes
         const periodIndex = periodIndexOf(fila);
         if (periodIndex === undefined) continue;
@@ -238,6 +253,7 @@ export const buildImportPlan = (filas: FilaHorario[], courses: Course[], classes
 
     return {
         periods,
+        breakPeriodIndexes: [...breakPeriodIndexes].sort((a, b) => a - b),
         courses: newCourses,
         classes: newClasses,
         clasesCreadas: idsClasesNuevas.size,
@@ -372,7 +388,20 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
         }
     };
 
-    const plan = filas ? buildImportPlan(filas, courses, classes, academicConfiguration.evaluationPeriods, borrarAcademicasSinUsar) : null;
+    const planBase = filas ? buildImportPlan(filas, courses, classes, academicConfiguration.evaluationPeriods, borrarAcademicasSinUsar) : null;
+    // El asistente puede reconstruir la lista de franjas desde el PDF. Al
+    // hacerlo, traslada las marcas manuales por etiqueta (no por índice),
+    // para no marcar por error otra hora si el PDF cambia el orden.
+    const plan = planBase ? {
+        ...planBase,
+        breakPeriodIndexes: [...new Set([
+            ...planBase.breakPeriodIndexes,
+            ...(academicConfiguration.breakPeriodIndexes || [])
+                .map(index => academicConfiguration.periods?.[index])
+                .map(label => label === undefined ? -1 : planBase.periods.indexOf(label))
+                .filter(index => index >= 0),
+        ])].sort((a, b) => a - b),
+    } : null;
 
     const handleConfirm = async () => {
         if (!plan) return;
@@ -451,7 +480,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                 }
             }
 
-            setAcademicConfiguration(prev => ({ ...prev, periods: plan.periods }));
+            setAcademicConfiguration(prev => ({ ...prev, periods: plan.periods, breakPeriodIndexes: plan.breakPeriodIndexes }));
             setApplied(true);
         } finally {
             setApplying(false);
@@ -496,7 +525,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
 
                         <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
                             <p>⚠️ Al confirmar, la lista de <strong>franjas horarias</strong> (Ajustes → Configuración del Curso) se <strong>sustituye</strong> por las horas encontradas en el archivo. Pensado para hacerse una vez, al empezar.</p>
-                            <p>Las <strong>otras ocupaciones</strong> (guardias, reuniones, recreo...) se sustituyen siempre por completo — no guardan alumnado ni calificaciones.</p>
+                            <p>Las <strong>otras ocupaciones</strong> (guardias, reuniones...) se sustituyen siempre por completo. Si tenían anotaciones, también se eliminarán sus <strong>entradas del Diario</strong>. El recreo se reconoce como una franja, no como una ocupación.</p>
                             <p>El <strong>aula</strong> de cada sesión se importa junto a la franja; puedes revisarla o añadir una nota (p.ej. "Laboratorio") pulsando la celda en "Horario Semanal".</p>
                             <p>Los grupos que ya venían fusionados en una misma franja (p.ej. dos subgrupos compartiendo una clase) se mantienen como un único nombre combinado.</p>
                         </div>
@@ -574,7 +603,7 @@ const ImportScheduleModal: React.FC<ImportScheduleModalProps> = ({ isOpen, onClo
                                                 <ClassLabel key={cl.id} classData={cl} courses={courses} className="inline-block mr-1.5" />
                                             ))}
                                             <br />
-                                            Márcalo para borrarlos por completo, <strong>incluyendo su alumnado y calificaciones</strong>. Sin marcar,
+                                            Márcalo para borrarlos por completo, <strong>incluyendo su alumnado, calificaciones y entradas del Diario</strong>. Sin marcar,
                                             se dejan tal cual estaban (con su horario anterior).
                                         </span>
                                     </label>

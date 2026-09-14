@@ -359,7 +359,7 @@ const StartOfYearWizardModal: React.FC<StartOfYearWizardModalProps> = ({ isOpen,
                 }
             }
 
-            await updateAcademicYearMutation.mutateAsync({ id: yearId, data: { periods: plan.periods } });
+            await updateAcademicYearMutation.mutateAsync({ id: yearId, data: { periods: plan.periods, breakPeriodIndexes: plan.breakPeriodIndexes } });
 
             // 5. Alumnado: se resuelve DESPUÉS de que las clases ya tengan id
             // real, matriculando de uno en uno (misma secuencia que

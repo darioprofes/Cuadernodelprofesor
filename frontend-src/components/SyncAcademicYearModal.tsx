@@ -42,6 +42,7 @@ interface SyncAcademicYearModalProps {
     yearEndDate: string;
     yearHolidays: AcademicYearHoliday[];
     yearPeriods: string[];
+    yearBreakPeriodIndexes: number[];
     evaluationPeriods: EvaluationPeriod[];
     courses: Course[];
     classes: ClassData[]; // clases reales del curso activo, con .students ya hidratado (joinEnrolledStudents)
@@ -74,7 +75,7 @@ const nombreCompleto = (s: { nombre?: string; primerApellido?: string; segundoAp
     [s.nombre, s.primerApellido, s.segundoApellido].filter(Boolean).join(' ') || '(sin nombre)';
 
 const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
-    isOpen, onClose, yearId, yearLabel, yearStartDate, yearEndDate, yearHolidays, yearPeriods,
+    isOpen, onClose, yearId, yearLabel, yearStartDate, yearEndDate, yearHolidays, yearPeriods, yearBreakPeriodIndexes,
     evaluationPeriods, courses, classes, allStudents,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -229,7 +230,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
     // esta semana — recalcularlas desde cero (comportamiento por defecto,
     // pensado para el asistente de importación) desincroniza el horario ya
     // guardado de cualquier clase real (ver comentario en buildImportPlan).
-    const plan = parsed ? buildImportPlan(parsed.filas, courses, classes, evaluationPeriods, false, false, yearPeriods) : null;
+    const plan = parsed ? buildImportPlan(parsed.filas, courses, classes, evaluationPeriods, false, false, yearPeriods, yearBreakPeriodIndexes) : null;
 
     // Previsualización de alumnado: SIN mutar nada, solo para contar y
     // para construir la lista de "matriculado y ausente del fichero". La
@@ -370,7 +371,7 @@ const SyncAcademicYearModal: React.FC<SyncAcademicYearModalProps> = ({
                     }
                 }
             }
-            await updateAcademicYearMutation.mutateAsync({ id: yearId, data: { periods: plan.periods } });
+            await updateAcademicYearMutation.mutateAsync({ id: yearId, data: { periods: plan.periods, breakPeriodIndexes: plan.breakPeriodIndexes } });
 
             // 3. Alumnado: resolución real, con dedupe de "nuevo" repetido
             // en varias clases dentro del mismo Excel (crece la lista de

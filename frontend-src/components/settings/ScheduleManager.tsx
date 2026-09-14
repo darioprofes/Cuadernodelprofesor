@@ -83,6 +83,7 @@ const ScheduleManager: React.FC<{
 }> = ({ courses, academicConfiguration, setAcademicConfiguration }) => {
     const daysOfWeek = [{label: 'Lunes', value: 1}, {label: 'Martes', value: 2}, {label: 'Miércoles', value: 3}, {label: 'Jueves', value: 4}, {label: 'Viernes', value: 5}];
     const periods = academicConfiguration.periods || [];
+    const breakPeriodIndexes = academicConfiguration.breakPeriodIndexes || [];
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [editingSlot, setEditingSlot] = useState<{ day: number; periodIndex: number } | null>(null);
 
@@ -147,6 +148,15 @@ const ScheduleManager: React.FC<{
         }));
     };
 
+    const handleToggleRecreo = (index: number) => {
+        setAcademicConfiguration(prev => {
+            const marked = new Set(prev.breakPeriodIndexes || []);
+            if (marked.has(index)) marked.delete(index);
+            else marked.add(index);
+            return { ...prev, breakPeriodIndexes: [...marked].sort((a, b) => a - b) };
+        });
+    };
+
     const handleDeleteFranja = async (index: number) => {
         const enUso = effectiveClasses.some(c => (c.schedule || []).some(slot => slot.periodIndex === index));
         if (enUso && !window.confirm('Esta franja tiene clases asignadas — se les quitará esa hora del horario. ¿Borrar de todas formas?')) return;
@@ -158,7 +168,13 @@ const ScheduleManager: React.FC<{
                 .map(slot => (slot.periodIndex > index ? { ...slot, periodIndex: slot.periodIndex - 1 } : slot));
             await updateClassMutation.mutateAsync({ id: cls.id, yearId, data: { schedule: newSchedule } });
         }
-        setAcademicConfiguration(prev => ({ ...prev, periods: (prev.periods || []).filter((_, i) => i !== index) }));
+        setAcademicConfiguration(prev => ({
+            ...prev,
+            periods: (prev.periods || []).filter((_, i) => i !== index),
+            breakPeriodIndexes: (prev.breakPeriodIndexes || [])
+                .filter(i => i !== index)
+                .map(i => i > index ? i - 1 : i),
+        }));
     };
 
     const handleMoveFranja = async (index: number, direction: -1 | 1) => {
@@ -177,7 +193,14 @@ const ScheduleManager: React.FC<{
         setAcademicConfiguration(prev => {
             const next = [...(prev.periods || [])];
             [next[index], next[target]] = [next[target], next[index]];
-            return { ...prev, periods: next };
+            const marked = new Set(prev.breakPeriodIndexes || []);
+            const sourceWasBreak = marked.has(index);
+            const targetWasBreak = marked.has(target);
+            marked.delete(index);
+            marked.delete(target);
+            if (sourceWasBreak) marked.add(target);
+            if (targetWasBreak) marked.add(index);
+            return { ...prev, periods: next, breakPeriodIndexes: [...marked].sort((a, b) => a - b) };
         });
     };
 
@@ -215,8 +238,10 @@ const ScheduleManager: React.FC<{
                         </tr>
                     </thead>
                     <tbody>
-                        {periods.map((periodName, periodIndex) => (
-                            <tr key={periodIndex} className={tableRowClassName}>
+                        {periods.map((periodName, periodIndex) => {
+                            const isBreak = breakPeriodIndexes.includes(periodIndex);
+                            return (
+                            <tr key={periodIndex} className={`${tableRowClassName} ${isBreak ? 'bg-amber-50/70' : ''}`}>
                                 <td className="p-1 border-r">
                                     <div className="flex items-center gap-1">
                                         <BufferedInput
@@ -244,6 +269,15 @@ const ScheduleManager: React.FC<{
                                                 <ChevronDownIcon className="w-3 h-3" />
                                             </button>
                                         </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleToggleRecreo(periodIndex)}
+                                            className={`flex-shrink-0 rounded px-1.5 py-1 text-xs font-semibold transition-colors ${isBreak ? 'bg-amber-200 text-amber-900 hover:bg-amber-300' : 'text-slate-400 hover:bg-amber-50 hover:text-amber-800'}`}
+                                            title={isBreak ? 'Quitar la marca de recreo' : 'Marcar como recreo'}
+                                            aria-pressed={isBreak}
+                                        >
+                                            ☕
+                                        </button>
                                         <button
                                             type="button"
                                             onClick={() => handleDeleteFranja(periodIndex)}
@@ -278,7 +312,8 @@ const ScheduleManager: React.FC<{
                                     );
                                 })}
                             </tr>
-                        ))}
+                            );
+                        })}
                         <tr>
                             <td colSpan={daysOfWeek.length + 1} className="p-2">
                                 <button type="button" onClick={handleAddFranja} className={`text-sm ${linkClassName}`}>
@@ -289,6 +324,7 @@ const ScheduleManager: React.FC<{
                     </tbody>
                 </table>
             </div>
+            <p className="mt-3 text-xs text-slate-500">Marca con ☕ las franjas de recreo. Seguirán admitiendo una guardia u otra ocupación, pero no se tratarán como una clase.</p>
             {editingSlot && (
                 <ScheduleSlotModal
                     isOpen={true}

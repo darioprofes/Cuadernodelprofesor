@@ -352,6 +352,7 @@ const App = () => {
         academicYearEnd: currentYear.data?.endDate ?? '',
         holidays: currentYear.data?.holidays ?? [],
         periods: currentYear.data?.periods ?? [],
+        breakPeriodIndexes: currentYear.data?.breakPeriodIndexes ?? [],
         evaluationPeriods: (remoteEvaluationPeriods.data ?? []).map(p => ({ id: p.id, name: p.name, startDate: p.startDate, endDate: p.endDate })),
         evaluationPeriodWeights: Object.fromEntries((remoteEvaluationPeriods.data ?? []).map(p => [p.id, p.weight])),
         // `grade_scale` en el backend por defecto es `[]` (fila de
@@ -633,8 +634,8 @@ const App = () => {
     // aparte, directo contra academic_years, sin pasar por aquí).
     const setAcademicConfigurationCallback = useCallback((updater: React.SetStateAction<AcademicConfiguration>) => {
         const next = typeof updater === 'function' ? updater(effectiveAcademicConfiguration) : updater;
-        if (yearId && (next.holidays !== effectiveAcademicConfiguration.holidays || next.periods !== effectiveAcademicConfiguration.periods)) {
-            updateAcademicYearMutation.mutate({ id: yearId, data: { holidays: next.holidays, periods: next.periods } });
+        if (yearId && (next.holidays !== effectiveAcademicConfiguration.holidays || next.periods !== effectiveAcademicConfiguration.periods || next.breakPeriodIndexes !== effectiveAcademicConfiguration.breakPeriodIndexes)) {
+            updateAcademicYearMutation.mutate({ id: yearId, data: { holidays: next.holidays, periods: next.periods, breakPeriodIndexes: next.breakPeriodIndexes } });
         }
         if (next.gradeScale !== effectiveAcademicConfiguration.gradeScale
             || next.defaultCalendarView !== effectiveAcademicConfiguration.defaultCalendarView
