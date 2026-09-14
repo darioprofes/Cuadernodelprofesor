@@ -78,7 +78,7 @@ const DayColumn: React.FC<{
                             <p className="font-semibold flex items-center">
                                 {event.periodName ? <span className="mr-1 opacity-75">[{event.periodName}]</span> : null}
                                 {event.classGrupo && <span className="inline-block px-1 py-0.5 mr-1 rounded bg-black/10 text-[10px] font-mono">{event.classGrupo}</span>}
-                                {event.className}
+                                {event.classShortName || event.className}
                                 {event.journalNote && <BookOpenIcon className="w-3 h-3 ml-1 flex-shrink-0"/>}
                             </p>
                             <p>{event.unitName} {event.eventType === 'session' && `(S${event.sessionNumber})`}</p>
@@ -116,7 +116,7 @@ const DayColumn: React.FC<{
                      return (
                         <div key={event.id} onClick={() => onEventClick(event)} className="px-2 py-1 text-xs rounded-full border flex items-center gap-1.5 cursor-pointer hover:brightness-95" style={{ ...style, borderLeftWidth: undefined }}>
                            <ClipboardDocumentIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80"/>
-                           <p className="font-semibold truncate" title={`${event.className} · ${event.unitName}`}>{event.classGrupo && `${event.classGrupo} · `}{event.className} · {event.unitName}{categoryName && ` (${categoryName})`}</p>
+                           <p className="font-semibold truncate" title={`${event.className} · ${event.unitName}`}>{event.classGrupo && `${event.classGrupo} · `}{event.classShortName || event.className} · {event.unitName}{categoryName && ` (${categoryName})`}</p>
                         </div>
                     )
                 }

@@ -215,7 +215,7 @@ const MonthView: React.FC<{
                                                     <div className="flex-grow truncate pr-1" title={`${event.classGrupo ? event.classGrupo + ' - ' : ''}${event.className} - ${event.unitName}`}>
                                                         <p className="font-semibold truncate flex items-center">
                                                             {event.classGrupo && <span className="font-mono text-[11px] opacity-80 mr-1">{event.classGrupo}</span>}
-                                                            {event.className}
+                                                            {event.classShortName || event.className}
                                                             {event.journalNote && <BookOpenIcon className="w-3 h-3 ml-1 flex-shrink-0" />}
                                                         </p>
                                                         <p className="truncate text-[10px]">{event.unitName} (S{event.sessionNumber})</p>
@@ -257,7 +257,7 @@ const MonthView: React.FC<{
                                                 title={`${event.classGrupo ? event.classGrupo + ' - ' : ''}${event.className} - ${event.unitName}${categoryName ? ' (' + categoryName + ')' : ''}`}
                                             >
                                                <ClipboardDocumentIcon className="w-3.5 h-3.5 flex-shrink-0 opacity-80"/>
-                                               <p className="font-semibold truncate">{event.classGrupo && `${event.classGrupo} · `}{event.className} · {event.unitName}{categoryName && ` (${categoryName})`}</p>
+                                               <p className="font-semibold truncate">{event.classGrupo && `${event.classGrupo} · `}{event.classShortName || event.className} · {event.unitName}{categoryName && ` (${categoryName})`}</p>
                                             </div>
                                         );
                                     }

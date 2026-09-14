@@ -174,15 +174,15 @@ export const getClassAccentColor = (materia: string, hueOverride?: number): Clas
 const CONECTORES = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'y', 'en', 'a', 'para', 'con', 'al']);
 
 // Siglas calculadas solo para mostrar en sitios muy justos de espacio (la
-// cuadrícula del Horario Semanal, o el aviso de grupo/nivel de referencia
-// del Cuaderno): no se guarda ni sustituye el texto real en ningún otro
-// sitio de la app. Si el nombre ya es corto (p.ej. "CHL", "G" en las
-// ocupaciones sin grupo importadas del PDF), no hace falta abreviarlo más:
-// se deja tal cual.
+// cuadrícula del Horario Semanal, la Agenda o el aviso de grupo/nivel de
+// referencia del Cuaderno): no se guarda ni sustituye el texto real en
+// ningún otro sitio de la app. Los códigos resultantes se limitan a tres o
+// cuatro caracteres; los ya cortos (p.ej. "CHL", "G" en ocupaciones sin
+// grupo importadas del PDF) se conservan tal cual.
 export const getSiglas = (materia: string): string => {
     const limpio = materia.trim();
 
-    if (limpio.length <= 6) return limpio;
+    if (limpio.length <= 4) return limpio;
 
     const palabras = limpio
         .split(/[\s-]+/)
@@ -193,11 +193,23 @@ export const getSiglas = (materia: string): string => {
         .map(w => w.replace(/^[^\p{L}\p{N}]+/u, ''))
         .filter(w => w.length > 0 && !CONECTORES.has(w.toLowerCase()));
 
+    if (palabras.length === 0) return limpio.slice(0, 4).toUpperCase();
+
+    // Una materia de una sola palabra se recorta directamente. Para dos
+    // palabras, una inicial por palabra se quedaba demasiado críptica (p.ej.
+    // "Física y Química" -> "FQ"), así que se toma también una segunda
+    // letra de la primera. Con tres o más, las iniciales son más legibles.
+    if (palabras.length === 1) return palabras[0].slice(0, 4).toUpperCase();
+
     const siglas = palabras.map(w => w[0].toUpperCase()).join('');
 
-    if (siglas.length >= 2) return siglas;
+    if (siglas.length === 2) {
+        return `${palabras[0].slice(0, 2)}${palabras[1][0]}`.toUpperCase();
+    }
 
-    return limpio.slice(0, 6).toUpperCase();
+    if (siglas.length >= 3) return siglas.slice(0, 4);
+
+    return limpio.slice(0, 4).toUpperCase();
 };
 
 // Divide un nombre completo en sus partes. Formatos aceptados:

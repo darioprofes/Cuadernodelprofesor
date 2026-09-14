@@ -1,5 +1,5 @@
 import type { ProgrammingUnit, Course, AcademicConfiguration, ClassData, JournalEntry, Assignment, AgendaNote, Meeting, Holiday } from '../../types';
-import { buildClassName, sessionDisplayText } from '../../utils';
+import { buildClassName, getSiglas, sessionDisplayText } from '../../utils';
 import { PALETTE } from '../../theme/palette';
 
 export interface CalendarEvent {
@@ -14,6 +14,7 @@ export interface CalendarEvent {
     courseId: string;
     classId: string;
     className: string; // materia (course.subject), no el grupo
+    classShortName?: string; // siglas para las etiquetas compactas de la agenda
     classGrupo?: string; // p.ej. "S4BD", separado de className
     color?: string;
     courseColor: { backgroundColor: string, textColor: string, borderColor: string };
@@ -281,6 +282,7 @@ export const buildCalendarEvents = ({
                     courseId: currentUnitObj.courseId,
                     classId: classData.id,
                     className: course.subject,
+                    classShortName: getSiglas(course.subject),
                     classGrupo: classData.grupo,
                     color: detail?.color,
                     courseColor: courseColor,
@@ -331,6 +333,7 @@ export const buildCalendarEvents = ({
                         courseId: classData.courseId,
                         classId: classData.id,
                         className: course ? course.subject : (classData.grupo || ''),
+                        classShortName: course ? getSiglas(course.subject) : classData.grupo,
                         classGrupo: classData.grupo,
                         courseColor: courseColor,
                         periodIndex: undefined,

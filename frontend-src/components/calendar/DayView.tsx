@@ -149,7 +149,7 @@ const DayView: React.FC<{
                                 <p className="font-bold flex items-center text-lg">
                                     {event.periodName ? <span className="mr-2 opacity-75">[{event.periodName}]</span> : null}
                                     {event.classGrupo && <span className="inline-block px-2 py-0.5 mr-2 rounded bg-black/10 text-sm font-mono">{event.classGrupo}</span>}
-                                    {event.className} - {event.unitName}
+                                    {event.classShortName || event.className} - {event.unitName}
                                     {event.journalNote && <BookOpenIcon className="w-5 h-5 ml-2 flex-shrink-0"/>}
                                 </p>
                                 {event.eventType === 'session' && <p className="text-sm font-medium mt-1">Sesión {event.sessionNumber}</p>}
@@ -195,7 +195,7 @@ const DayView: React.FC<{
                             <div key={event.id} onClick={() => onEventClick(event)} className="px-3 py-1.5 rounded-full border flex items-center gap-2 cursor-pointer hover:brightness-95" style={{ ...style, borderLeftWidth: undefined }}>
                                 <ClipboardDocumentIcon className="w-4 h-4 flex-shrink-0 opacity-80"/>
                                 <p className="font-semibold text-sm truncate" title={`${event.className} · ${event.unitName}`}>
-                                    {event.classGrupo && `${event.classGrupo} · `}{event.className} · {event.unitName}{categoryName && ` (${categoryName})`}
+                                    {event.classGrupo && `${event.classGrupo} · `}{event.classShortName || event.className} · {event.unitName}{categoryName && ` (${categoryName})`}
                                 </p>
                             </div>
                         )
