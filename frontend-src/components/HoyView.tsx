@@ -6,11 +6,11 @@ import ClassLabel from './ClassLabel';
 import BannerCostero from './BannerCostero';
 import Input from './Input';
 import { getDayOfWeek1a7, toYYYYMMDD, addDays, parsePeriodRange, formatFechaEs, formatClassLabel, TIPO_REUNION_LABEL } from '../utils';
-import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon, ArrowUpTrayIcon, ExclamationTriangleIcon, SparklesIcon, ListBulletIcon } from './Icons';
+import { ClockIcon, CheckCircleIcon, CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, TrashIcon, PlusIcon, ClipboardDocumentCheckIcon, UsersIcon, ArrowUpTrayIcon, ExclamationTriangleIcon, SparklesIcon, ListBulletIcon } from './Icons';
 import { PALETTE } from '../theme/palette';
 import { COLOR_POR_TIPO_FESTIVO } from './calendar/calendarColors';
 import DateNavButton from './DateNavButton';
-import { computeDashboardNotices, type DashboardNoticeKind } from '../services/dashboardNotices';
+import { computeDashboardNotices, type DashboardNotice, type DashboardNoticeKind } from '../services/dashboardNotices';
 import { useTrabajosIA, type ResultadoTrabajoSA, type ResultadoTrabajoInstrumento } from '../hooks/useTrabajosIA';
 import { usePendingRestores } from '../hooks/usePendingRestores';
 import TrabajosIAPanel from './TrabajosIAPanel';
@@ -57,6 +57,14 @@ const NOTICE_TONE_CLASS: Record<'warn' | 'alert', string> = {
 const NOTICE_TONE_STYLE: Record<'warn' | 'alert', React.CSSProperties | undefined> = {
     warn: { color: PALETTE.sand.header },
     alert: undefined,
+};
+
+type NoticeGroupKey = 'grading' | 'evaluation' | 'sync' | 'attendance';
+const NOTICE_GROUP: Record<DashboardNoticeKind, { key: NoticeGroupKey; label: string }> = {
+    ungraded: { key: 'grading', label: 'Calificaciones pendientes' },
+    periodClosing: { key: 'evaluation', label: 'Evaluación' },
+    educasturBacklog: { key: 'sync', label: 'Sincronización' },
+    absenceStreak: { key: 'attendance', label: 'Asistencia' },
 };
 
 const HOLIDAY_LABEL: Record<NonNullable<Holiday['type']>, string> = {
@@ -117,6 +125,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     const hoyStr = toYYYYMMDD(now);
 
     const [fechaSeleccionada, setFechaSeleccionada] = useState<string>(hoyStr);
+    const [expandedNoticeGroups, setExpandedNoticeGroups] = useState<Set<NoticeGroupKey>>(() => new Set());
     const esHoy = fechaSeleccionada === hoyStr;
     const viewDate = new Date(fechaSeleccionada);
     const dow = getDayOfWeek1a7(viewDate);
@@ -287,6 +296,44 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
         () => computeDashboardNotices(classes, courses, academicConfiguration.evaluationPeriods, absencesByClassId, now, isTauri()),
         [classes, courses, academicConfiguration.evaluationPeriods, absencesByClassId, now]
     );
+    const groupedNotices = useMemo(() => {
+        const groups = new Map<NoticeGroupKey, { label: string; notices: DashboardNotice[] }>();
+        notices.forEach(notice => {
+            const group = NOTICE_GROUP[notice.kind];
+            const current = groups.get(group.key) || { label: group.label, notices: [] };
+            current.notices.push(notice);
+            groups.set(group.key, current);
+        });
+        return [...groups.entries()];
+    }, [notices]);
+
+    const toggleNoticeGroup = (key: NoticeGroupKey) => {
+        setExpandedNoticeGroups(previous => {
+            const next = new Set(previous);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
+
+    const renderNotice = (notice: DashboardNotice) => {
+        const NoticeIcon = NOTICE_ICON[notice.kind];
+        return (
+            <button
+                key={notice.id}
+                type="button"
+                onClick={notice.target ? () => {
+                    if (notice.target!.classId) setActiveClassId(notice.target!.classId);
+                    setActiveView(notice.target!.view);
+                } : undefined}
+                disabled={!notice.target}
+                className={`flex items-center gap-1.5 bg-white shadow-sm rounded-full pl-3 pr-4 py-1.5 text-sm font-semibold transition-opacity ${notice.target ? 'hover:opacity-70' : ''} ${NOTICE_TONE_CLASS[notice.tone]}`}
+                style={NOTICE_TONE_STYLE[notice.tone]}
+            >
+                <NoticeIcon className="w-4 h-4 flex-shrink-0" /> {notice.label}
+            </button>
+        );
+    };
 
     // Cola de trabajos de IA en segundo plano (SA por partes, instrumentos)
     // -- mismo sitio que el resto de avisos accionables, ver nota de cabecera.
@@ -360,22 +407,25 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                 <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 flex-shrink-0 bg-white shadow-sm rounded-full pl-3 pr-4 py-1.5">
                     <CalendarDaysIcon className="w-4 h-4 text-slate-400" /> Avisos
                 </div>
-                {notices.map(notice => {
-                    const NoticeIcon = NOTICE_ICON[notice.kind];
+                {groupedNotices.map(([groupKey, group]) => {
+                    if (group.notices.length === 1) return renderNotice(group.notices[0]);
+                    const expanded = expandedNoticeGroups.has(groupKey);
+                    const GroupIcon = NOTICE_ICON[group.notices[0].kind];
                     return (
-                        <button
-                            key={notice.id}
-                            type="button"
-                            onClick={notice.target ? () => {
-                                if (notice.target!.classId) setActiveClassId(notice.target!.classId);
-                                setActiveView(notice.target!.view);
-                            } : undefined}
-                            disabled={!notice.target}
-                            className={`flex items-center gap-1.5 bg-white shadow-sm rounded-full pl-3 pr-4 py-1.5 text-sm font-semibold transition-opacity ${notice.target ? 'hover:opacity-70' : ''} ${NOTICE_TONE_CLASS[notice.tone]}`}
-                            style={NOTICE_TONE_STYLE[notice.tone]}
-                        >
-                            <NoticeIcon className="w-4 h-4 flex-shrink-0" /> {notice.label}
-                        </button>
+                        <div key={groupKey} className="flex items-center gap-2 flex-wrap">
+                            <button
+                                type="button"
+                                onClick={() => toggleNoticeGroup(groupKey)}
+                                aria-expanded={expanded}
+                                className="flex items-center gap-1.5 bg-white shadow-sm rounded-full pl-3 pr-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                                <GroupIcon className="w-4 h-4 flex-shrink-0" />
+                                {group.label}
+                                <span className="inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-slate-100 px-1.5 text-xs">{group.notices.length}</span>
+                                <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                            </button>
+                            {expanded && group.notices.map(renderNotice)}
+                        </div>
                     );
                 })}
                 {pendingRestoresCount > 0 && (

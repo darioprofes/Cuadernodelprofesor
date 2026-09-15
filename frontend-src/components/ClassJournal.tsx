@@ -440,7 +440,7 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
                 if (item.kind === 'break') {
                     return (
                         <div key={`break-${item.periodIndex}`} className="flex items-center gap-3 rounded-xl border-l-4 border-amber-400 bg-amber-50 px-4 py-2 text-amber-900">
-                            <span className="font-semibold">☕ Recreo</span>
+                            <span className="font-semibold">Recreo</span>
                             <span className="text-sm text-amber-700">{item.periodName}</span>
                         </div>
                     );
@@ -452,7 +452,7 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
                     <div key={key} className="bg-white rounded-xl shadow-sm border overflow-hidden">
                         {item.isBreak && (
                             <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-100 px-4 py-1.5 text-xs font-semibold text-amber-900">
-                                <span>☕ Recreo</span>
+                                <span>Recreo</span>
                                 <span className="font-normal text-amber-700">{item.periodName}</span>
                             </div>
                         )}
