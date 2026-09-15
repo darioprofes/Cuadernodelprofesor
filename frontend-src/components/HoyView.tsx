@@ -605,7 +605,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
                                     return (
                                         <div key={`${slot.classId ?? 'recreo'}-${slot.periodIndex}`} className={`rounded-lg border-l-4 border-amber-400 bg-amber-50/80 ${esFranjaActual ? 'ring-1 ring-amber-300' : ''}`}>
                                             <div className="flex items-center gap-2 px-2 py-1 text-xs font-semibold text-amber-900">
-                                                <span>☕ Recreo</span>
+                                                <span>Recreo</span>
                                                 <span className="font-normal text-amber-700">{slot.periodName}</span>
                                             </div>
                                             {scheduledContent && <div className="px-1 pb-1">{scheduledContent}</div>}
