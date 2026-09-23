@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { AcademicConfiguration, ClassData, Course, JournalEntry } from '../types';
 import { CalendarDaysIcon, ClockIcon } from './Icons';
 import ClassLabel from './ClassLabel';
@@ -43,6 +43,8 @@ const ClassJournalRange: React.FC<{
     const [startDate, setStartDate] = useState(toYYYYMMDD(addDays(new Date(), -15)));
     const [endDate, setEndDate] = useState(toYYYYMMDD(addDays(new Date(), 15)));
     const [onlyWithNotes, setOnlyWithNotes] = useState(false);
+    const todaySectionRef = useRef<HTMLElement | null>(null);
+    const hasFocusedTodayRef = useRef(false);
 
     useEffect(() => {
         if (initialClassId && classes.some(item => item.id === initialClassId)) setClassId(initialClassId);
@@ -122,6 +124,17 @@ const ClassJournalRange: React.FC<{
         setEndDate(toYYYYMMDD(addDays(new Date(), 15)));
     };
 
+    // Al abrir esta vista, el punto de partida útil es la sesión de hoy, no
+    // el comienzo del intervalo de 30 días.
+    useEffect(() => {
+        if (hasFocusedTodayRef.current || !sessions.some(session => session.date === today)) return;
+        const frame = window.requestAnimationFrame(() => {
+            todaySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            hasFocusedTodayRef.current = true;
+        });
+        return () => window.cancelAnimationFrame(frame);
+    }, [sessions, today]);
+
     return (
         <div className="space-y-5">
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -167,12 +180,18 @@ const ClassJournalRange: React.FC<{
                 />
             ) : (
                 <div className="space-y-5">
-                    {sessionsByDate.map(([date, daySessions]) => (
-                        <section key={date}>
-                            <h3 className="mb-2 border-b border-slate-200 pb-2 text-sm font-bold capitalize text-slate-700">{date === today ? `Hoy · ${formatFechaEs(date)}` : formatFechaEs(date)}</h3>
+                    {sessionsByDate.map(([date, daySessions]) => {
+                        const isToday = date === today;
+                        return (
+                        <section
+                            key={date}
+                            ref={isToday ? todaySectionRef : undefined}
+                            className={isToday ? 'rounded-xl border border-blue-200 bg-blue-50/60 p-3 shadow-sm' : undefined}
+                        >
+                            <h3 className={`mb-2 border-b pb-2 text-sm font-bold capitalize ${isToday ? 'border-blue-200 text-blue-800' : 'border-slate-200 text-slate-700'}`}>{isToday ? `Hoy · ${formatFechaEs(date)}` : formatFechaEs(date)}</h3>
                             <div className="space-y-2">
                                 {daySessions.map(session => (
-                                    <article key={`${session.date}:${session.periodIndex}`} className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${session.isBreak ? 'border-l-4 border-l-amber-400' : 'border-l-4 border-l-blue-400'}`}>
+                                    <article key={`${session.date}:${session.periodIndex}`} className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${session.isBreak ? 'border-l-4 border-l-amber-400' : 'border-l-4 border-l-blue-400'} ${isToday && session.notes ? 'ring-1 ring-blue-200' : ''}`}>
                                         <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start">
                                             <div className="flex min-w-40 items-center gap-2 text-sm font-semibold text-slate-700">
                                                 <ClockIcon className="h-4 w-4 text-slate-400" />
@@ -192,7 +211,8 @@ const ClassJournalRange: React.FC<{
                                 ))}
                             </div>
                         </section>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>
