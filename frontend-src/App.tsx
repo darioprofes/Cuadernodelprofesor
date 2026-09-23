@@ -384,6 +384,10 @@ const App = () => {
 
     // --- UI State ---
     const [activeClassId, setActiveClassId] = useState<string>('');
+    // Solicitud efímera desde el Cuaderno: abre Diario directamente en la
+    // vista por clase. Se consume al montarse ClassJournal para que entrar
+    // después desde el menú lateral siga abriendo la vista diaria normal.
+    const [journalClassFocusId, setJournalClassFocusId] = useState<string | null>(null);
     // Materia seleccionada en la cabecera (Fase 8) — antes se derivaba solo
     // de activeClass.courseId; ahora es contexto propio para poder elegirla
     // sin haber elegido clase todavía. El efecto de más abajo mantiene la
@@ -789,6 +793,9 @@ const App = () => {
                 academicConfiguration={effectiveAcademicConfiguration}
                 units={allProgrammingUnits}
                 courses={curriculumCourses}
+                initialMode={journalClassFocusId ? 'class' : 'day'}
+                initialClassId={journalClassFocusId ?? activeClassId}
+                onInitialClassModeConsumed={() => setJournalClassFocusId(null)}
             />;
         }
 
@@ -1052,6 +1059,7 @@ const App = () => {
                     setAcademicConfiguration={setAcademicConfigurationCallback}
                     evaluationTools={evaluationTools}
                     setActiveClassId={setActiveClassId} // Pass setter for internal tab navigation
+                    onOpenJournal={() => { setJournalClassFocusId(activeClass.id); setActiveView('journal'); }}
                     onCopyAssignment={handleCopyAssignment}
                 />;
             case 'calendar':

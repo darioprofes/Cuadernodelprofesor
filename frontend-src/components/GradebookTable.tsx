@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon, ArrowPathIcon, GlobeIcon, PhotoIcon, TagIcon, UserPlusIcon, UserCircleIcon } from './Icons';
+import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ClipboardDocumentIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon, ArrowPathIcon, GlobeIcon, PhotoIcon, TagIcon, UserPlusIcon, UserCircleIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
 import Input from './Input';
@@ -56,6 +56,7 @@ interface GradebookTableProps {
   setAcademicConfiguration: (updater: React.SetStateAction<AcademicConfiguration>) => void;
   evaluationTools: EvaluationTool[];
   setActiveClassId?: (id: string) => void; // Optional setter to change active class from tabs
+  onOpenJournal?: () => void;
   onCopyAssignment: (sourceAssignment: Assignment, targetClassId: string, targetPeriodId: string, targetCategoryId: string) => void;
 }
 
@@ -205,7 +206,7 @@ const MobileActivityGradebook: React.FC<MobileActivityGradebookProps> = ({
 };
 
 const GradebookTable: React.FC<GradebookTableProps> = (props) => {
-  const { classData, allClasses, allCourses, criteria, specificCompetences, keyCompetences, programmingUnits, academicConfiguration, evaluationTools, setActiveClassId, onCopyAssignment } = props;
+  const { classData, allClasses, allCourses, criteria, specificCompetences, keyCompetences, programmingUnits, academicConfiguration, evaluationTools, setActiveClassId, onOpenJournal, onCopyAssignment } = props;
   const { evaluationPeriods } = academicConfiguration;
   const createCategoryMutation = useCreateCategory();
   const updateCategoryMutation = useUpdateCategory();
@@ -1128,6 +1129,15 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             >
                 <MapIcon className="w-4 h-4" />
             </button>
+            {onOpenJournal && (
+                <button
+                    onClick={onOpenJournal}
+                    className="p-1.5 rounded-md text-white/90 hover:bg-white/15 transition-all flex-shrink-0"
+                    title="Ver diario de esta clase"
+                >
+                    <ClipboardDocumentIcon className="w-4 h-4" />
+                </button>
+            )}
             <div className="flex items-center gap-1 flex-shrink-0">
                 <button
                     onClick={handleDrawStudent}

@@ -14,6 +14,7 @@ import { pageHeaderMinHeight, pageHeaderPaddingClassName } from '../theme/compon
 import { headerPatternStyle } from '../theme/headerPattern';
 import { getMateria, getClassAccentColor, formatFechaEs } from '../utils';
 import { COLOR_POR_TIPO_FESTIVO } from './calendar/calendarColors';
+import ClassJournalRange from './ClassJournalRange';
 
 type PlannedContent = { unitName: string, sessionDesc: string, sessionNumber: number } | null;
 type ScheduledJournalItem = {
@@ -38,6 +39,9 @@ interface ClassJournalProps {
   academicConfiguration: AcademicConfiguration;
   units: ProgrammingUnit[];
   courses: Course[];
+  initialMode?: 'day' | 'class';
+  initialClassId?: string;
+  onInitialClassModeConsumed?: () => void;
 }
 
 const toYYYYMMDD = (date: Date): string => {
@@ -57,8 +61,9 @@ const addDays = (date: Date, days: number): Date => {
 // clase con varias sesiones el mismo día tiene una anotación por sesión.
 const entryKey = (classId: string, periodIndex: number): string => `${classId}::${periodIndex}`;
 
-const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, academicConfiguration, units, courses }) => {
+const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, academicConfiguration, units, courses, initialMode = 'day', initialClassId, onInitialClassModeConsumed }) => {
   const [selectedDate, setSelectedDate] = useState<string>(toYYYYMMDD(new Date()));
+  const [viewMode, setViewMode] = useState<'day' | 'class'>(initialMode);
   // Local state to hold edits before saving: Map<classId, string>
   const [notesMap, setNotesMap] = useState<Record<string, string>>({});
   const [isDirtyMap, setIsDirtyMap] = useState<Record<string, boolean>>({});
@@ -76,6 +81,13 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchWrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+      if (initialMode === 'class') {
+          setViewMode('class');
+          onInitialClassModeConsumed?.();
+      }
+  }, [initialMode, onInitialClassModeConsumed]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -357,6 +369,11 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
         </div>
 
         <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-lg bg-white/15 p-1">
+                <button type="button" onClick={() => setViewMode('day')} className={`rounded-md px-2.5 py-1.5 text-sm font-semibold transition-colors ${viewMode === 'day' ? 'bg-white text-slate-800 shadow-sm' : 'text-white/90 hover:bg-white/10'}`}>Día</button>
+                <button type="button" onClick={() => setViewMode('class')} className={`rounded-md px-2.5 py-1.5 text-sm font-semibold transition-colors ${viewMode === 'class' ? 'bg-white text-slate-800 shadow-sm' : 'text-white/90 hover:bg-white/10'}`}>Por clase</button>
+            </div>
+            {viewMode === 'day' && (
             <div className="flex items-center rounded-lg bg-white shadow-sm">
                 <button onClick={handlePrevDay} className="p-2 text-slate-500 hover:bg-slate-100 rounded-l-lg border-r border-slate-200" title="Día anterior">
                     <ChevronLeftIcon className="w-5 h-5"/>
@@ -371,8 +388,20 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
                     <ChevronRightIcon className="w-5 h-5"/>
                 </button>
             </div>
+            )}
         </div>
       </div>
+
+      {viewMode === 'class' ? (
+          <ClassJournalRange
+              classes={classes}
+              courses={courses}
+              entries={entries}
+              academicConfiguration={academicConfiguration}
+              initialClassId={initialClassId}
+          />
+      ) : (
+      <>
 
       {holidayToday && (
           <div
@@ -525,6 +554,8 @@ const ClassJournal: React.FC<ClassJournalProps> = ({ classes, entries, onSave, a
             })
         )}
       </div>
+      </>
+      )}
     </div>
   );
 };

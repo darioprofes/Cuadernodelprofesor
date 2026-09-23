@@ -54,7 +54,7 @@ describe('detectUngradedOverdueAssignments', () => {
         });
         const notices = detectUngradedOverdueAssignments([cls], [course], today);
         expect(notices).toHaveLength(1);
-        expect(notices[0].label).toContain('Biología');
+        expect(notices[0].label).toBe('Sin calificar en BIO: 1');
         expect(notices[0].target).toEqual({ view: 'gradebook', classId: 'class1' });
     });
 
@@ -89,7 +89,7 @@ describe('detectUngradedOverdueAssignments', () => {
         });
         const notices = detectUngradedOverdueAssignments([cls], [course], today);
         expect(notices).toHaveLength(1);
-        expect(notices[0].label).toContain('2 sin calificar');
+        expect(notices[0].label).toBe('Sin calificar en BIO: 2');
     });
 });
 
