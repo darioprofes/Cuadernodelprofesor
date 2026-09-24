@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
+import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course, QuestionRoundEntry } from '../types';
 import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ClipboardDocumentIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon, ArrowPathIcon, GlobeIcon, PhotoIcon, TagIcon, UserPlusIcon, UserCircleIcon } from './Icons';
 import IconButton from './IconButton';
 import Select from './Select';
@@ -28,6 +28,7 @@ import StudentFlagsModal from './StudentFlagsModal';
 import ImportPhotosModal from './ImportPhotosModal';
 import PlanoClaseModal from './PlanoClaseModal';
 import CopyAssignmentModal from './CopyAssignmentModal';
+import QuestionRoundModal from './QuestionRoundModal';
 import ImportarDesdeSAModal from './ImportarDesdeSAModal';
 import ClassLabel from './ClassLabel';
 import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getNombreOrden, getDayOfWeek1a7, parsePeriodRange, periodoActivoEn, getSiglas } from '../utils';
@@ -164,6 +165,11 @@ const MobileActivityGradebook: React.FC<MobileActivityGradebookProps> = ({
             <Select id="mobile-assignment-picker" value={selectedAssignmentId} onChange={event => setSelectedAssignmentId(event.target.value)} className="w-full font-semibold">
               {assignmentsForCategory.map(assignment => <option key={assignment.id} value={assignment.id}>{assignment.shortName || assignment.name}</option>)}
             </Select>
+            {selectedAssignment.evaluationMethod === 'question_round' && (
+              <button type="button" onClick={() => students[0] && onOpenGradeEntry(students[0], selectedAssignment)} className="mt-2 w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                <DicesIcon className="mr-1 inline h-4 w-4" /> Abrir ronda de preguntas
+              </button>
+            )}
           </div>
 
           {students.length > 6 && (
@@ -173,7 +179,7 @@ const MobileActivityGradebook: React.FC<MobileActivityGradebookProps> = ({
         </div>
           )}
 
-          <p className="text-xs text-slate-500">Toca un alumno para registrar o revisar su calificación.</p>
+          <p className="text-xs text-slate-500">{selectedAssignment.evaluationMethod === 'question_round' ? 'Abre la ronda para elegir de forma equilibrada a quién preguntar.' : 'Toca un alumno para registrar o revisar su calificación.'}</p>
           <div className="space-y-1.5">
         {visibleStudents.map((student, index) => {
           const score = studentAssignmentScores.get(student.id)?.get(selectedAssignment.id) ?? null;
@@ -421,6 +427,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   
   const [isGradeEntryModalOpen, setIsGradeEntryModalOpen] = useState(false);
   const [gradeEntryData, setGradeEntryData] = useState<{ student: Student; assignment: Assignment; grade: Grade | null } | null>(null);
+  const [questionRoundAssignment, setQuestionRoundAssignment] = useState<Assignment | null>(null);
   
   const [isCopyCatOpen, setIsCopyCatOpen] = useState(false);
   const [selectedSourceClassId, setSelectedSourceClassId] = useState<string>(classData.id);
@@ -878,6 +885,10 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   };
   
   const handleOpenGradeEntry = (student: Student, assignment: Assignment) => {
+    if (assignment.evaluationMethod === 'question_round') {
+      setQuestionRoundAssignment(assignment);
+      return;
+    }
     const grade = gradesMap.get(`${student.id}-${assignment.id}`) || null;
     setGradeEntryData({ student, assignment, grade });
     setIsGradeEntryModalOpen(true);
@@ -936,6 +947,17 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     } else {
         setIsGradeEntryModalOpen(false);
     }
+  };
+
+  const handleSaveQuestionRound = async (student: Student, entries: QuestionRoundEntry[]) => {
+    if (!questionRoundAssignment || !student.enrollmentId) return;
+    const average = entries.reduce((sum, entry) => sum + entry.score, 0) / entries.length;
+    await putGradeMutation.mutateAsync({
+      assignmentId: questionRoundAssignment.id,
+      enrollmentId: student.enrollmentId,
+      classId: classData.id,
+      data: { directScore: average, toolResults: { questionRoundEntries: entries } },
+    });
   };
 
   const handleBulkSaveGrades = async (gradesToSave: Map<string, number>) => {
@@ -1343,6 +1365,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                                 <IconButton label="Editar tarea" size="sm" onClick={() => handleEditAssignment(a)}><PencilIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Eliminar tarea" tone="danger" size="sm" onClick={() => handleDeleteAssignment(a.id)}><TrashIcon className="w-3 h-3"/></IconButton>
                                 <IconButton label="Copiar tarea a otra clase" tone="primary" size="sm" onClick={() => setAssignmentToCopy(a)}><DocumentDuplicateIcon className="w-3 h-3"/></IconButton>
+                                {a.evaluationMethod === 'question_round' && <IconButton label="Abrir ronda de preguntas" tone="primary" size="sm" onClick={() => setQuestionRoundAssignment(a)}><DicesIcon className="w-3 h-3"/></IconButton>}
                                 <IconButton label="Importar notas en lote" tone="primary" size="sm" onClick={() => {setAssignmentForImport(a); setIsBulkImportModalOpen(true);}}><ArrowUpTrayIcon className="w-3 h-3"/></IconButton>
                               </div>
                             </th>
@@ -1719,6 +1742,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
         evaluationTools={evaluationTools}
       />
       {gradeEntryData && <GradeEntryModal isOpen={isGradeEntryModalOpen} onClose={() => setIsGradeEntryModalOpen(false)} student={gradeEntryData.student} assignment={gradeEntryData.assignment} grade={gradeEntryData.grade} criteriaList={criteria} onSave={handleSaveGrade} evaluationTools={evaluationTools} allAssignments={classData.assignments} students={classData.students} />}
+      <QuestionRoundModal isOpen={!!questionRoundAssignment} onClose={() => setQuestionRoundAssignment(null)} assignment={questionRoundAssignment} students={classData.students} grades={classData.grades} onSave={handleSaveQuestionRound} />
       {assignmentForImport && <BulkGradeImportModal isOpen={isBulkImportModalOpen} onClose={() => setIsBulkImportModalOpen(false)} onSave={handleBulkSaveGrades} assignment={assignmentForImport} students={classData.students} />}
       <BulkAddStudentModal
           isOpen={isBulkAddOpen}

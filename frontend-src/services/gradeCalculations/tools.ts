@@ -130,7 +130,7 @@ export const recalculateGradesForTool = (classes: ClassData[], tool: EvaluationT
         const updatedGrades = cls.grades.map(g => {
             if (!assignmentIds.has(g.assignmentId) || !g.toolResults) return g;
             changed = true;
-            return { ...g, criterionScores: calculateCriterionScoresFromTool(tool, g.toolResults) };
+            return { ...g, criterionScores: calculateCriterionScoresFromTool(tool, g.toolResults as Record<string, boolean | string | number>) };
         });
 
         return changed ? { ...cls, grades: updatedGrades } : cls;

@@ -31,13 +31,14 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
   // máxima (ver Assignment.puntuacionMaxima) -- solo se usa en el caso
   // hasNoCriteria; singleGrade sigue siendo la conversión a base 10.
   const [rawGrade, setRawGrade] = useState<string>('');
+  const isDirectLike = assignment.evaluationMethod === 'direct_grade' || assignment.evaluationMethod === 'question_round';
   const hasScale = assignment.evaluationMethod === 'direct_grade' && assignment.puntuacionMaxima != null;
   
   const currentStudentIndex = useMemo(() => students.findIndex(s => s.id === student.id), [students, student.id]);
   const hasNextStudent = currentStudentIndex < students.length - 1;
 
   const evaluationTool = useMemo(() => {
-    if (assignment.evaluationMethod !== 'direct_grade' && assignment.evaluationToolId) {
+    if (!isDirectLike && assignment.evaluationToolId) {
         return evaluationTools.find(t => t.id === assignment.evaluationToolId);
     }
     return null;
@@ -51,12 +52,12 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
   // nota única en vez de exigir dar de alta criterios solo para poder poner
   // una nota (p.ej. exámenes puntuales que no se quieren desglosar).
   const hasNoCriteria = useMemo(() =>
-    assignment.evaluationMethod === 'direct_grade' && !isRecoveryTaskWithAssignments && assignment.linkedCriteria.length === 0
-  , [assignment, isRecoveryTaskWithAssignments]);
+    isDirectLike && !isRecoveryTaskWithAssignments && assignment.linkedCriteria.length === 0
+  , [assignment, isRecoveryTaskWithAssignments, isDirectLike]);
 
   useEffect(() => {
     if (isOpen) {
-        if (assignment.evaluationMethod === 'direct_grade') {
+        if (isDirectLike) {
             if (isRecoveryTaskWithAssignments) {
                 const firstGradeVal = grade?.criterionScores ? Object.values(grade.criterionScores)[0] : null;
                 setSingleGrade(firstGradeVal != null ? String(firstGradeVal) : '');
@@ -88,11 +89,11 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
                 setSingleGrade('');
             }
         } else {
-            setToolResults(grade?.toolResults || {});
+            setToolResults((grade?.toolResults || {}) as Record<string, boolean | string | number>);
             setSingleGrade('');
         }
     }
-  }, [isOpen, grade, assignment, isRecoveryTaskWithAssignments, hasNoCriteria, hasScale, student.id]); // Added student.id dependency to reset when switching students
+  }, [isOpen, grade, assignment, isRecoveryTaskWithAssignments, hasNoCriteria, hasScale, student.id, isDirectLike]); // Added student.id dependency to reset when switching students
 
   const handleScoreChange = (criterionId: string, value: string) => {
     setSingleGrade('');
@@ -113,7 +114,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
     const newScore = isNaN(parsedValue) ? null : Math.max(0, Math.min(10, parsedValue));
     if (newScore === null) return;
 
-    if (assignment.evaluationMethod === 'direct_grade' && !isRecoveryTaskWithAssignments) {
+    if (isDirectLike && !isRecoveryTaskWithAssignments) {
         const newScores: Record<string, number | null> = {};
         for (const lc of assignment.linkedCriteria) {
             newScores[lc.criterionId] = newScore;
@@ -143,7 +144,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
 
   const handleSaveInternal = (e: React.FormEvent, next: boolean) => {
     e.preventDefault();
-    if (assignment.evaluationMethod === 'direct_grade') {
+    if (isDirectLike) {
         if (isRecoveryTaskWithAssignments) {
             const gradeValue = singleGrade !== '' ? parseFloat(singleGrade.replace(',', '.')) : null;
             const newScores: Record<string, number | null> = {};
@@ -360,7 +361,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
         <div className="space-y-4">
           <p className="text-slate-600 font-medium">Alumn@: <span className="font-bold">{getNombreCompleto(student)}</span></p>
           
-          {assignment.evaluationMethod === 'direct_grade' ? renderDirectGradeInputs() : renderToolInputs()}
+          {isDirectLike ? renderDirectGradeInputs() : renderToolInputs()}
 
           <div className="flex justify-end items-center pt-4 border-t gap-3">
               <button type="button" onClick={onClose} className="bg-white py-2 px-4 border rounded-md shadow-sm text-sm font-medium text-slate-700 hover:bg-slate-50">

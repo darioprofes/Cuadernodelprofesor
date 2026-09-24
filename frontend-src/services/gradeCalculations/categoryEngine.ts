@@ -13,7 +13,7 @@ export const calculateSingleAssignmentScore = (assignment: Assignment, grade: Gr
 
     // 1.5 Direct grade without linked criteria: nota única sin pasar por
     // criterios LOMLOE (p.ej. exámenes puntuales que no se quieren desglosar).
-    if (assignment.evaluationMethod === 'direct_grade' && (!assignment.linkedCriteria || assignment.linkedCriteria.length === 0)) {
+    if ((assignment.evaluationMethod === 'direct_grade' || assignment.evaluationMethod === 'question_round') && (!assignment.linkedCriteria || assignment.linkedCriteria.length === 0)) {
         return grade.criterionScores['direct_score'] ?? null;
     }
 

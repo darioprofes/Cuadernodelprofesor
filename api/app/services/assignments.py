@@ -15,7 +15,7 @@ _COLUMNS = """
     id, class_id, category_id, evaluation_period_id, evaluation_tool_id,
     programming_unit_id, name, short_name, date, evaluation_method, linked_criteria,
     recovers_assignment_ids, peso_en_categoria, importancia,
-    importancia_personalizada, puntuacion_maxima, created_at, updated_at
+    importancia_personalizada, puntuacion_maxima, question_round_description, created_at, updated_at
 """
 
 _JSON_FIELDS = {"linked_criteria"}
@@ -52,6 +52,7 @@ class AssignmentInput(ApiModel):
     # solo afecta a qué valor se muestra al escribir/revisar la nota (ver
     # grades.direct_score_raw).
     puntuacion_maxima: Optional[float] = None
+    question_round_description: Optional[str] = None
 
 
 class AssignmentPatch(ApiModel):
@@ -69,6 +70,7 @@ class AssignmentPatch(ApiModel):
     importancia: Optional[str] = None
     importancia_personalizada: Optional[float] = None
     puntuacion_maxima: Optional[float] = None
+    question_round_description: Optional[str] = None
     expected_updated_at: Optional[str] = None
 
 
@@ -89,6 +91,7 @@ class Assignment(ApiModel):
     importancia: Optional[str] = None
     importancia_personalizada: Optional[float] = None
     puntuacion_maxima: Optional[float] = None
+    question_round_description: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

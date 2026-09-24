@@ -52,6 +52,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
   const [importanciaAvanzada, setImportanciaAvanzada] = useState(false);
   const [importanciaPersonalizada, setImportanciaPersonalizada] = useState<string>('');
   const [puntuacionMaxima, setPuntuacionMaxima] = useState<string>('');
+  const [questionRoundDescription, setQuestionRoundDescription] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(category.id);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -75,6 +76,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
       setImportanciaAvanzada(assignmentToEdit.importanciaPersonalizada != null);
       setImportanciaPersonalizada(assignmentToEdit.importanciaPersonalizada != null ? String(assignmentToEdit.importanciaPersonalizada) : '');
       setPuntuacionMaxima(assignmentToEdit.puntuacionMaxima != null ? String(assignmentToEdit.puntuacionMaxima) : '');
+      setQuestionRoundDescription(assignmentToEdit.questionRoundDescription || '');
       const sanitizedLinkedCriteria = (assignmentToEdit.linkedCriteria || []).map(lc => ({
         ...lc,
         selectedDescriptorIds: lc.selectedDescriptorIds || [],
@@ -104,6 +106,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
       setImportanciaAvanzada(false);
       setImportanciaPersonalizada('');
       setPuntuacionMaxima('');
+      setQuestionRoundDescription('');
       setUseGlobalToolCriteria(false);
     }
   }, [assignmentToEdit, isOpen, category]);
@@ -146,6 +149,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
         importanciaPersonalizada: importanciaAvanzada && importanciaPersonalizada.trim() ? Number(importanciaPersonalizada) : undefined,
         puntuacionMaxima: evaluationMethod === 'direct_grade' && finalLinkedCriteria.length === 0 && puntuacionMaxima.trim()
           ? Number(puntuacionMaxima) : undefined,
+        questionRoundDescription: evaluationMethod === 'question_round' ? questionRoundDescription.trim() || undefined : undefined,
       };
       setError(null);
       setGuardando(true);
@@ -241,6 +245,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
               <option value="rating_scale">Escala de Valoración</option>
               <option value="rubric">Rúbrica</option>
               <option value="criterial_exam">Examen criterial</option>
+              <option value="question_round">Ronda de preguntas</option>
             </Select>
           </div>
         </div>
@@ -326,8 +331,17 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
             </div>
         )}
 
+        {evaluationMethod === 'question_round' && (
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+            <h4 className="text-sm font-semibold text-indigo-950">Instrumento: Ronda de preguntas</h4>
+            <p className="mt-1 text-xs text-indigo-800">La aplicación reparte las preguntas entre el alumnado con menos notas registradas. Cada respuesta se conserva y la nota de la actividad es la media acumulada.</p>
+            <label htmlFor="question-round-description" className="mt-3 block text-sm font-medium text-slate-700">Qué se observa</label>
+            <textarea id="question-round-description" value={questionRoundDescription} onChange={event => setQuestionRoundDescription(event.target.value)} rows={3} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" placeholder="Ej.: razonamiento, vocabulario científico y explicación de los procedimientos." />
+          </div>
+        )}
+
         {/* Instrument Selection Logic */}
-        {evaluationMethod !== 'direct_grade' && (
+        {evaluationMethod !== 'direct_grade' && evaluationMethod !== 'question_round' && (
             <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                 <div className="mb-4">
                     <label htmlFor="evaluation-tool" className="block text-sm font-medium text-slate-700">Instrumento de Evaluación</label>
@@ -368,7 +382,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
         )}
 
         {/* Criteria Selector Logic: Shown if Direct Grade OR (Tool + Global Mode Enabled) */}
-        {(evaluationMethod === 'direct_grade' || useGlobalToolCriteria) && showCriteriaSection && (
+        {(evaluationMethod === 'direct_grade' || evaluationMethod === 'question_round' || useGlobalToolCriteria) && showCriteriaSection && (
         <div className="space-y-4 mt-4">
             {evaluationMethod !== 'direct_grade' && <h4 className="text-sm font-bold text-slate-700">Selección de Criterios Globales</h4>}
             <LinkedCriteriaSelector

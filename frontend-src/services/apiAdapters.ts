@@ -212,6 +212,7 @@ export const apiAssignmentToLocal = (a: ApiAssignment): Assignment => ({
     importancia: a.importancia as ImportanciaActividad | undefined,
     importanciaPersonalizada: a.importanciaPersonalizada,
     puntuacionMaxima: a.puntuacionMaxima,
+    questionRoundDescription: a.questionRoundDescription,
 });
 
 // ============================================================
@@ -282,6 +283,18 @@ export const decodeGrade = (
     assignment: Pick<Assignment, 'id' | 'evaluationMethod' | 'evaluationToolId' | 'linkedCriteria'>,
     evaluationTools: EvaluationTool[],
 ): Grade => {
+    if (assignment.evaluationMethod === 'question_round') {
+        const score = apiGrade.directScore;
+        const criterionScores: Record<string, number | null> = assignment.linkedCriteria?.length && score != null
+            ? Object.fromEntries(assignment.linkedCriteria.map(link => [link.criterionId, score]))
+            : score != null ? { direct_score: score } : {};
+        return {
+            studentId,
+            assignmentId: assignment.id,
+            criterionScores,
+            toolResults: (apiGrade.toolResults ?? undefined) as Record<string, unknown> | undefined,
+        };
+    }
     if (assignment.evaluationMethod !== 'direct_grade') {
         const toolResults = (apiGrade.toolResults ?? undefined) as Record<string, boolean | string | number> | undefined;
         let criterionScores: Record<string, number | null> = {};

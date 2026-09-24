@@ -229,7 +229,7 @@ export interface Assignment {
   evaluationPeriodId: string;
   date?: string; // YYYY-MM-DD
 
-  evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam';
+  evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam' | 'question_round';
   evaluationToolId?: string; // Links to an EvaluationTool's id
 
   linkedCriteria: LinkedCriterion[]; // Usado solo para 'direct_grade'
@@ -247,13 +247,23 @@ export interface Assignment {
   // p.ej. 8 si un examen se puntúa sobre 8 en vez de sobre 10) -- ausente =
   // base 10 de toda la vida. Ver Grade.directScoreRaw.
   puntuacionMaxima?: number;
+  // Explica qué se observa en una ronda de preguntas (p. ej. expresión y
+  // razonamiento). Es propio de la actividad, no de una vuelta concreta.
+  questionRoundDescription?: string;
+}
+
+export interface QuestionRoundEntry {
+  id: string;
+  recordedAt: string;
+  score: number;
+  notes?: string;
 }
 
 export interface Grade {
   studentId: string;
   assignmentId: string;
   criterionScores: Record<string, number | null>; // { criterionId: score }. Siempre se calcula y se guarda.
-  toolResults?: Record<string, boolean | string | number>; // { itemId: checked } for checklist, { itemId: levelId } for scale/rubric, { itemId: puntosObtenidos } for examen criterial
+  toolResults?: Record<string, unknown>; // Incluye el historial de una ronda de preguntas.
   // Valor tal cual se escribió cuando la tarea tiene puntuacionMaxima propia
   // (p.ej. "7" sobre 8) -- criterionScores.direct_score sigue siendo SIEMPRE
   // la conversión a base 10. null/ausente = sin escala propia.

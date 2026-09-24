@@ -384,13 +384,14 @@ export interface Assignment {
     name: string;
     shortName?: string;
     date?: string;
-    evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam';
+    evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam' | 'question_round';
     linkedCriteria: LinkedCriterion[];
     recoversAssignmentIds: string[];
     pesoEnCategoria?: number;
     importancia?: string;
     importanciaPersonalizada?: number;
     puntuacionMaxima?: number;
+    questionRoundDescription?: string;
     createdAt: string;
     updatedAt: string;
 }
@@ -403,13 +404,14 @@ export interface AssignmentInput {
     name: string;
     shortName?: string;
     date?: string;
-    evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam';
+    evaluationMethod: 'direct_grade' | 'checklist' | 'rating_scale' | 'rubric' | 'criterial_exam' | 'question_round';
     linkedCriteria?: LinkedCriterion[];
     recoversAssignmentIds?: string[];
     pesoEnCategoria?: number;
     importancia?: string;
     importanciaPersonalizada?: number;
     puntuacionMaxima?: number;
+    questionRoundDescription?: string;
 }
 
 export interface AssignmentPatch extends Partial<AssignmentInput> {
