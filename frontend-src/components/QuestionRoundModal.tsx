@@ -31,6 +31,9 @@ const QuestionRoundModal: React.FC<Props> = ({ isOpen, assignment, students, gra
     const counts = useMemo(() => students.map(student => entriesByStudent.get(student.id)?.length || 0), [students, entriesByStudent]);
     const minimum = counts.length ? Math.min(...counts) : 0;
     const candidates = students.filter(student => (entriesByStudent.get(student.id)?.length || 0) === minimum);
+    const roundNumber = minimum + 1;
+    const completedThisRound = counts.filter(count => count >= roundNumber).length;
+    const totalEntries = counts.reduce((sum, count) => sum + count, 0);
     const selected = students.find(student => student.id === selectedId) || null;
     const selectedCount = selected ? entriesByStudent.get(selected.id)?.length || 0 : 0;
 
@@ -64,7 +67,8 @@ const QuestionRoundModal: React.FC<Props> = ({ isOpen, assignment, students, gra
             <div className="space-y-4">
                 <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-950">
                     <p className="font-semibold">Vuelta equilibrada</p>
-                    <p className="mt-1 text-indigo-800">Se elige al azar entre las {candidates.length} personas con menos notas: {minimum} registrada{minimum === 1 ? '' : 's'}.</p>
+                    <p className="mt-1 text-indigo-800">Ronda {roundNumber} · {completedThisRound} de {students.length} con {roundNumber} nota{roundNumber === 1 ? '' : 's'} · {candidates.length} pendiente{candidates.length === 1 ? '' : 's'}.</p>
+                    <p className="mt-1 text-xs text-indigo-700">{totalEntries} nota{totalEntries === 1 ? '' : 's'} registrada{totalEntries === 1 ? '' : 's'} en total. El sorteo elige entre quienes siguen pendientes en esta ronda.</p>
                     {assignment?.questionRoundDescription && <p className="mt-2 border-t border-indigo-200 pt-2 text-indigo-900"><span className="font-medium">Se observa:</span> {assignment.questionRoundDescription}</p>}
                 </div>
                 {!selected ? (
@@ -101,7 +105,7 @@ const QuestionRoundModal: React.FC<Props> = ({ isOpen, assignment, students, gra
                         <Button type="button" onClick={save} disabled={saving || score.trim() === ''} className="w-full justify-center">{saving ? 'Guardando…' : 'Registrar respuesta y continuar'}</Button>
                     </div>
                 )}
-                <p className="text-xs text-slate-500">{students.filter(student => (entriesByStudent.get(student.id)?.length || 0) > minimum).length}/{students.length} ya superan la ronda actual. Las intervenciones sin nota no se contabilizan.</p>
+                <p className="text-xs text-slate-500">Las intervenciones sin nota no se contabilizan para el equilibrio de la ronda.</p>
             </div>
         </Modal>
     );
