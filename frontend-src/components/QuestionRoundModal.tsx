@@ -32,6 +32,7 @@ const QuestionRoundModal: React.FC<Props> = ({ isOpen, assignment, students, gra
     const minimum = counts.length ? Math.min(...counts) : 0;
     const candidates = students.filter(student => (entriesByStudent.get(student.id)?.length || 0) === minimum);
     const selected = students.find(student => student.id === selectedId) || null;
+    const selectedCount = selected ? entriesByStudent.get(selected.id)?.length || 0 : 0;
 
     const pick = () => {
         if (!candidates.length) return;
@@ -67,15 +68,28 @@ const QuestionRoundModal: React.FC<Props> = ({ isOpen, assignment, students, gra
                     {assignment?.questionRoundDescription && <p className="mt-2 border-t border-indigo-200 pt-2 text-indigo-900"><span className="font-medium">Se observa:</span> {assignment.questionRoundDescription}</p>}
                 </div>
                 {!selected ? (
-                    <Button type="button" onClick={pick} className="w-full justify-center" disabled={!students.length}>
-                        <DicesIcon className="h-5 w-5" /> Elegir siguiente alumno
-                    </Button>
+                    <div className="space-y-3">
+                        <Button type="button" onClick={pick} className="w-full justify-center" disabled={!students.length}>
+                            <DicesIcon className="h-5 w-5" /> Elegir siguiente alumno
+                        </Button>
+                        <div className="border-t border-slate-200 pt-3">
+                            <label htmlFor="question-round-student" className="text-sm font-medium text-slate-700">O elegir alumno manualmente</label>
+                            <select id="question-round-student" value="" onChange={event => { if (event.target.value) { setSelectedId(event.target.value); setScore(''); setNotes(''); } }} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                                <option value="">Selecciona un alumno…</option>
+                                {students.map(student => {
+                                    const count = entriesByStudent.get(student.id)?.length || 0;
+                                    return <option key={student.id} value={student.id}>{getNombreCompleto(student)} · {count} nota{count === 1 ? '' : 's'}</option>;
+                                })}
+                            </select>
+                        </div>
+                    </div>
                 ) : (
                     <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div className="flex items-center justify-between gap-3">
                             <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Le toca</p><p className="text-lg font-bold text-slate-900">{getNombreCompleto(selected)}</p></div>
                             <Button type="button" variant="secondary" onClick={pick}>Otro alumno</Button>
                         </div>
+                        {selectedCount > minimum && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">Elección manual: esta persona ya tiene {selectedCount} notas, mientras que el mínimo del grupo es {minimum}.</p>}
                         <div>
                             <label htmlFor="round-score" className="text-sm font-medium text-slate-700">Calificación (0–10)</label>
                             <Input id="round-score" type="number" min="0" max="10" step="0.1" autoFocus value={score} onChange={event => setScore(event.target.value)} className="mt-1 w-full text-lg font-semibold" />
