@@ -17,6 +17,7 @@ import { checkboxClassName } from '../theme/components/Input';
 import { linkClassName } from '../theme/components/Link';
 import LinkedCriteriaSelector from './LinkedCriteriaSelector';
 import { IMPORTANCE_FACTORS } from '../services/gradeCalculations';
+import { toYYYYMMDD } from '../utils';
 
 interface AssignmentModalProps {
   isOpen: boolean;
@@ -94,7 +95,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
       setSelectedCategoryId(category.id);
       setName('');
       setShortName('');
-      setDate('');
+      setDate(toYYYYMMDD(new Date()));
       setEvaluationPeriodId(category.evaluationPeriodId);
       setProgrammingUnitId(undefined);
       setLinkedCriteria([]);

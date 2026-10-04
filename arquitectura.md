@@ -377,7 +377,7 @@ Las tablas siguientes cubren los archivos versionados del commit de referencia y
 | [frontend-src/components/Alert.tsx](frontend-src/components/Alert.tsx) | Componente visual reutilizable Alert; su estilo puede apoyarse en theme/components. |
 | [frontend-src/components/AnnualCalendarView.tsx](frontend-src/components/AnnualCalendarView.tsx) | Calendario anual. |
 | [frontend-src/components/AnonimizarSeleccionButton.tsx](frontend-src/components/AnonimizarSeleccionButton.tsx) | Anonimización de la selección del editor. |
-| [frontend-src/components/AssignmentModal.tsx](frontend-src/components/AssignmentModal.tsx) | Creación/edición de actividades evaluables. |
+| [frontend-src/components/AssignmentModal.tsx](frontend-src/components/AssignmentModal.tsx) | Creación/edición de actividades evaluables; propone la fecha local actual para nuevas tareas y conserva la fecha al editar. |
 | [frontend-src/components/Badge.tsx](frontend-src/components/Badge.tsx) | Componente visual reutilizable Badge; su estilo puede apoyarse en theme/components. |
 | [frontend-src/components/BannerCostero.tsx](frontend-src/components/BannerCostero.tsx) | Elemento gráfico de cabecera. |
 | [frontend-src/components/BufferedInput.tsx](frontend-src/components/BufferedInput.tsx) | Campo con edición amortiguada antes de guardar. |
