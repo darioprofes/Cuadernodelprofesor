@@ -19,6 +19,7 @@ interface GradeEntryModalProps {
   evaluationTools: EvaluationTool[];
   allAssignments: Assignment[];
   students: Student[]; // Added to know the list for navigation
+  allowNextStudent?: boolean;
 }
 
 const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
@@ -42,7 +43,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
         return evaluationTools.find(t => t.id === assignment.evaluationToolId);
     }
     return null;
-  }, [assignment, evaluationTools]);
+  }, [assignment, evaluationTools, isDirectLike]);
 
   const isRecoveryTaskWithAssignments = useMemo(() =>
     !!(assignment.recoversAssignmentIds && assignment.recoversAssignmentIds.length > 0)
@@ -370,7 +371,7 @@ const GradeEntryModal: React.FC<GradeEntryModalProps> = (props) => {
               <button onClick={(e) => handleSaveInternal(e, false)} className="inline-flex justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
                 Guardar
               </button>
-              {hasNextStudent && (
+              {hasNextStudent && props.allowNextStudent !== false && (
                   <button onClick={(e) => handleSaveInternal(e, true)} className="inline-flex items-center justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700">
                     Guardar y Siguiente <ChevronRightIcon className="w-4 h-4 ml-1" />
                   </button>

@@ -285,13 +285,18 @@ export const decodeGrade = (
 ): Grade => {
     if (assignment.evaluationMethod === 'question_round') {
         const score = apiGrade.directScore;
+        // Las rondas antiguas ahora se editan con el formulario normal.
+        // Las notas por criterio se guardan como mapa, no como media.
+        const storedCriteria = Object.fromEntries((assignment.linkedCriteria ?? [])
+            .filter(link => typeof apiGrade.toolResults?.[link.criterionId] === 'number')
+            .map(link => [link.criterionId, apiGrade.toolResults![link.criterionId] as number]));
         const criterionScores: Record<string, number | null> = assignment.linkedCriteria?.length && score != null
             ? Object.fromEntries(assignment.linkedCriteria.map(link => [link.criterionId, score]))
             : score != null ? { direct_score: score } : {};
         return {
             studentId,
             assignmentId: assignment.id,
-            criterionScores,
+            criterionScores: Object.keys(storedCriteria).length ? storedCriteria : criterionScores,
             toolResults: (apiGrade.toolResults ?? undefined) as Record<string, unknown> | undefined,
         };
     }

@@ -245,7 +245,9 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
               <option value="rating_scale">Escala de Valoración</option>
               <option value="rubric">Rúbrica</option>
               <option value="criterial_exam">Examen criterial</option>
-              <option value="question_round">Ronda de preguntas</option>
+              {assignmentToEdit?.evaluationMethod === 'question_round' && (
+                <option value="question_round">Nota numérica (ronda anterior)</option>
+              )}
             </Select>
           </div>
         </div>

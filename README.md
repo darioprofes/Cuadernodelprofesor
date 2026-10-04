@@ -27,6 +27,9 @@ concreta, es exactamente el caso de uso previsto.
 
 ## Estructura del repositorio
 
+Para localizar los archivos implicados en cada cambio, consulta el
+[mapa de arquitectura y responsabilidades](arquitectura.md).
+
 - [`frontend-src/`](frontend-src/) — aplicación React + TypeScript + Vite. En web
   consume una API REST granular; en escritorio usa Tauri con el mismo contrato de API.
 - [`api/`](api/) — API FastAPI respaldada por PostgreSQL. Persiste alumnado, cursos,
