@@ -79,7 +79,7 @@ En esta tabla, `F` significa `frontend-src/`, `B` significa `api/app/` y `R` sig
 | Diario y consulta por clase | `F/components/ClassJournal.tsx`, `ClassJournalRange.tsx`, `QuickJournalModal.tsx` | `F/hooks/useJournalEntries.ts`, `B/routers/journal_entries.py`, `B/services/journal_entries.py`, `R/services/journal_entries.rs`. |
 | Pantalla Hoy y avisos | `F/components/HoyView.tsx`, `F/services/dashboardNotices.ts` | Tests de avisos, horario, festivos, sesiones y agenda. |
 | Datos personales del alumnado | `F/components/StudentPersonalDataModal.tsx`, `StudentSummaryModal.tsx`, `F/hooks/useApiStudents.ts` | `B/services/students.py`, `R/services/students.rs`, ambos tipos y adaptadores. |
-| Matrícula, orden, apoyos o plano | `F/components/StudentFlagsModal.tsx`, `PlanoClaseModal.tsx`, `F/hooks/useEnrollments.ts` | `B/services/enrollments.py`, `R/services/enrollments.rs`, distinción persona/matrícula. |
+| Matrícula, orden, apoyos o plano | `F/components/StudentFlagsModal.tsx`, `PlanoClaseModal.tsx`, `F/hooks/useEnrollments.ts` | `B/services/enrollments.py`, `R/services/enrollments.rs`, distinción persona/matrícula. El plano usa `F/services/classroomLayout.ts` para selección rectangular, movimiento en grupo y cuadrícula; guarda cada matrícula por el callback de `GradebookTable.tsx`. |
 | Importar alumnado de SAUCE | `F/components/ImportSauceStudentsModal.tsx`, `F/services/sauceImport.ts` | `sauceImport.test.ts`, `F/hooks/useApiStudents.ts`, matrículas y seguimiento de importación. |
 | Fotos y PDF de fotos | `F/components/ImportPhotosModal.tsx`, `StudentPhotoAvatar.tsx`, `F/services/apiAdapters.ts` | `B/routers/photos.py`, `B/services/photos.py`, `fotos_pdf.py`, `R/services/photos.rs`, `R/lib.rs`, copia Python auxiliar. |
 | Faltas y Educastur | `F/hooks/useAbsences.ts`, `useEducastur.ts`, `F/components/settings/EducasturSyncSettings.tsx` | `B/services/absences.py`, `educastur_sync.py`, `educastur_client.py`, router; Rust `educastur.rs` y auxiliar `educastur_orchestrator.py`. |
@@ -444,7 +444,7 @@ Las tablas siguientes cubren los archivos versionados del commit de referencia y
 | [frontend-src/components/MarkdownResult.tsx](frontend-src/components/MarkdownResult.tsx) | Presentación de resultados Markdown. |
 | [frontend-src/components/Modal.tsx](frontend-src/components/Modal.tsx) | Componente visual reutilizable Modal; su estilo puede apoyarse en theme/components. |
 | [frontend-src/components/PageHeader.tsx](frontend-src/components/PageHeader.tsx) | Componente visual reutilizable PageHeader; su estilo puede apoyarse en theme/components. |
-| [frontend-src/components/PlanoClaseModal.tsx](frontend-src/components/PlanoClaseModal.tsx) | Distribución del aula y posiciones de alumnado/profesor. |
+| [frontend-src/components/PlanoClaseModal.tsx](frontend-src/components/PlanoClaseModal.tsx) | Distribución del aula, selección múltiple por clic/recuadro, arrastre del grupo, alineación y ajuste a cuadrícula. Guarda posiciones mediante callbacks y comunica fallos por posición; un grupo no se guarda como transacción única. Fuera de edición abre fichas. |
 | [frontend-src/components/ProgrammingManager.tsx](frontend-src/components/ProgrammingManager.tsx) | Edición de programación/unidades y sesiones. |
 | [frontend-src/components/QuestionRoundModal.tsx](frontend-src/components/QuestionRoundModal.tsx) | Implementación anterior de rondas con historial; conservada, sin uso desde el cuaderno actual. |
 | [frontend-src/components/RandomStudentPickerModal.tsx](frontend-src/components/RandomStudentPickerModal.tsx) | Selector aleatorio/manual para cualquier actividad; entrega el alumno al formulario habitual de calificación. |
@@ -904,6 +904,8 @@ Las tablas siguientes cubren los archivos versionados del commit de referencia y
 | [frontend-src/services/api.ts](frontend-src/services/api.ts) | Contrato API o cliente de transporte, según carpeta. |
 | [frontend-src/services/apiAdapters.ts](frontend-src/services/apiAdapters.ts) | Adaptación API/interfaz, unión persona-matrícula, fotos y lectura compatible de notas de rondas antiguas. |
 | [frontend-src/services/apiAdapters.test.ts](frontend-src/services/apiAdapters.test.ts) | Regresión de medias, historial y notas por criterio en rondas antiguas. |
+| [frontend-src/services/classroomLayout.ts](frontend-src/services/classroomLayout.ts) | Geometría en porcentajes del plano: traslación conjunta, límites, selección por recuadro y cuadrícula de 5 %. Compartida por web y escritorio sin cambiar el contrato de persistencia. |
+| [frontend-src/services/classroomLayout.test.ts](frontend-src/services/classroomLayout.test.ts) | Verificación de límites, conservación de distancias, ajuste de ancla y selección rectangular. |
 | [frontend-src/services/randomGradeEntry.ts](frontend-src/services/randomGradeEntry.ts) | Detección de calificaciones registradas y priorización de alumnado pendiente por actividad. |
 | [frontend-src/services/randomGradeEntry.test.ts](frontend-src/services/randomGradeEntry.test.ts) | Pruebas de ceros, casillas negativas, notas vacías, aislamiento por actividad y grupos sin pendientes. |
 | [frontend-src/services/dashboardNotices.test.ts](frontend-src/services/dashboardNotices.test.ts) | Pruebas de dashboardNotices: Cálculo de avisos de la pantalla Hoy. |

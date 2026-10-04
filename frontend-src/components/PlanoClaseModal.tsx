@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ClassData, Student } from '../types';
 import { getNombreCompleto } from '../utils';
-import { XMarkIcon, PencilIcon, CheckCircleIcon, PhotoIcon, UserCircleIcon } from './Icons';
+import { XMarkIcon, PencilIcon, CheckCircleIcon, PhotoIcon, UserCircleIcon, TableCellsIcon } from './Icons';
+import { moveClassroomGroup, selectClassroomRectangle, snapClassroomPosition, type ClassroomPosition } from '../services/classroomLayout';
 import { TYPOGRAPHY } from '../theme/typography';
 import { SEMANTIC } from '../theme/palette';
 
@@ -10,8 +11,8 @@ interface PlanoClaseModalProps {
     onClose: () => void;
     classData: ClassData;
     materia: string;
-    onUpdateMesaProfesor: (x: number, y: number) => void;
-    onUpdateStudentPosition: (studentId: string, x: number, y: number) => void;
+    onUpdateMesaProfesor: (x: number, y: number) => Promise<void> | void;
+    onUpdateStudentPosition: (studentId: string, x: number, y: number) => Promise<void> | void;
     onOpenFicha: (student: Student) => void;
 }
 
@@ -42,30 +43,42 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
     const [draggingId, setDraggingId] = useState<string | null>(null);
     const [livePos, setLivePos] = useState<Record<string, { x: number; y: number }>>({});
     const [mostrarFotos, setMostrarFotos] = useState(leerMostrarFotos);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [snapToGrid, setSnapToGrid] = useState(false);
+    const [selectionBox, setSelectionBox] = useState<{ start: ClassroomPosition; end: ClassroomPosition } | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const canvasRef = useRef<HTMLDivElement>(null);
     const dragStartRef = useRef<{ x: number; y: number } | null>(null);
     const movedRef = useRef(false);
+    const dragRef = useRef<{ id: string; start: ClassroomPosition; positions: Record<string, ClassroomPosition>; current: Record<string, ClassroomPosition> } | null>(null);
+    const boxRef = useRef<{ start: ClassroomPosition; end: ClassroomPosition; initial: Set<string> } | null>(null);
 
     useEffect(() => {
         if (!isOpen) {
             setEditMode(false);
             setDraggingId(null);
             setLivePos({});
+            setSelectedIds(new Set());
+            setSelectionBox(null);
+            dragRef.current = null;
+            boxRef.current = null;
+            setError(null);
         }
     }, [isOpen]);
 
     useEffect(() => {
         if (!isOpen) return;
-        const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onClose(); };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose]);
+    }, [isOpen, onClose, saving]);
 
     if (!isOpen) return null;
 
     const getDefaultPos = (index: number) => ({
         x: 10 + (index % 6) * 15,
-        y: 20 + Math.floor(index / 6) * 20,
+        y: 20 + Math.floor(index / 6) * Math.min(20, 70 / Math.max(1, Math.floor((classData.students.length - 1) / 6))),
     });
 
     const getPos = (id: string, storedX: number | undefined, storedY: number | undefined, fallback: { x: number; y: number }) => {
@@ -74,49 +87,101 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
         return fallback;
     };
 
+    const studentPositions = () => Object.fromEntries(classData.students.map((student, index) =>
+        [student.id, getPos(student.id, student.planoX, student.planoY, getDefaultPos(index))]));
+
+    const canvasPoint = (e: React.PointerEvent): ClassroomPosition => {
+        const rect = canvasRef.current!.getBoundingClientRect();
+        return { x: (e.clientX - rect.left) / rect.width * 100, y: (e.clientY - rect.top) / rect.height * 100 };
+    };
+
+    const savePositions = async (positions: Record<string, ClassroomPosition>) => {
+        setSaving(true);
+        setError(null);
+        const entries = Object.entries(positions);
+        const results = await Promise.allSettled(entries.map(async ([id, pos]) =>
+            id === MESA_PROFESOR_ID ? onUpdateMesaProfesor(pos.x, pos.y) : onUpdateStudentPosition(id, pos.x, pos.y)));
+        const failed = entries.filter((_, index) => results[index].status === 'rejected').map(([id]) => id);
+        if (failed.length) {
+            setError(`No se pudieron guardar ${failed.length} posiciones. Inténtalo de nuevo.`);
+            setLivePos(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => !failed.includes(id))));
+        }
+        setSaving(false);
+    };
+
     const handlePointerDown = (e: React.PointerEvent, id: string) => {
-        if (!editMode) return;
+        if (!editMode || saving || e.button !== 0) return;
         e.stopPropagation();
-        (e.target as Element).setPointerCapture(e.pointerId);
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const positions = studentPositions();
+        const group = id === MESA_PROFESOR_ID ? [] : selectedIds.has(id) ? [...selectedIds] : [id];
+        const origin = id === MESA_PROFESOR_ID
+            ? { [id]: getPos(id, classData.mesaProfesorX, classData.mesaProfesorY, { x: 50, y: 6 }) }
+            : Object.fromEntries(group.map(studentId => [studentId, positions[studentId]]));
+        dragRef.current = { id, start: canvasPoint(e), positions: origin, current: origin };
         dragStartRef.current = { x: e.clientX, y: e.clientY };
         movedRef.current = false;
         setDraggingId(id);
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
-        if (!draggingId || !canvasRef.current) return;
+        if (!canvasRef.current) return;
+        if (boxRef.current) {
+            const end = canvasPoint(e);
+            boxRef.current.end = end;
+            setSelectionBox({ start: boxRef.current.start, end });
+            setSelectedIds(new Set([...boxRef.current.initial, ...selectClassroomRectangle(studentPositions(), boxRef.current.start, end)]));
+            return;
+        }
+        const drag = dragRef.current;
+        if (!drag) return;
         if (dragStartRef.current) {
             const dx = e.clientX - dragStartRef.current.x;
             const dy = e.clientY - dragStartRef.current.y;
             if (Math.abs(dx) > 5 || Math.abs(dy) > 5) movedRef.current = true;
         }
-        const rect = canvasRef.current.getBoundingClientRect();
-        let x = ((e.clientX - rect.left) / rect.width) * 100;
-        let y = ((e.clientY - rect.top) / rect.height) * 100;
-        x = Math.max(2, Math.min(98, x));
-        y = Math.max(4, Math.min(96, y));
-        setLivePos(prev => ({ ...prev, [draggingId]: { x, y } }));
+        if (!movedRef.current) return;
+        if (drag.id !== MESA_PROFESOR_ID) setSelectedIds(new Set(Object.keys(drag.positions)));
+        const point = canvasPoint(e);
+        drag.current = moveClassroomGroup(drag.positions, drag.id, { x: point.x - drag.start.x, y: point.y - drag.start.y }, snapToGrid);
+        setLivePos(prev => ({ ...prev, ...drag.current }));
     };
 
     const handlePointerUp = (id: string, student?: Student) => {
         if (draggingId !== id) return;
         const moved = movedRef.current;
-        const pos = livePos[id];
+        const drag = dragRef.current;
+        dragRef.current = null;
         setDraggingId(null);
         dragStartRef.current = null;
 
         if (!moved) {
-            // Clic sin arrastrar: abre la ficha (solo para alumnos, la mesa
-            // del profesor no tiene ficha).
-            if (student) onOpenFicha(student);
+            if (student) setSelectedIds(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                return next;
+            });
             return;
         }
-        if (!pos) return;
-        if (id === MESA_PROFESOR_ID) {
-            onUpdateMesaProfesor(pos.x, pos.y);
-        } else {
-            onUpdateStudentPosition(id, pos.x, pos.y);
-        }
+        if (drag) void savePositions(drag.current);
+    };
+
+    const alignToGrid = () => {
+        const positions = studentPositions();
+        const ids = selectedIds.size ? [...selectedIds] : Object.keys(positions);
+        const aligned = Object.fromEntries(ids.map(id => [id, snapClassroomPosition(positions[id])]));
+        setLivePos(prev => ({ ...prev, ...aligned }));
+        void savePositions(aligned);
+    };
+
+    const cancelPointer = () => {
+        const drag = dragRef.current;
+        if (drag && movedRef.current) setLivePos(prev => ({ ...prev, ...drag.positions }));
+        if (boxRef.current) setSelectedIds(boxRef.current.initial);
+        dragRef.current = null;
+        boxRef.current = null;
+        setDraggingId(null);
+        setSelectionBox(null);
     };
 
     const toggleMostrarFotos = () => {
@@ -137,7 +202,7 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
 
     return (
         <div className="fixed inset-0 z-40 bg-white flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+            <div className="flex flex-wrap gap-2 items-center justify-between px-4 py-3 border-b flex-shrink-0">
                 <h2 className={`${TYPOGRAPHY.sectionTitle} truncate`}>Plano de la clase — {materia}</h2>
                 <div className="flex items-center gap-2 flex-shrink-0">
                     <button
@@ -149,28 +214,47 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
                         {mostrarFotos ? 'Ver como iconos' : 'Ver fotos'}
                     </button>
                     <button
-                        onClick={() => setEditMode(v => !v)}
+                        disabled={saving}
+                        onClick={() => { setEditMode(v => !v); setSelectedIds(new Set()); }}
                         className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg ${editMode ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                     >
                         {editMode ? <CheckCircleIcon className="w-4 h-4" /> : <PencilIcon className="w-4 h-4" />}
                         {editMode ? 'Terminar edición' : 'Editar'}
                     </button>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100" title="Cerrar">
+                    <button disabled={saving} onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100" title="Cerrar">
                         <XMarkIcon className="w-5 h-5 text-slate-500" />
                     </button>
                 </div>
             </div>
 
             {editMode && (
-                <p className="text-xs text-center text-slate-400 py-1 flex-shrink-0 border-b bg-slate-50">
-                    Arrastra a cada alumno/a y la mesa del profesor a su sitio. Sin arrastrar, un clic abre la ficha.
-                </p>
+                <div className="flex flex-wrap items-center justify-center gap-3 px-3 py-2 text-xs border-b bg-slate-50">
+                    <span>Clic para seleccionar varios o arrastra un recuadro. Arrastra un seleccionado para mover el grupo.</span>
+                    <span className="font-semibold">{selectedIds.size} seleccionados</span>
+                    <button disabled={saving || !classData.students.length} onClick={() => setSelectedIds(new Set(classData.students.map(student => student.id)))} className="text-blue-700 hover:underline">Seleccionar todos</button>
+                    <button disabled={saving || !selectedIds.size} onClick={() => setSelectedIds(new Set())} className="text-blue-700 hover:underline">Deseleccionar</button>
+                    <label className="flex items-center gap-1.5"><input type="checkbox" checked={snapToGrid} disabled={saving} onChange={event => setSnapToGrid(event.target.checked)} />Ajustar al mover</label>
+                    <button disabled={saving || !classData.students.length} onClick={alignToGrid} className="flex items-center gap-1 rounded-lg bg-slate-200 px-2 py-1 font-semibold hover:bg-slate-300"><TableCellsIcon className="h-4 w-4" />Alinear {selectedIds.size ? 'selección' : 'todos'} a cuadrícula</button>
+                    {saving && <span role="status">Guardando posiciones…</span>}
+                </div>
             )}
+            {error && <p role="alert" className="bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
             <div
                 ref={canvasRef}
                 className="relative flex-grow bg-slate-50 overflow-hidden touch-none"
                 onPointerMove={handlePointerMove}
+                onPointerDown={e => {
+                    if (!editMode || saving || e.target !== e.currentTarget || e.button !== 0) return;
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    const point = canvasPoint(e);
+                    boxRef.current = { start: point, end: point, initial: e.shiftKey ? new Set(selectedIds) : new Set() };
+                    setSelectionBox({ start: point, end: point });
+                    if (!e.shiftKey) setSelectedIds(new Set());
+                }}
+                onPointerUp={() => { boxRef.current = null; setSelectionBox(null); }}
+                onPointerCancel={cancelPointer}
+                style={editMode ? { backgroundImage: 'linear-gradient(to right, #cbd5e1 1px, transparent 1px), linear-gradient(to bottom, #cbd5e1 1px, transparent 1px)', backgroundSize: '5% 5%' } : undefined}
             >
                 {/* Mesa del profesor */}
                 <div
@@ -192,8 +276,9 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
                             key={s.id}
                             onPointerDown={(e) => handlePointerDown(e, s.id)}
                             onPointerUp={() => handlePointerUp(s.id, s)}
+                            onClick={() => { if (!editMode) onOpenFicha(s); }}
                             title={getNombreCompleto(s)}
-                            className={`absolute flex flex-col items-center w-16 select-none ${editMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${draggingId === s.id ? 'opacity-80 z-20' : ''}`}
+                            className={`absolute flex flex-col items-center w-16 select-none rounded-lg ${editMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${editMode && selectedIds.has(s.id) ? 'ring-2 ring-blue-600 bg-blue-100/80' : ''} ${draggingId === s.id ? 'opacity-80 z-20' : ''}`}
                             style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)', touchAction: 'none' }}
                         >
                             {s.foto && mostrarFotos ? (
@@ -212,6 +297,10 @@ const PlanoClaseModal: React.FC<PlanoClaseModalProps> = ({ isOpen, onClose, clas
                         </div>
                     );
                 })}
+                {selectionBox && <div className="absolute pointer-events-none border-2 border-blue-500 bg-blue-200/30 z-30" style={{
+                    left: `${Math.min(selectionBox.start.x, selectionBox.end.x)}%`, top: `${Math.min(selectionBox.start.y, selectionBox.end.y)}%`,
+                    width: `${Math.abs(selectionBox.end.x - selectionBox.start.x)}%`, height: `${Math.abs(selectionBox.end.y - selectionBox.start.y)}%`,
+                }} />}
 
                 {classData.students.length === 0 && (
                     <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
