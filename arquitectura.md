@@ -168,6 +168,8 @@ Las rutas de esta tabla que empiezan por `services/`, `components/` o `src-tauri
 
 ## 6. Configuración, ejecución y secretos
 
+Despliegue de estáticos: `index.html` debe quedar legible por Nginx (modo 0644). Si se usa `umask 077` para proteger copias, usar `install -m 0644` o aplicar `chmod 644` al HTML temporal antes del renombrado. Verificar HTTP 200 en `/` y en una ruta SPA, además del JavaScript y `/api/health`. El 13 de octubre de 2026 una copia del HTML bajo `umask 077` produjo un 403 por permisos; la API seguía funcionando.
+
 | Archivo | Responsabilidad |
 | --- | --- |
 | [compose.yaml](compose.yaml) | Despliegue web: Nginx, API, redes externas y volúmenes del servidor. Presupone infraestructura externa. |

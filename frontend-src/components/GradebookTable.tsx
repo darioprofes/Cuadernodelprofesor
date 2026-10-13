@@ -1420,7 +1420,6 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                   if (!group.assignmentGroup) return <th key={group.id} className="bg-white" />;
                   return <th key={group.id} colSpan={collapsedGroups.has(group.id) ? 1 : block.length} className="border-x-2 border-violet-200 p-2 normal-case" style={{ backgroundColor: (GROUP_COLORS[group.assignmentGroup.color] ?? GROUP_COLORS.violet).header }}>
                     <button onClick={() => setCollapsedGroups(prev => { const next = new Set(prev); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })} aria-expanded={!collapsedGroups.has(group.id)} className="font-semibold">{collapsedGroups.has(group.id) ? '▸' : '▾'} {group.name}</button>
-                    <button type="button" onClick={() => setGroupEditor({ group, category: cat })} className="ml-3 text-xs font-semibold text-violet-800">Editar grupo</button>
                     <button type="button" onClick={() => { setNewTaskGroup(group); setActiveCategory(cat); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }} className="ml-3 text-xs font-normal text-violet-800">Añadir tarea</button>
                   </th>;
                 }), <th key={`${cat.id}-average`} className="bg-white" />];

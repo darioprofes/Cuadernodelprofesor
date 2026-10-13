@@ -7,7 +7,7 @@ Un grupo es un bloque de columnas dentro de una categoría: un resultado calcula
 1. Pulsa **Añadir grupo** en la categoría y escribe su nombre.
 2. Selecciona tareas existentes de esa evaluación. Las tareas de otras categorías se trasladan a la categoría del grupo al guardar.
 3. Ajusta los pesos internos. Corresponden a la importancia personalizada habitual de cada tarea, no a un segundo sistema de pesos.
-4. Configura la importancia del grupo con los niveles Muy baja/Baja/Normal/Alta/Muy alta o Modo avanzado, igual que una tarea. Opcionalmente ajusta su peso en la media por categorías. El botón **Editar grupo** está en la cabecera del bloque y permite modificarlo después de crearlo.
+4. Configura la importancia del grupo con los niveles Muy baja/Baja/Normal/Alta/Muy alta o Modo avanzado, igual que una tarea. Opcionalmente ajusta su peso en la media por categorías. El icono de lápiz en la columna **Resultado** permite editar el grupo después de crearlo.
 5. **Añadir tarea** en la cabecera crea nuevas tareas directamente en el grupo.
 6. Califica las tareas normalmente. El resultado del grupo es de solo lectura; pulsarlo muestra las notas por criterio.
 
