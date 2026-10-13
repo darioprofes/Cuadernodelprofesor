@@ -15,8 +15,9 @@ import Modal from './Modal';
 import Button from './Button';
 import AssignmentModal from './AssignmentModal';
 import AssignmentGroupModal, { type GroupSaveData } from './AssignmentGroupModal';
-import { assignmentColumnBlocks, assignmentGroupOwners, deriveGroupGrades, GROUP_COLORS, sortAssignmentColumns } from '../services/assignmentGroups';
-import DrilldownModal, { type DrilldownData } from './DrilldownModal';
+import { assignmentColumnBlocks, assignmentGroupOwners, GROUP_COLORS, sortAssignmentColumns } from '../services/assignmentGroups';
+import GradeExplanationModal from './GradeExplanationModal';
+import { explainGrade } from '../services/gradeExplanation';
 import GradeEntryModal from './GradeEntryModal';
 import CategoryModal from './CategoryModal';
 import AcneaeTag from './AcneaeTag';
@@ -436,7 +437,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [groupEditor, setGroupEditor] = useState<{ group: Assignment | null; category: Category } | null>(null);
   const [newTaskGroup, setNewTaskGroup] = useState<Assignment | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [groupDetails, setGroupDetails] = useState<DrilldownData | null>(null);
+  const [gradeExplanation, setGradeExplanation] = useState<{ student: Student; periodId?: string; assignment?: Assignment } | null>(null);
   const [columnError, setColumnError] = useState('');
   const [orderingColumns, setOrderingColumns] = useState(false);
   const reorderAssignments = useReorderAssignments();
@@ -902,10 +903,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   
   const handleOpenGradeEntry = (student: Student, assignment: Assignment) => {
     if (assignment.assignmentGroup) {
-      const grade = deriveGroupGrades(classData.assignments, classData.grades).find(g => g.studentId === student.id && g.assignmentId === assignment.id);
-      const score = calculateAssignmentScoresForStudent(student.id, classData.assignments, classData.grades, criteria, repartoIgualCriterios).get(assignment.id) ?? null;
-      setGroupDetails({ studentName: getNombreCompleto(student), elementName: assignment.name,
-        items: Object.entries(grade?.criterionScores ?? {}).map(([id, value]) => ({ name: criteria.find(c => c.id === id)?.code ?? 'Nota sin criterios', grade: value })), finalGrade: score });
+      setGradeExplanation({ student, assignment });
       return;
     }
     setRandomEntryAssignment(null);
@@ -1306,7 +1304,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           academicConfiguration={academicConfiguration}
           mostrarFotos={mostrarFotos}
           accentColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg}
-          onOpenGradeEntry={handleOpenGradeEntry}
+          onOpenGradeEntry={(student, assignment) => setGradeExplanation({ student, assignment })}
           onEditAssignment={handleEditAssignment}
           onImportGrades={assignment => { if (!assignment.assignmentGroup) { setAssignmentForImport(assignment); setIsBulkImportModalOpen(true); } }}
           onOpenRandomPicker={assignment => { if (!assignment.assignmentGroup) setRandomPickerAssignment(assignment); }}
@@ -1501,13 +1499,13 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                        const comparacion = studentPeriodGrades.get(student.id)?.get(p.id);
                        return (
                          <td key={p.id} className={`${cellPad} text-center ${oficial?.styleClasses}`}>
-                            <div className="font-bold text-base">{oficial?.grade?.toFixed(2) ?? '-'}</div>
+                            <button type="button" title="Ver cálculo de la nota" className="font-bold text-base hover:underline" onClick={() => setGradeExplanation({ student, periodId: p.id })}>{oficial?.grade?.toFixed(2) ?? '-'}</button>
                             <div className="text-[10px] text-slate-400 font-normal" title="Nota de comparación por categorías (tradicional)">cat: {comparacion?.grade?.toFixed(2) ?? '-'}</div>
                          </td>
                        );
                     })}
                     <td className={`${cellPad} text-center ${studentFinalGradesCriterial.get(student.id)?.styleClasses}`}>
-                        <div className="font-extrabold text-lg">{studentFinalGradesCriterial.get(student.id)?.grade?.toFixed(2) ?? '-'}</div>
+                        <button type="button" title="Ver cálculo de la nota final" className="font-extrabold text-lg hover:underline" onClick={() => setGradeExplanation({ student })}>{studentFinalGradesCriterial.get(student.id)?.grade?.toFixed(2) ?? '-'}</button>
                         <div className="text-[10px] text-slate-400 font-normal" title="Nota de comparación por categorías (tradicional)">cat: {studentOverallFinalGrades.get(student.id)?.grade ?? '-'}</div>
                     </td>
                   </>
@@ -1529,8 +1527,8 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             const rawGrade = a.puntuacionMaxima != null ? gradesMap.get(`${student.id}-${a.id}`)?.directScoreRaw : undefined;
                             const displayValue = rawGrade != null ? String(rawGrade) : (score?.toFixed(2) ?? '-');
                             return (
-                              <td key={a.id} style={{ backgroundColor: groupColorFor(a, true) }} className={`${cellPad} text-center font-bold text-base cursor-pointer hover:bg-blue-50 border-l ${idx === assignmentsForCat.length - 1 ? 'border-r' : ''}`} onClick={() => handleOpenGradeEntry(student, a)}>
-                                <span className={`${styleClasses} rounded px-2 py-1`}>{displayValue}</span>
+                              <td key={a.id} style={{ backgroundColor: groupColorFor(a, true) }} className={`${cellPad} text-center font-bold text-base hover:bg-blue-50 border-l ${idx === assignmentsForCat.length - 1 ? 'border-r' : ''}`}>
+                                <button type="button" title="Ver cálculo de la nota" onClick={() => score == null && !a.assignmentGroup ? handleOpenGradeEntry(student, a) : setGradeExplanation({ student, assignment: a })} className={`${styleClasses} rounded px-2 py-1 hover:underline`}>{displayValue}</button>
                               </td>
                             )
                         }),
@@ -1540,7 +1538,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                       ];
                     })}
                     <td className={`${cellPad} text-center border-l ${studentPeriodGradesCriterial.get(student.id)?.get(activePeriodId)?.styleClasses}`}>
-                      <div className="font-bold text-base">{studentPeriodGradesCriterial.get(student.id)?.get(activePeriodId)?.grade?.toFixed(2) ?? '-'}</div>
+                      <button type="button" title="Ver cálculo de la nota" className="font-bold text-base hover:underline" onClick={() => setGradeExplanation({ student, periodId: activePeriodId })}>{studentPeriodGradesCriterial.get(student.id)?.get(activePeriodId)?.grade?.toFixed(2) ?? '-'}</button>
                       <div className="text-[10px] text-slate-400 font-normal" title="Nota de comparación por categorías (tradicional)">cat: {studentPeriodGrades.get(student.id)?.get(activePeriodId)?.grade?.toFixed(2) ?? '-'}</div>
                     </td>
                   </>
@@ -1808,7 +1806,13 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       )}
 
       {groupEditor && <AssignmentGroupModal key={groupEditor.group?.id ?? groupEditor.category.id} group={groupEditor.group} category={groupEditor.category} categories={classData.categories} assignments={classData.assignments} onClose={() => setGroupEditor(null)} onSave={saveGroup} />}
-      <DrilldownModal isOpen={!!groupDetails} onClose={() => setGroupDetails(null)} data={groupDetails} gradeScale={academicConfiguration.gradeScale} />
+      {gradeExplanation && <GradeExplanationModal
+        data={explainGrade(gradeExplanation.student.id, classData, criteria, repartoIgualCriterios, evaluationTools, gradeExplanation.periodId, gradeExplanation.assignment?.id)}
+        studentName={getNombreCompleto(gradeExplanation.student)}
+        title={gradeExplanation.assignment?.name ?? evaluationPeriods.find(p => p.id === gradeExplanation.periodId)?.name ?? 'Nota final del curso'}
+        onClose={() => setGradeExplanation(null)}
+        onEdit={gradeExplanation.assignment && !gradeExplanation.assignment.assignmentGroup ? () => { const { student, assignment } = gradeExplanation; setGradeExplanation(null); handleOpenGradeEntry(student, assignment!); } : undefined}
+      />}
       {activeCategory && <AssignmentModal isOpen={isAssignmentModalOpen} onClose={() => { setIsAssignmentModalOpen(false); setNewTaskGroup(null); }} onSave={handleSaveAssignment} assignmentToEdit={assignmentToEdit} category={activeCategory} criteria={criteria} specificCompetences={specificCompetences} keyCompetences={keyCompetences} programmingUnits={programmingUnits} evaluationPeriods={evaluationPeriods} academicConfiguration={academicConfiguration} evaluationTools={evaluationTools} allAssignments={classData.assignments} allCategories={classData.categories} groupToJoin={newTaskGroup} />}
       <CategoryModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} onSave={handleSaveCategory} categoryToEdit={categoryToEdit} evaluationPeriodId={activePeriodId} />
       <ImportarDesdeSAModal
