@@ -211,6 +211,7 @@ No se han ejecutado builds ni pruebas funcionales para redactar este documento. 
 | --- | --- |
 | [docs/grupos-tareas.md](docs/grupos-tareas.md) | Uso, cálculo y despliegue de grupos. |
 | [frontend-src/components/AssignmentGroupModal.tsx](frontend-src/components/AssignmentGroupModal.tsx) | Grupos, tareas existentes, pesos y traslado de categoría. |
+| [frontend-src/components/AssignmentImportanceControl.tsx](frontend-src/components/AssignmentImportanceControl.tsx) | Selector compartido de niveles/modo avanzado para tareas y grupos; al volver a niveles se borra el factor personalizado con null. |
 | [frontend-src/services/assignmentGroups.ts](frontend-src/services/assignmentGroups.ts) | Notas derivadas por criterio/global, exclusión de tareas interiores, colores y orden de bloques. |
 | [frontend-src/services/assignmentGroups.test.ts](frontend-src/services/assignmentGroups.test.ts) | Cálculo ponderado y ausencia de doble cómputo. |
 | [api/app/migrations/0028_assignment_groups.sql](api/app/migrations/0028_assignment_groups.sql) | Configuración de grupos y orden visual PostgreSQL. |

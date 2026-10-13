@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import type { Assignment, AssignmentGroup, Category } from '../types';
+import type { Assignment, AssignmentGroup, Category, ImportanciaActividad } from '../types';
 import Modal from './Modal';
 import Input from './Input';
 import Button from './Button';
+import AssignmentImportanceControl from './AssignmentImportanceControl';
 import { assignmentGroupOwners, GROUP_COLORS } from '../services/assignmentGroups';
 import { getImportanceFactor } from '../services/gradeCalculations';
 import { toYYYYMMDD } from '../utils';
@@ -27,7 +28,9 @@ export default function AssignmentGroupModal({ group, category, categories, assi
   const [color, setColor] = useState<AssignmentGroup['color']>(group?.assignmentGroup?.color ?? 'violet');
   const [members, setMembers] = useState(new Set(group?.assignmentGroup?.memberIds ?? []));
   const [weights, setWeights] = useState<Record<string, string>>(Object.fromEntries(assignments.map(a => [a.id, String(getImportanceFactor(a))])));
-  const [importance, setImportance] = useState(String(group ? getImportanceFactor(group) : 1));
+  const [importance, setImportance] = useState<ImportanciaActividad>(group?.importancia ?? 'normal');
+  const [advanced, setAdvanced] = useState(group?.importanciaPersonalizada != null);
+  const [customImportance, setCustomImportance] = useState(group?.importanciaPersonalizada == null ? '' : String(group.importanciaPersonalizada));
   const [categoryWeight, setCategoryWeight] = useState(group?.pesoEnCategoria == null ? '' : String(group.pesoEnCategoria));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -37,7 +40,7 @@ export default function AssignmentGroupModal({ group, category, categories, assi
     (!owners.has(a.id) || owners.get(a.id)?.id === group?.id));
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!(Number(importance) > 0) || !Number.isFinite(Number(importance)) ||
+    if ((advanced && (!customImportance.trim() || Number(customImportance) < 0 || !Number.isFinite(Number(customImportance)))) ||
         [...members].some(id => !(Number(weights[id]) > 0) || !Number.isFinite(Number(weights[id])))) {
       setError('Los pesos y la importancia deben ser números mayores que cero.'); return;
     }
@@ -49,7 +52,7 @@ export default function AssignmentGroupModal({ group, category, categories, assi
       await onSave({ assignment: {
         ...group, name: name.trim(), categoryId, evaluationPeriodId: category.evaluationPeriodId,
         date: group?.date ?? toYYYYMMDD(new Date()), evaluationMethod: 'direct_grade', linkedCriteria: [],
-        importancia: 'normal', importanciaPersonalizada: Number(importance),
+        importancia: importance, importanciaPersonalizada: advanced ? Number(customImportance) : null,
         pesoEnCategoria: categoryWeight ? Number(categoryWeight) : undefined,
         assignmentGroup: { memberIds: [...members], color },
       }, memberWeights: Object.fromEntries([...members].map(id => [id, Number(weights[id])])) });
@@ -67,7 +70,7 @@ export default function AssignmentGroupModal({ group, category, categories, assi
         <label className="text-sm">Color<select value={color} onChange={e => setColor(e.target.value as AssignmentGroup['color'])} className="mt-1 w-full rounded border p-2">
           {Object.keys(GROUP_COLORS).map(c => <option key={c} value={c}>{{ blue: 'Azul', violet: 'Violeta', emerald: 'Verde', amber: 'Ámbar' }[c]}</option>)}
         </select></label>
-        <label className="text-sm">Importancia del grupo<Input type="number" min="0.01" step="any" required value={importance} onChange={e => setImportance(e.target.value)} /></label>
+        <AssignmentImportanceControl id="group-importance" label="Importancia del grupo" importance={importance} advanced={advanced} custom={customImportance} onImportanceChange={setImportance} onAdvancedChange={setAdvanced} onCustomChange={setCustomImportance} />
         <label className="text-sm">Peso en categoría (%)<Input type="number" min="0" max="100" step="any" value={categoryWeight} placeholder="Automático" onChange={e => setCategoryWeight(e.target.value)} /></label>
       </div>
       <p className="text-sm text-slate-600">Los criterios se deducen de las tareas. Sus notas se ponderan con el peso interno y el ratio de cada criterio. Solo el grupo cuenta en la evaluación; las notas pendientes no cuentan como cero.</p>

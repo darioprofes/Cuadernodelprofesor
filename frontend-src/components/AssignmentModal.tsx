@@ -2,21 +2,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Assignment, EvaluationCriterion, LinkedCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationPeriod, EvaluationTool, ImportanciaActividad } from '../types';
 
-const IMPORTANCIA_LABEL: Record<ImportanciaActividad, string> = {
-  muy_baja: 'Muy baja',
-  baja: 'Baja',
-  normal: 'Normal',
-  alta: 'Alta',
-  muy_alta: 'Muy alta',
-};
+import AssignmentImportanceControl from './AssignmentImportanceControl';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
 import Select from './Select';
 import { checkboxClassName } from '../theme/components/Input';
-import { linkClassName } from '../theme/components/Link';
 import LinkedCriteriaSelector from './LinkedCriteriaSelector';
-import { IMPORTANCE_FACTORS } from '../services/gradeCalculations';
 import { toYYYYMMDD } from '../utils';
 import { assignmentGroupOwners } from '../services/assignmentGroups';
 
@@ -150,7 +142,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
         recoversAssignmentIds: category.type === 'recovery' ? recoversAssignmentIds : [],
         pesoEnCategoria: pesoEnCategoria.trim() ? Number(pesoEnCategoria) : undefined,
         importancia,
-        importanciaPersonalizada: importanciaAvanzada && importanciaPersonalizada.trim() ? Number(importanciaPersonalizada) : undefined,
+        importanciaPersonalizada: importanciaAvanzada && importanciaPersonalizada.trim() ? Number(importanciaPersonalizada) : null,
         puntuacionMaxima: evaluationMethod === 'direct_grade' && finalLinkedCriteria.length === 0 && puntuacionMaxima.trim()
           ? Number(puntuacionMaxima) : undefined,
         questionRoundDescription: evaluationMethod === 'question_round' ? questionRoundDescription.trim() || undefined : undefined,
@@ -270,41 +262,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
             />
             <p className="text-xs text-slate-400 mt-1">Vacío = se reparte a partes iguales con el resto de tareas de "{category.name}".</p>
           </div>
-          <div>
-            <div className="flex items-center justify-between">
-              <label htmlFor="importancia" className="block text-sm font-medium text-slate-700">
-                Importancia (evaluación por criterios)
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!importanciaAvanzada) setImportanciaPersonalizada(String(IMPORTANCE_FACTORS[importancia]));
-                  setImportanciaAvanzada(v => !v);
-                }}
-                className={`text-xs font-semibold ${linkClassName}`}
-              >
-                {importanciaAvanzada ? 'Usar niveles' : 'Modo avanzado'}
-              </button>
-            </div>
-            {importanciaAvanzada ? (
-              <Input
-                type="number" step="0.1" min="0"
-                value={importanciaPersonalizada} onChange={(e) => setImportanciaPersonalizada(e.target.value)}
-                placeholder="Factor (ej. 1.25)"
-                className="mt-1"
-              />
-            ) : (
-              <Select
-                id="importancia" value={importancia} onChange={(e) => setImportancia(e.target.value as ImportanciaActividad)}
-                className="mt-1"
-              >
-                {(Object.keys(IMPORTANCIA_LABEL) as ImportanciaActividad[]).map(key => (
-                  <option key={key} value={key}>{IMPORTANCIA_LABEL[key]}</option>
-                ))}
-              </Select>
-            )}
-            <p className="text-xs text-slate-400 mt-1">Cuánto cuenta esta tarea como evidencia de sus criterios frente a otras tareas del curso.</p>
-          </div>
+          <AssignmentImportanceControl id="importancia" importance={importancia} advanced={importanciaAvanzada} custom={importanciaPersonalizada} onImportanceChange={setImportancia} onAdvancedChange={setImportanciaAvanzada} onCustomChange={setImportanciaPersonalizada} />
         </div>
         
         {category.type === 'recovery' && (

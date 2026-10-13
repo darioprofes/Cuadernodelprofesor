@@ -242,7 +242,7 @@ export interface Assignment {
   // Importancia como evidencia (motor Criterios); ausente = 'normal' (×1).
   importancia?: ImportanciaActividad;
   // Modo avanzado: sustituye al factor preestablecido de `importancia`.
-  importanciaPersonalizada?: number;
+  importanciaPersonalizada?: number | null;
   // Escala de la nota directa (solo 'direct_grade' sin criterios vinculados,
   // p.ej. 8 si un examen se puntúa sobre 8 en vez de sobre 10) -- ausente =
   // base 10 de toda la vida. Ver Grade.directScoreRaw.

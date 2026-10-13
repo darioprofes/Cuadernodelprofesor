@@ -389,7 +389,7 @@ export interface Assignment {
     recoversAssignmentIds: string[];
     pesoEnCategoria?: number;
     importancia?: string;
-    importanciaPersonalizada?: number;
+    importanciaPersonalizada?: number | null;
     puntuacionMaxima?: number;
     questionRoundDescription?: string;
     assignmentGroup?: import('../types').AssignmentGroup | null;
@@ -412,7 +412,7 @@ export interface AssignmentInput {
     recoversAssignmentIds?: string[];
     pesoEnCategoria?: number;
     importancia?: string;
-    importanciaPersonalizada?: number;
+    importanciaPersonalizada?: number | null;
     puntuacionMaxima?: number;
     questionRoundDescription?: string;
     assignmentGroup?: import('../types').AssignmentGroup | null;

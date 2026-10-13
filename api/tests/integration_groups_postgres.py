@@ -59,6 +59,11 @@ async def main():
     config = {"memberIds": [a["id"], b["id"]], "color": "violet", "memberWeights": {a["id"]: 1, b["id"]: 2}}
     group = await task("Preguntas en clase", assignmentGroup=config)
     assert group["assignmentGroup"]["memberIds"] == [a["id"], b["id"]]
+    edited = await request("PATCH", f"/assignments/{group['id']}", {"name": "Grupo editado", "assignmentGroup": config, "importancia": "alta", "importanciaPersonalizada": None})
+    assert edited["name"] == "Grupo editado" and edited["importancia"] == "alta" and edited["importanciaPersonalizada"] is None
+    await request("PATCH", f"/assignments/{group['id']}", {"importanciaPersonalizada": 1.25})
+    levels = await request("PATCH", f"/assignments/{group['id']}", {"importancia": "muy_baja", "importanciaPersonalizada": None})
+    assert levels["importancia"] == "muy_baja" and levels["importanciaPersonalizada"] is None
     moved = await request("GET", f"/assignments/{b['id']}")
     assert moved["categoryId"] == cat["id"] and moved["importanciaPersonalizada"] == 2
     await request("PUT", f"/assignments/{group['id']}/grades/{enrollment['id']}", {"directScore": 10}, 400)
