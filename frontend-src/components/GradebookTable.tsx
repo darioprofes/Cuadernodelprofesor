@@ -14,6 +14,9 @@ import { headerPatternStyle } from '../theme/headerPattern';
 import Modal from './Modal';
 import Button from './Button';
 import AssignmentModal from './AssignmentModal';
+import AssignmentGroupModal, { type GroupSaveData } from './AssignmentGroupModal';
+import { assignmentColumnBlocks, assignmentGroupOwners, deriveGroupGrades, GROUP_COLORS, sortAssignmentColumns } from '../services/assignmentGroups';
+import DrilldownModal, { type DrilldownData } from './DrilldownModal';
 import GradeEntryModal from './GradeEntryModal';
 import CategoryModal from './CategoryModal';
 import AcneaeTag from './AcneaeTag';
@@ -33,7 +36,7 @@ import ImportarDesdeSAModal from './ImportarDesdeSAModal';
 import ClassLabel from './ClassLabel';
 import { formatClassLabel, getClassName, getMateria, getClassAccentColor, getNombreCompleto, getNombreOrden, getDayOfWeek1a7, parsePeriodRange, periodoActivoEn, getSiglas } from '../utils';
 import { useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories';
-import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment } from '../hooks/useAssignments';
+import { useCreateAssignment, useUpdateAssignment, useDeleteAssignment, useReorderAssignments } from '../hooks/useAssignments';
 import { usePutGrade, useDeleteGrade } from '../hooks/useGrades';
 import { useApiStudents, useUpdateStudent } from '../hooks/useApiStudents';
 import { useAbsences, usePutAbsence, useDeleteAbsence } from '../hooks/useAbsences';
@@ -96,12 +99,14 @@ interface MobileActivityGradebookProps {
   onOpenRandomPicker: (assignment: Assignment) => void;
   onCreateCategory: () => void;
   onCreateAssignment: (category: Category) => void;
+  onCreateGroup: (category: Category) => void;
+  onMoveAssignment: (assignment: Assignment, direction: -1 | 1) => void;
 }
 
 const MobileActivityGradebook: React.FC<MobileActivityGradebookProps> = ({
   assignments, categories, students, gradesMap, studentAssignmentScores,
   academicConfiguration, mostrarFotos, accentColor, onOpenGradeEntry,
-  onEditAssignment, onImportGrades, onOpenRandomPicker, onCreateCategory, onCreateAssignment,
+  onEditAssignment, onImportGrades, onOpenRandomPicker, onCreateCategory, onCreateAssignment, onCreateGroup, onMoveAssignment,
 }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [selectedAssignmentId, setSelectedAssignmentId] = useState('');
@@ -149,6 +154,7 @@ const MobileActivityGradebook: React.FC<MobileActivityGradebookProps> = ({
         <Select id="mobile-category-picker" value={selectedCategoryId} onChange={event => setSelectedCategoryId(event.target.value)} className="w-full font-semibold">
           {categories.map(category => <option key={category.id} value={category.id}>{category.name} ({category.weight}%)</option>)}
         </Select>
+        {selectedCategory && selectedCategory.type !== 'recovery' && <button type="button" onClick={() => onCreateGroup(selectedCategory)} className="mt-2 text-xs text-violet-700">Añadir grupo de tareas</button>}
       </div>
 
       {assignmentsForCategory.length === 0 || !selectedAssignment ? (
@@ -160,12 +166,14 @@ const MobileActivityGradebook: React.FC<MobileActivityGradebookProps> = ({
               <label htmlFor="mobile-assignment-picker" className="text-xs font-semibold uppercase tracking-wide text-slate-500">Actividad</label>
               <div className="flex items-center gap-1">
                 <IconButton label="Editar actividad" size="sm" onClick={() => onEditAssignment(selectedAssignment)}><PencilIcon className="w-3.5 h-3.5" /></IconButton>
-                <IconButton label="Importar notas en lote" tone="primary" size="sm" onClick={() => onImportGrades(selectedAssignment)}><ArrowUpTrayIcon className="w-3.5 h-3.5" /></IconButton>
-                <IconButton label="Elegir alumno al azar" tone="primary" size="sm" onClick={() => onOpenRandomPicker(selectedAssignment)}><DicesIcon className="w-3.5 h-3.5" /></IconButton>
+                {!selectedAssignment.assignmentGroup && <><IconButton label="Importar notas en lote" tone="primary" size="sm" onClick={() => onImportGrades(selectedAssignment)}><ArrowUpTrayIcon className="w-3.5 h-3.5" /></IconButton>
+                <IconButton label="Elegir alumno al azar" tone="primary" size="sm" onClick={() => onOpenRandomPicker(selectedAssignment)}><DicesIcon className="w-3.5 h-3.5" /></IconButton></>}
+                <button aria-label="Mover columna a la izquierda" onClick={() => onMoveAssignment(selectedAssignment, -1)}>←</button>
+                <button aria-label="Mover columna a la derecha" onClick={() => onMoveAssignment(selectedAssignment, 1)}>→</button>
               </div>
             </div>
             <Select id="mobile-assignment-picker" value={selectedAssignmentId} onChange={event => setSelectedAssignmentId(event.target.value)} className="w-full font-semibold">
-              {assignmentsForCategory.map(assignment => <option key={assignment.id} value={assignment.id}>{assignment.shortName || assignment.name}</option>)}
+              {assignmentsForCategory.map(assignment => <option key={assignment.id} value={assignment.id}>{assignment.assignmentGroup ? 'Grupo · ' : assignmentGroupOwners(assignments).has(assignment.id) ? '↳ ' : ''}{assignment.shortName || assignment.name}</option>)}
             </Select>
           </div>
 
@@ -176,7 +184,7 @@ const MobileActivityGradebook: React.FC<MobileActivityGradebookProps> = ({
         </div>
           )}
 
-          <p className="text-xs text-slate-500">Toca un alumno para calificarlo o usa el dado para elegir al azar.</p>
+          <p className="text-xs text-slate-500">{selectedAssignment.assignmentGroup ? 'Toca el resultado para ver las notas por criterio del grupo.' : 'Toca un alumno para calificarlo o usa el dado para elegir al azar.'}</p>
           <div className="space-y-1.5">
         {visibleStudents.map((student, index) => {
           const score = studentAssignmentScores.get(student.id)?.get(selectedAssignment.id) ?? null;
@@ -425,6 +433,13 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [isGradeEntryModalOpen, setIsGradeEntryModalOpen] = useState(false);
   const [gradeEntryData, setGradeEntryData] = useState<{ student: Student; assignment: Assignment; grade: Grade | null } | null>(null);
   const [randomPickerAssignment, setRandomPickerAssignment] = useState<Assignment | null>(null);
+  const [groupEditor, setGroupEditor] = useState<{ group: Assignment | null; category: Category } | null>(null);
+  const [newTaskGroup, setNewTaskGroup] = useState<Assignment | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [groupDetails, setGroupDetails] = useState<DrilldownData | null>(null);
+  const [columnError, setColumnError] = useState('');
+  const [orderingColumns, setOrderingColumns] = useState(false);
+  const reorderAssignments = useReorderAssignments();
   const [randomEntryAssignment, setRandomEntryAssignment] = useState<Assignment | null>(null);
   
   const [isCopyCatOpen, setIsCopyCatOpen] = useState(false);
@@ -797,20 +812,20 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
     for (const student of classData.students) {
         const studentGrades = new Map<string, { grade: number | null; styleClasses: string }>();
         evaluationPeriods.forEach(period => {
-            studentGrades.set(period.id, calculateEvaluationPeriodGradeForStudent(student.id, classData, period.id, academicConfiguration.gradeScale));
+            studentGrades.set(period.id, calculateEvaluationPeriodGradeForStudent(student.id, classData, period.id, academicConfiguration.gradeScale, criteria, repartoIgualCriterios));
         });
         periodGrades.set(student.id, studentGrades);
     }
     return periodGrades;
-  }, [classData, evaluationPeriods, academicConfiguration.gradeScale]);
+  }, [classData, evaluationPeriods, academicConfiguration.gradeScale, criteria, repartoIgualCriterios]);
 
   const studentOverallFinalGrades = useMemo(() => {
       const finalGrades = new Map<string, { grade: string; styleClasses: string }>();
       for (const student of classData.students) {
-          finalGrades.set(student.id, calculateOverallFinalGradeForStudent(student.id, classData, academicConfiguration));
+          finalGrades.set(student.id, calculateOverallFinalGradeForStudent(student.id, classData, academicConfiguration, criteria, repartoIgualCriterios));
       }
       return finalGrades;
-  }, [classData, academicConfiguration]);
+  }, [classData, academicConfiguration, criteria, repartoIgualCriterios]);
 
   const handleSaveAssignment = async (assignmentData: Omit<Assignment, 'id' | 'categoryId'> & { id?: string; categoryId?: string }) => {
     if (!activeCategory) return;
@@ -846,7 +861,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
         }
       }
     } else {
-      await createAssignmentMutation.mutateAsync({ classId: classData.id, data: assignmentFields });
+      await createAssignmentMutation.mutateAsync({ classId: classData.id, data: { ...assignmentFields, joinGroupId: newTaskGroup?.id } });
     }
   };
 
@@ -861,7 +876,9 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   };
 
   const handleEditAssignment = (assignment: Assignment) => {
+    setNewTaskGroup(null);
     const category = classData.categories.find(c => c.id === assignment.categoryId);
+    if (assignment.assignmentGroup && category) { setGroupEditor({ group: assignment, category }); return; }
     if(category){
         setActiveCategory(category);
         setAssignmentToEdit(assignment);
@@ -870,7 +887,8 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   };
 
    const handleDeleteAssignment = async (assignmentId: string) => {
-    if (!window.confirm("¿Seguro que quieres eliminar esta tarea y todas sus calificaciones?")) return;
+    const isGroup = !!classData.assignments.find(a => a.id === assignmentId)?.assignmentGroup;
+    if (!window.confirm(isGroup ? '¿Disolver este grupo? Las tareas y sus notas se conservarán y volverán a contar individualmente.' : "¿Seguro que quieres eliminar esta tarea y todas sus calificaciones?")) return;
     // assignment_id es ON DELETE CASCADE en grades — un único borrado basta.
     await deleteAssignmentMutation.mutateAsync({ id: assignmentId, classId: classData.id });
   };
@@ -883,6 +901,13 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   };
   
   const handleOpenGradeEntry = (student: Student, assignment: Assignment) => {
+    if (assignment.assignmentGroup) {
+      const grade = deriveGroupGrades(classData.assignments, classData.grades).find(g => g.studentId === student.id && g.assignmentId === assignment.id);
+      const score = calculateAssignmentScoresForStudent(student.id, classData.assignments, classData.grades, criteria, repartoIgualCriterios).get(assignment.id) ?? null;
+      setGroupDetails({ studentName: getNombreCompleto(student), elementName: assignment.name,
+        items: Object.entries(grade?.criterionScores ?? {}).map(([id, value]) => ({ name: criteria.find(c => c.id === id)?.code ?? 'Nota sin criterios', grade: value })), finalGrade: score });
+      return;
+    }
     setRandomEntryAssignment(null);
     const grade = gradesMap.get(`${student.id}-${assignment.id}`) || null;
     setGradeEntryData({ student, assignment, grade });
@@ -985,7 +1010,38 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   };
   
   const categoriesForPeriod = useMemo(() => classData.categories.filter(c => c.evaluationPeriodId === activePeriodId), [classData.categories, activePeriodId]);
-  const assignmentsForPeriod = useMemo(() => classData.assignments.filter(a => a.evaluationPeriodId === activePeriodId), [classData.assignments, activePeriodId]);
+  const assignmentsForPeriod = useMemo(() => sortAssignmentColumns(classData.assignments.filter(a => a.evaluationPeriodId === activePeriodId)), [classData.assignments, activePeriodId]);
+  const groupOwners = useMemo(() => assignmentGroupOwners(assignmentsForPeriod), [assignmentsForPeriod]);
+  const visibleForCategory = (categoryId: string) => assignmentColumnBlocks(assignmentsForPeriod, categoryId)
+    .flatMap(block => block[0].assignmentGroup && collapsedGroups.has(block[0].id) ? [block[0]] : block);
+  const groupColorFor = (assignment: Assignment, result = false) => {
+    const group = assignment.assignmentGroup ? assignment : groupOwners.get(assignment.id);
+    if (!group?.assignmentGroup) return undefined;
+    const palette = GROUP_COLORS[group.assignmentGroup.color] ?? GROUP_COLORS.violet;
+    return result && assignment.assignmentGroup ? palette.result : palette.child;
+  };
+  const saveGroup = async ({ assignment, memberWeights }: GroupSaveData) => {
+    const { id, ...data } = assignment;
+    data.assignmentGroup = { ...data.assignmentGroup!, memberWeights };
+    if (id) await updateAssignmentMutation.mutateAsync({ id, classId: classData.id, data });
+    else await createAssignmentMutation.mutateAsync({ classId: classData.id, data });
+  };
+  const moveColumn = async (assignment: Assignment, direction: -1 | 1) => {
+    if (orderingColumns) return;
+    const owner = groupOwners.get(assignment.id);
+    const siblings = owner
+      ? sortAssignmentColumns(assignmentsForPeriod.filter(a => groupOwners.get(a.id)?.id === owner.id))
+      : assignmentColumnBlocks(assignmentsForPeriod, assignment.categoryId).map(block => block[0]);
+    const index = siblings.findIndex(a => a.id === assignment.id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= siblings.length) return;
+    [siblings[index], siblings[target]] = [siblings[target], siblings[index]];
+    setOrderingColumns(true); setColumnError('');
+    try {
+      await reorderAssignments.mutateAsync({ classId: classData.id, ids: siblings.map(a => a.id) });
+    } catch (e) { setColumnError(e instanceof Error ? e.message : 'No se pudo guardar el orden.'); }
+    finally { setOrderingColumns(false); }
+  };
 
   const categoryColorMap = useMemo(() => {
     const COLORS = ['#0d9488','#ea580c','#7c3aed','#0284c7','#16a34a','#db2777','#ca8a04','#dc2626'];
@@ -997,10 +1053,10 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const studentAssignmentScores = useMemo(() => {
     const allScores = new Map<string, Map<string, number | null>>();
     for (const student of classData.students) {
-      allScores.set(student.id, calculateAssignmentScoresForStudent(student.id, assignmentsForPeriod, classData.grades));
+      allScores.set(student.id, calculateAssignmentScoresForStudent(student.id, assignmentsForPeriod, classData.grades, criteria, repartoIgualCriterios));
     }
     return allScores;
-  }, [classData.students, assignmentsForPeriod, classData.grades]);
+  }, [classData.students, assignmentsForPeriod, classData.grades, criteria, repartoIgualCriterios]);
 
   const sortedClassesForCopy = useMemo(() => {
       const sorted = [...allClasses];
@@ -1252,12 +1308,15 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           accentColor={getClassAccentColor(getMateria(classData, allCourses), classData.colorAcento).headerBg}
           onOpenGradeEntry={handleOpenGradeEntry}
           onEditAssignment={handleEditAssignment}
-          onImportGrades={assignment => { setAssignmentForImport(assignment); setIsBulkImportModalOpen(true); }}
-          onOpenRandomPicker={assignment => setRandomPickerAssignment(assignment)}
+          onImportGrades={assignment => { if (!assignment.assignmentGroup) { setAssignmentForImport(assignment); setIsBulkImportModalOpen(true); } }}
+          onOpenRandomPicker={assignment => { if (!assignment.assignmentGroup) setRandomPickerAssignment(assignment); }}
           onCreateCategory={() => { setCategoryToEdit(null); setIsCategoryModalOpen(true); }}
-          onCreateAssignment={category => { setActiveCategory(category); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }}
+          onCreateAssignment={category => { setNewTaskGroup(null); setActiveCategory(category); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }}
+          onCreateGroup={category => setGroupEditor({ group: null, category })}
+          onMoveAssignment={(assignment, direction) => void moveColumn(assignment, direction)}
         />
       )}
+      {columnError && <p role="alert" className="p-2 text-red-700">{columnError}</p>}
       <div className={activePeriodId === 'final' ? 'overflow-x-auto' : 'gradebook-desktop-table overflow-x-auto'}>
         <table className="min-w-full text-sm text-left">
           {/* Fix: Header set to sticky top-0 to stick to the very top of scroll view area */}
@@ -1319,7 +1378,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
               ) : (
                 <>
                   {categoriesForPeriod.map(cat => {
-                    const assignmentsForCat = assignmentsForPeriod.filter(a => a.categoryId === cat.id);
+                    const assignmentsForCat = visibleForCategory(cat.id);
                     return (
                       <th key={cat.id} colSpan={assignmentsForCat.length > 0 ? assignmentsForCat.length + 1 : 1} className={`${headerPad} font-semibold text-center border-l border-r-2 border-l-slate-200 border-r-slate-200 bg-white align-top`} style={{ color: categoryColorMap.get(cat.id), borderBottomColor: categoryColorMap.get(cat.id), borderBottomWidth: '3px' }}>
                         <div className="flex justify-center items-center">
@@ -1327,14 +1386,15 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             {cat.type === 'recovery' && <Badge variant="primary" className="ml-2" title="Categoría de Recuperación">REC</Badge>}
                         </div>
                         <div className="flex justify-center items-center gap-1 mt-1 font-normal normal-case">
-                            <button onClick={() => { setActiveCategory(cat); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }} className="p-1 text-blue-600 hover:bg-blue-100 rounded-md text-xs">Añadir {cat.name.toLowerCase()}</button>
+                            <button onClick={() => { setNewTaskGroup(null); setActiveCategory(cat); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }} className="p-1 text-blue-600 hover:bg-blue-100 rounded-md text-xs">Añadir {cat.name.toLowerCase()}</button>
+                            {cat.type !== 'recovery' && <button onClick={() => setGroupEditor({ group: null, category: cat })} className="p-1 text-violet-700 hover:bg-violet-100 rounded-md text-xs">Añadir grupo</button>}
                             <IconButton label="Editar categoría" size="sm" onClick={() => {setCategoryToEdit(cat); setIsCategoryModalOpen(true);}}><PencilIcon className="w-3 h-3"/></IconButton>
                             <IconButton label="Eliminar categoría" tone="danger" size="sm" onClick={() => handleDeleteCategory(cat.id)}><TrashIcon className="w-3 h-3"/></IconButton>
                         </div>
                       </th>
                     )
                   })}
-                  <th rowSpan={2} className={`${headerPad} font-semibold text-center bg-white text-slate-700 border-l border-slate-200 align-middle relative`}>
+                  <th rowSpan={3} className={`${headerPad} font-semibold text-center bg-white text-slate-700 border-l border-slate-200 align-middle relative`}>
                     Nota Ev.
                     <IconButton
                         label="Nueva categoría"
@@ -1350,26 +1410,43 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                 </>
               )}
             </tr>
+            {activePeriodId !== 'final' && <tr>
+              <th className="sticky left-0 bg-white z-30 border-r border-slate-200" />
+              {categoriesForPeriod.flatMap(cat => {
+                const blocks = assignmentColumnBlocks(assignmentsForPeriod, cat.id);
+                if (!blocks.length) return [<th key={cat.id} className="bg-white" />];
+                return [...blocks.map(block => {
+                  const group = block[0];
+                  if (!group.assignmentGroup) return <th key={group.id} className="bg-white" />;
+                  return <th key={group.id} colSpan={collapsedGroups.has(group.id) ? 1 : block.length} className="border-x-2 border-violet-200 p-2 normal-case" style={{ backgroundColor: (GROUP_COLORS[group.assignmentGroup.color] ?? GROUP_COLORS.violet).header }}>
+                    <button onClick={() => setCollapsedGroups(prev => { const next = new Set(prev); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })} aria-expanded={!collapsedGroups.has(group.id)} className="font-semibold">{collapsedGroups.has(group.id) ? '▸' : '▾'} {group.name}</button>
+                    <button type="button" onClick={() => { setNewTaskGroup(group); setActiveCategory(cat); setAssignmentToEdit(null); setIsAssignmentModalOpen(true); }} className="ml-3 text-xs font-normal text-violet-800">Añadir tarea</button>
+                  </th>;
+                }), <th key={`${cat.id}-average`} className="bg-white" />];
+              })}
+            </tr>}
             {activePeriodId !== 'final' && (
               <tr>
                 {/* Alumno Header Bottom Half: No top border, align top (visually merges with above) */}
                 <th className={`${studentHeaderPad} sticky left-0 bg-white z-30 w-52 border-r border-t-0 border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]`}></th>
                 
                 {categoriesForPeriod.map(cat => {
-                    const assignmentsForCat = assignmentsForPeriod.filter(a => a.categoryId === cat.id);
+                    const assignmentsForCat = visibleForCategory(cat.id);
                     if (assignmentsForCat.length === 0) {
                         return <th key={`${cat.id}-empty`} className={`${cellPad} bg-white border-l border-r-2 border-slate-200`}></th>
                     }
                     return [
                         ...assignmentsForCat.map((a, idx) => (
-                            <th key={a.id} className={`${cellPad} font-normal text-center border-l border-slate-200 ${idx === assignmentsForCat.length - 1 ? 'border-r border-r-slate-200' : ''} min-w-[120px] bg-white`} title={a.name} style={{ color: categoryColorMap.get(cat.id) }}>
-                              <div className="truncate w-full mx-auto px-1">{a.shortName || a.name}</div>
+                            <th key={a.id} className={`${cellPad} font-normal text-center border-l border-slate-200 ${idx === assignmentsForCat.length - 1 ? 'border-r border-r-slate-200' : ''} min-w-[120px] bg-white`} title={a.name} style={{ color: categoryColorMap.get(cat.id), backgroundColor: groupColorFor(a, true) }}>
+                              <div className={`truncate w-full mx-auto px-1 ${a.assignmentGroup ? 'font-bold' : ''}`}>{a.assignmentGroup ? 'Resultado' : a.shortName || a.name}</div>
                               <div className="flex justify-center items-center gap-1 mt-1">
-                                <IconButton label="Editar tarea" size="sm" onClick={() => handleEditAssignment(a)}><PencilIcon className="w-3 h-3"/></IconButton>
-                                <IconButton label="Eliminar tarea" tone="danger" size="sm" onClick={() => handleDeleteAssignment(a.id)}><TrashIcon className="w-3 h-3"/></IconButton>
-                                <IconButton label="Copiar tarea a otra clase" tone="primary" size="sm" onClick={() => setAssignmentToCopy(a)}><DocumentDuplicateIcon className="w-3 h-3"/></IconButton>
-                                <IconButton label="Elegir alumno al azar" tone="primary" size="sm" onClick={() => setRandomPickerAssignment(a)}><DicesIcon className="w-3 h-3"/></IconButton>
-                                <IconButton label="Importar notas en lote" tone="primary" size="sm" onClick={() => {setAssignmentForImport(a); setIsBulkImportModalOpen(true);}}><ArrowUpTrayIcon className="w-3 h-3"/></IconButton>
+                                <IconButton label={a.assignmentGroup ? 'Editar grupo' : 'Editar tarea'} size="sm" onClick={() => handleEditAssignment(a)}><PencilIcon className="w-3 h-3"/></IconButton>
+                                <IconButton label={a.assignmentGroup ? 'Disolver grupo' : 'Eliminar tarea'} tone="danger" size="sm" onClick={() => handleDeleteAssignment(a.id)}><TrashIcon className="w-3 h-3"/></IconButton>
+                                {!a.assignmentGroup && <IconButton label="Copiar tarea a otra clase" tone="primary" size="sm" onClick={() => setAssignmentToCopy(a)}><DocumentDuplicateIcon className="w-3 h-3"/></IconButton>}
+                                {!a.assignmentGroup && <IconButton label="Elegir alumno al azar" tone="primary" size="sm" onClick={() => setRandomPickerAssignment(a)}><DicesIcon className="w-3 h-3"/></IconButton>}
+                                {!a.assignmentGroup && <IconButton label="Importar notas en lote" tone="primary" size="sm" onClick={() => {setAssignmentForImport(a); setIsBulkImportModalOpen(true);}}><ArrowUpTrayIcon className="w-3 h-3"/></IconButton>}
+                                <button type="button" aria-label={`Mover ${a.name} a la izquierda`} title="Mover a la izquierda" disabled={orderingColumns} onClick={() => void moveColumn(a, -1)} className="px-1">←</button>
+                                <button type="button" aria-label={`Mover ${a.name} a la derecha`} title="Mover a la derecha" disabled={orderingColumns} onClick={() => void moveColumn(a, 1)} className="px-1">→</button>
                               </div>
                             </th>
                         )),
@@ -1437,11 +1514,11 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                 ) : (
                   <>
                     {categoriesForPeriod.map(cat => {
-                      const assignmentsForCat = assignmentsForPeriod.filter(a => a.categoryId === cat.id);
+                      const assignmentsForCat = visibleForCategory(cat.id);
                        if (assignmentsForCat.length === 0) {
                           return <td key={`${cat.id}-empty-cell`} className={`${cellPad} border-l border-r-2 border-r-slate-400`}></td>
                       }
-                      const categoryAverage = calculateCategoryAverageForStudent(student.id, classData, cat);
+                      const categoryAverage = calculateCategoryAverageForStudent(student.id, classData, cat, criteria, repartoIgualCriterios);
                       return [
                         ...assignmentsForCat.map((a, idx) => {
                             const score = studentAssignmentScores.get(student.id)?.get(a.id);
@@ -1452,8 +1529,8 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
                             const rawGrade = a.puntuacionMaxima != null ? gradesMap.get(`${student.id}-${a.id}`)?.directScoreRaw : undefined;
                             const displayValue = rawGrade != null ? String(rawGrade) : (score?.toFixed(2) ?? '-');
                             return (
-                              <td key={a.id} className={`${cellPad} text-center font-bold text-base cursor-pointer hover:bg-blue-50 border-l ${idx === assignmentsForCat.length - 1 ? 'border-r' : ''} ${styleClasses}`} onClick={() => handleOpenGradeEntry(student, a)}>
-                                {displayValue}
+                              <td key={a.id} style={{ backgroundColor: groupColorFor(a, true) }} className={`${cellPad} text-center font-bold text-base cursor-pointer hover:bg-blue-50 border-l ${idx === assignmentsForCat.length - 1 ? 'border-r' : ''}`} onClick={() => handleOpenGradeEntry(student, a)}>
+                                <span className={`${styleClasses} rounded px-2 py-1`}>{displayValue}</span>
                               </td>
                             )
                         }),
@@ -1730,7 +1807,9 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
           </>
       )}
 
-      {activeCategory && <AssignmentModal isOpen={isAssignmentModalOpen} onClose={() => setIsAssignmentModalOpen(false)} onSave={handleSaveAssignment} assignmentToEdit={assignmentToEdit} category={activeCategory} criteria={criteria} specificCompetences={specificCompetences} keyCompetences={keyCompetences} programmingUnits={programmingUnits} evaluationPeriods={evaluationPeriods} academicConfiguration={academicConfiguration} evaluationTools={evaluationTools} allAssignments={classData.assignments} allCategories={classData.categories} />}
+      {groupEditor && <AssignmentGroupModal key={groupEditor.group?.id ?? groupEditor.category.id} group={groupEditor.group} category={groupEditor.category} categories={classData.categories} assignments={classData.assignments} onClose={() => setGroupEditor(null)} onSave={saveGroup} />}
+      <DrilldownModal isOpen={!!groupDetails} onClose={() => setGroupDetails(null)} data={groupDetails} gradeScale={academicConfiguration.gradeScale} />
+      {activeCategory && <AssignmentModal isOpen={isAssignmentModalOpen} onClose={() => { setIsAssignmentModalOpen(false); setNewTaskGroup(null); }} onSave={handleSaveAssignment} assignmentToEdit={assignmentToEdit} category={activeCategory} criteria={criteria} specificCompetences={specificCompetences} keyCompetences={keyCompetences} programmingUnits={programmingUnits} evaluationPeriods={evaluationPeriods} academicConfiguration={academicConfiguration} evaluationTools={evaluationTools} allAssignments={classData.assignments} allCategories={classData.categories} groupToJoin={newTaskGroup} />}
       <CategoryModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} onSave={handleSaveCategory} categoryToEdit={categoryToEdit} evaluationPeriodId={activePeriodId} />
       <ImportarDesdeSAModal
         isOpen={isImportarSAModalOpen}

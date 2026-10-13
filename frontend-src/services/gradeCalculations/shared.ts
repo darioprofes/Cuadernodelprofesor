@@ -1,4 +1,10 @@
-import type { GradeScaleRule } from '../../types';
+import type { Assignment, GradeScaleRule, ImportanciaActividad } from '../../types';
+
+export const IMPORTANCE_FACTORS: Record<ImportanciaActividad, number> = {
+    muy_baja: 0.5, baja: 0.75, normal: 1, alta: 1.5, muy_alta: 2,
+};
+export const getImportanceFactor = (assignment: Assignment): number =>
+    assignment.importanciaPersonalizada ?? IMPORTANCE_FACTORS[assignment.importancia ?? 'normal'];
 
 // Helper to determine color based on configuration
 export const getGradeColorClass = (grade: number | null, scale?: GradeScaleRule[]): string => {

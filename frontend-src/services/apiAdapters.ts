@@ -21,6 +21,7 @@ import type {
 } from '../types/api';
 import { calculateToolGlobalScore, calculateCriterionScoresFromTool } from './gradeCalculations';
 import { isTauri, invoke } from '@tauri-apps/api/core';
+import { deriveGroupGrades } from './assignmentGroups';
 
 // Fase 7 bloque 7: en escritorio las fotos se sirven vía el protocolo
 // custom studentphoto:// (ver src-tauri/src/lib.rs), no por /api/photos/.
@@ -213,6 +214,8 @@ export const apiAssignmentToLocal = (a: ApiAssignment): Assignment => ({
     importanciaPersonalizada: a.importanciaPersonalizada,
     puntuacionMaxima: a.puntuacionMaxima,
     questionRoundDescription: a.questionRoundDescription,
+    assignmentGroup: a.assignmentGroup,
+    columnOrder: a.columnOrder,
 });
 
 // ============================================================
@@ -384,7 +387,7 @@ export const hydrateClassData = (
         students: joinEnrolledStudents(enrollments, globalStudents),
         categories: apiCategories.map(apiCategoryToLocal),
         assignments,
-        grades: hydrateGrades(apiGrades, enrollments, assignments, evaluationTools),
+        grades: deriveGroupGrades(assignments, hydrateGrades(apiGrades, enrollments, assignments, evaluationTools)),
     };
 };
 

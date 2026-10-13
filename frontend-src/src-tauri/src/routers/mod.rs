@@ -37,6 +37,7 @@ pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>
     };
 
     match (method, segments.as_slice()) {
+        ("POST", ["classes", class_id, "assignments", "reorder"]) => assignments::reorder(conn, class_id, require_body(body)?),
         ("GET", ["shortcuts"]) => shortcuts::list(conn),
         ("POST", ["shortcuts"]) => shortcuts::create(conn, require_body(body)?),
         ("PATCH", ["shortcuts", id]) => shortcuts::update(conn, id, require_body(body)?),

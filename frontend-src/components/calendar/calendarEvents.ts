@@ -312,6 +312,7 @@ export const buildCalendarEvents = ({
         const courseColor = course ? getClassColor(course.level, buildClassName(classData.grupo, course.subject)) : { backgroundColor: '#ddd', textColor: '#333', borderColor: '#ccc' };
 
         classData.assignments.forEach(assignment => {
+            if (assignment.assignmentGroup) return;
             if (assignment.date) {
                 const key = `${classData.id}-${assignment.date}`;
                 const existingSession = sessionEventMap.get(key);

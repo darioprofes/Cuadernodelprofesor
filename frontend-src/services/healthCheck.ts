@@ -103,6 +103,19 @@ export const runHealthCheck = (state: HealthCheckInput): HealthCheckIssue[] => {
         });
 
         cls.assignments.forEach(a => {
+            if (a.assignmentGroup) {
+                const seenMembers = new Set<string>();
+                for (const memberId of a.assignmentGroup.memberIds) {
+                    const member = cls.assignments.find(task => task.id === memberId);
+                    if (!member || member.assignmentGroup || member.id === a.id || seenMembers.has(memberId) || member.categoryId !== a.categoryId || member.evaluationPeriodId !== a.evaluationPeriodId) {
+                        issues.push({ severity: 'error', area, message: `Grupo "${a.name}" contiene una tarea inválida o incompatible.` });
+                    }
+                    seenMembers.add(memberId);
+                    if (cls.assignments.some(other => other.id !== a.id && other.assignmentGroup?.memberIds.includes(memberId))) {
+                        issues.push({ severity: 'error', area, message: `Una tarea de "${a.name}" pertenece a más de un grupo.` });
+                    }
+                }
+            }
             if (!categoryIds.has(a.categoryId)) issues.push({ severity: 'error', area, message: `Tarea "${a.name}" apunta a una categoría que ya no existe.` });
             if (!evaluationPeriodIds.has(a.evaluationPeriodId)) issues.push({ severity: 'error', area, message: `Tarea "${a.name}" apunta a una evaluación que ya no existe.` });
             if (a.evaluationToolId && !evaluationToolIds.has(a.evaluationToolId)) issues.push({ severity: 'error', area, message: `Tarea "${a.name}" usa un instrumento de evaluación que ya no existe.` });

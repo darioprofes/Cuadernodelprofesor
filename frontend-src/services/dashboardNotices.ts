@@ -46,7 +46,7 @@ export const detectUngradedOverdueAssignments = (
     classes.forEach(classData => {
         if (classData.students.length === 0) return;
         const overdueCount = classData.assignments.filter(a =>
-            a.date && a.date < cutoff && countMissingGrades(classData, a.id) > 0
+            !a.assignmentGroup && a.date && a.date < cutoff && countMissingGrades(classData, a.id) > 0
         ).length;
         if (overdueCount === 0) return;
 

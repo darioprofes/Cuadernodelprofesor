@@ -18,8 +18,10 @@ import { linkClassName } from '../theme/components/Link';
 import LinkedCriteriaSelector from './LinkedCriteriaSelector';
 import { IMPORTANCE_FACTORS } from '../services/gradeCalculations';
 import { toYYYYMMDD } from '../utils';
+import { assignmentGroupOwners } from '../services/assignmentGroups';
 
 interface AssignmentModalProps {
+  groupToJoin?: Assignment | null;
   isOpen: boolean;
   onClose: () => void;
   onSave: (assignment: Omit<Assignment, 'id' | 'categoryId'> & { id?: string; categoryId?: string }) => Promise<void> | void;
@@ -59,6 +61,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
   const [guardando, setGuardando] = useState(false);
 
   const [useGlobalToolCriteria, setUseGlobalToolCriteria] = useState(false);
+  const parentGroup = props.groupToJoin ?? (assignmentToEdit ? assignmentGroupOwners(allAssignments).get(assignmentToEdit.id) : undefined);
 
   useEffect(() => {
     setError(null);
@@ -110,16 +113,16 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
       setQuestionRoundDescription('');
       setUseGlobalToolCriteria(false);
     }
-  }, [assignmentToEdit, isOpen, category]);
+  }, [assignmentToEdit, isOpen, category, props.groupToJoin]);
   
   useEffect(() => {
-    if (date) {
+    if (date && !props.groupToJoin) {
         const period = academicConfiguration.evaluationPeriods.find(p => date >= p.startDate && date <= p.endDate);
         if (period) {
             setEvaluationPeriodId(period.id);
         }
     }
-  }, [date, academicConfiguration.evaluationPeriods]);
+  }, [date, academicConfiguration.evaluationPeriods, props.groupToJoin]);
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -186,6 +189,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="4xl">
       <form onSubmit={handleSubmit} className="space-y-6">
+        {parentGroup && <p className="rounded-lg bg-violet-50 p-3 text-sm text-violet-900">Grupo: <strong>{parentGroup.name}</strong>. Esta tarea aporta al grupo y no cuenta por separado. Al cambiarla de categoría o evaluación saldrá del grupo.</p>}
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-slate-700">Nombre de la Tarea</label>
           <Input
@@ -213,7 +217,7 @@ const AssignmentModal: React.FC<AssignmentModalProps> = (props) => {
           <div className="lg:col-span-1">
             <label htmlFor="evaluation-period" className="block text-sm font-medium text-slate-700">Periodo</label>
             <Select
-              id="evaluation-period" value={evaluationPeriodId} onChange={(e) => setEvaluationPeriodId(e.target.value)}
+              id="evaluation-period" value={evaluationPeriodId} disabled={!!props.groupToJoin} onChange={(e) => setEvaluationPeriodId(e.target.value)}
               className="mt-1"
             >
               {evaluationPeriods.map(period => <option key={period.id} value={period.id}>{period.name}</option>)}

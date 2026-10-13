@@ -6,6 +6,7 @@ import { getNombreCompleto } from '../utils';
 import { TYPOGRAPHY } from '../theme/typography';
 import DrilldownModal, { DrilldownData } from './DrilldownModal';
 import Select from './Select';
+import { effectiveGroupClass } from '../services/assignmentGroups';
 
 interface CriteriaAchievementProps {
   classData: ClassData;
@@ -47,7 +48,9 @@ const CriteriaAchievement: React.FC<CriteriaAchievementProps> = ({ classData, cr
     const handleCellClick = (student: Student, criterion: EvaluationCriterion) => {
         const finalGrade = studentCriterionGrades.get(student.id)?.get(criterion.id) ?? null;
     
-        const gradesForCriterion = classData.grades.filter(g => 
+        const effective = effectiveGroupClass(classData);
+        const countedIds = new Set(effective.assignments.filter(a => selectedPeriodId === 'all' || a.evaluationPeriodId === selectedPeriodId).map(a => a.id));
+        const gradesForCriterion = effective.grades.filter(g => countedIds.has(g.assignmentId) &&
             g.studentId === student.id && 
             g.criterionScores &&
             g.criterionScores[criterion.id] != null

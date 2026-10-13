@@ -220,7 +220,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
     // MonthView.tsx / AnnualCalendarView.tsx), aquí listadas de verdad en
     // vez de solo contadas como en "Próximos eventos" de más arriba.
     const tareasEvaluablesDelDia = useMemo(() => (
-        classes.flatMap(c => c.assignments.filter(a => a.date === fechaSeleccionada).map(a => ({ assignment: a, classData: c })))
+        classes.flatMap(c => c.assignments.filter(a => !a.assignmentGroup && a.date === fechaSeleccionada).map(a => ({ assignment: a, classData: c })))
     ), [classes, fechaSeleccionada]);
     const reunionesDelDia = useMemo(() => (
         meetings.filter(m => m.fecha === fechaSeleccionada)
@@ -271,7 +271,7 @@ const HoyView: React.FC<HoyViewProps> = ({ classes, courses, academicConfigurati
             if (enRango) reuniones++;
         });
         classes.forEach(c => c.assignments.forEach(a => {
-            if (!a.date) return;
+            if (!a.date || a.assignmentGroup) return;
             const enRango = desdeExclusive ? (a.date > desdeExclusive && a.date <= hasta) : (a.date > fechaSeleccionada && a.date <= hasta);
             if (enRango) tareasEvaluables++;
         }));

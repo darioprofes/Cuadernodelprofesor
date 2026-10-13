@@ -4,6 +4,14 @@ import type { Assignment, AssignmentInput, AssignmentPatch } from '../types/api'
 
 const queryKey = (classId: string) => ['assignments', classId];
 
+export function useReorderAssignments() {
+    const client = useQueryClient();
+    return useMutation({
+        mutationFn: ({ classId, ids }: { classId: string; ids: string[] }) => api.post(`/classes/${classId}/assignments/reorder`, { ids }),
+        onSuccess: (_, { classId }) => client.invalidateQueries({ queryKey: queryKey(classId) }),
+    });
+}
+
 export function useAssignments(classId: string, options?: { enabled?: boolean }) {
     return useQuery({
         queryKey: queryKey(classId),

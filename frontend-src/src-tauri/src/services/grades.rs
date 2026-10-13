@@ -33,6 +33,8 @@ pub fn list_for_class(conn: &Connection, class_id: &str) -> Result<Value, ApiErr
 // Sin control de concurrencia (última escritura gana, a propósito -- ver
 // plan, sección GRADE). Upsert simple sobre la PK compuesta.
 pub fn put(conn: &Connection, assignment_id: &str, enrollment_id: &str, body: Value) -> Result<Value, ApiError> {
+    let group: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM assignments WHERE id = ? AND assignment_group IS NOT NULL)", [assignment_id], |row| row.get(0))?;
+    if group { return Err(ApiError::bad_request("La nota del grupo se calcula automáticamente; califica sus tareas.")); }
     let direct_score = body.get("directScore").and_then(Value::as_f64);
     let recovery_score = body.get("recoveryScore").and_then(Value::as_f64);
     let tool_results = body.get("toolResults").filter(|v| !v.is_null());

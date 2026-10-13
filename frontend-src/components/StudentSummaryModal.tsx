@@ -59,8 +59,8 @@ const StudentSummaryModal: React.FC<StudentSummaryModalProps> = ({
     [student.id, classData, criteria, repartoIgualCriterios, academicConfiguration.gradeScale]);
 
     const finalGradeCategorias = useMemo(() =>
-        calculateOverallFinalGradeForStudent(student.id, classData, academicConfiguration),
-    [student.id, classData, academicConfiguration]);
+        calculateOverallFinalGradeForStudent(student.id, classData, academicConfiguration, criteria, repartoIgualCriterios),
+    [student.id, classData, academicConfiguration, criteria, repartoIgualCriterios]);
 
     const renderTabContent = () => {
         switch (activeTab) {
@@ -432,8 +432,8 @@ const PeriodCard: React.FC<PeriodCardProps> = ({ period, student, classData, aca
     [student.id, classData, criteria, period.id, repartoIgualCriterios, academicConfiguration.gradeScale]);
 
     const periodGrade = useMemo(() =>
-        calculateEvaluationPeriodGradeForStudent(student.id, classData, period.id, academicConfiguration.gradeScale),
-    [student.id, classData, period.id, academicConfiguration.gradeScale]);
+        calculateEvaluationPeriodGradeForStudent(student.id, classData, period.id, academicConfiguration.gradeScale, criteria, repartoIgualCriterios),
+    [student.id, classData, period.id, academicConfiguration.gradeScale, criteria, repartoIgualCriterios]);
 
     const categoriesInPeriod = useMemo(() => 
         classData.categories.filter(c => c.evaluationPeriodId === period.id),
@@ -444,8 +444,8 @@ const PeriodCard: React.FC<PeriodCardProps> = ({ period, student, classData, aca
     [classData.assignments, period.id]);
 
     const assignmentScores = useMemo(() => 
-        calculateAssignmentScoresForStudent(student.id, assignments, classData.grades),
-    [student.id, assignments, classData.grades]);
+        calculateAssignmentScoresForStudent(student.id, assignments, classData.grades, criteria, repartoIgualCriterios),
+    [student.id, assignments, classData.grades, criteria, repartoIgualCriterios]);
 
     return (
         <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">

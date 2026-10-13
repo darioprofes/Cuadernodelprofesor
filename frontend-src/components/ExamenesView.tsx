@@ -63,7 +63,7 @@ const ExamenesView: React.FC<ExamenesViewProps> = ({ classes, courses, setActive
 
     const todasLasTareas: TareaEvaluableRow[] = useMemo(() => classes
         .flatMap(c => c.assignments
-            .filter(a => a.date)
+            .filter(a => a.date && !a.assignmentGroup)
             .map(a => ({
                 id: a.id,
                 name: a.name,

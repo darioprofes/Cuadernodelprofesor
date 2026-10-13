@@ -392,11 +392,14 @@ export interface Assignment {
     importanciaPersonalizada?: number;
     puntuacionMaxima?: number;
     questionRoundDescription?: string;
+    assignmentGroup?: import('../types').AssignmentGroup | null;
+    columnOrder?: number | null;
     createdAt: string;
     updatedAt: string;
 }
 
 export interface AssignmentInput {
+    joinGroupId?: string;
     categoryId: string;
     evaluationPeriodId: string;
     evaluationToolId?: string;
@@ -412,6 +415,8 @@ export interface AssignmentInput {
     importanciaPersonalizada?: number;
     puntuacionMaxima?: number;
     questionRoundDescription?: string;
+    assignmentGroup?: import('../types').AssignmentGroup | null;
+    columnOrder?: number | null;
 }
 
 export interface AssignmentPatch extends Partial<AssignmentInput> {

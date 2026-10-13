@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from uuid import UUID
 
 from services.auth import require_auth
 from services.assignments import (
@@ -11,10 +13,20 @@ from services.assignments import (
     create_assignment,
     update_assignment,
     delete_assignment,
+    reorder_assignments,
 )
 
 classes_router = APIRouter(prefix="/classes/{class_id}/assignments", tags=["Tareas evaluables"], dependencies=[Depends(require_auth)])
 router = APIRouter(prefix="/assignments", tags=["Tareas evaluables"], dependencies=[Depends(require_auth)])
+
+
+class ColumnOrder(BaseModel):
+    ids: list[UUID]
+
+
+@classes_router.post("/reorder", status_code=204)
+def reorder_columns(class_id: str, data: ColumnOrder):
+    reorder_assignments(class_id, [str(i) for i in data.ids])
 
 
 @classes_router.get("", response_model=list[Assignment])

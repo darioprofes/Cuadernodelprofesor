@@ -50,6 +50,8 @@ El CRUD ordinario comparte contrato JSON entre plataformas. Las importaciones, f
 
 ## 2. Modelo de datos y reglas que atraviesan archivos
 
+Actualización del 13 de octubre de 2026: los grupos son contenedores en `assignments.assignment_group`, con orden visual en `column_order`. Sus criterios se deducen de las tareas y sus notas se calculan en `services/assignmentGroups.ts`; las tareas interiores no cuentan por separado. Guía: [grupos-tareas.md](docs/grupos-tareas.md).
+
 - `students` representa personas; `enrollments` representa su matrícula en una clase. Los datos personales y los datos del curso no son intercambiables. `joinStudentEnrollment` en `apiAdapters.ts` los reúne para la interfaz.
 - `courses` representa materias/niveles; `academic_years` representa cursos académicos. `academic_year_courses` los relaciona. `classes` representa los grupos docentes de ese año.
 - Currículo: competencias clave y descriptores, competencias específicas, criterios y saberes. Las unidades de programación y los instrumentos enlazan con esos elementos.
@@ -72,6 +74,7 @@ En esta tabla, `F` significa `frontend-src/`, `B` significa `api/app/` y `R` sig
 | Dado para elegir alumnado al calificar | `F/components/RandomStudentPickerModal.tsx`, `GradebookTable.tsx`, `GradeEntryModal.tsx`, `F/services/randomGradeEntry.ts` | Prioriza alumnado sin nota, reutiliza el método de la actividad y vuelve al selector tras guardar. Tests del selector y compatibilidad en `randomGradeEntry.test.ts` y `apiAdapters.test.ts`. |
 | Compatibilidad con rondas antiguas | `F/components/AssignmentModal.tsx`, `F/services/apiAdapters.ts`, `GradebookTable.tsx` | `question_round` no se ofrece para actividades nuevas; se mantiene su lectura y el historial previo al editar. `QuestionRoundModal.tsx` ya no se abre desde el cuaderno. |
 | Una media, ponderación o nota final incorrecta | `F/services/gradeCalculations/categoryEngine.ts`, `criterialEngine.ts`, `tools.ts` | `F/services/gradeCalculations.test.ts`, adaptadores, puntuación directa original y normalizada. |
+| Grupos, pesos internos y orden de columnas | `F/components/AssignmentGroupModal.tsx`, `GradebookTable.tsx`, `F/services/assignmentGroups.ts`, `F/hooks/useAssignments.ts` | Contratos/servicios de actividades, migraciones web 0028 y SQLite 0013, copias Rust e informes. |
 | Informes curriculares | `F/components/CriteriaAchievement.tsx`, `SpecificCompetenceAchievement.tsx`, `KeyCompetenceAchievement.tsx`, `DescriptorAchievement.tsx` | `DrilldownModal.tsx`, motor criterial y relaciones curriculares. |
 | Horario y recreos | `F/components/HorarioView.tsx`, `F/components/settings/ScheduleManager.tsx`, `AcademicYearManager.tsx` | `F/utils.ts`, `HoyView.tsx`, `ClassJournal.tsx`, `F/types/api.ts`, `B/services/academic_years.py`, migración 0023 y equivalente Rust. |
 | Importación del horario PDF | `F/components/ImportScheduleModal.tsx`, `B/routers/horario.py`, `B/services/horario_pdf.py` | Copia `F/src-tauri/python-helper/src/horario_pdf.py`, comando en `R/lib.rs`, puente `R/services/python_helper.rs`, creación de categorías y normalización de materias. |
@@ -122,6 +125,8 @@ Los demás nombres de entidad se reconocen en el inventario. Los hooks controlan
 La numeración web y escritorio es distinta. No copiar números automáticamente ni modificar una migración ya aplicada para introducir un cambio nuevo: crear una migración posterior y comprobar los dos dialectos. Las migraciones iniciales y posteriores, juntas, definen el esquema actual.
 
 ### Diferencias actuales que conviene tener presentes
+
+Los grupos incorporan `0028_assignment_groups.sql` (PostgreSQL) y `0013_assignment_groups.sql` (SQLite); no resuelven las diferencias previas de recreos/rondas indicadas abajo.
 
 En esta revisión, PostgreSQL tiene migraciones para recreos (`0023_break_periods.sql`) y rondas (`0027_question_round.sql`). SQLite termina en `0012_reuniones_acta.sql`; su servicio de años no incluye `breakPeriodIndexes` y el de actividades no incluye `questionRoundDescription`. Es una diferencia visible en el código, pendiente de validar funcionalmente; no asumir que las últimas prestaciones web tienen persistencia equivalente en escritorio.
 
@@ -199,6 +204,18 @@ Este documento no almacena claves, contraseñas ni contenido de archivos privado
 No se han ejecutado builds ni pruebas funcionales para redactar este documento. Las comprobaciones realizadas son inspección del código y validación del inventario/rutas del documento.
 
 ## 8. Inventario por archivo
+
+### Archivos añadidos para grupos (13 de octubre de 2026)
+
+| Archivo | Qué controla |
+| --- | --- |
+| [docs/grupos-tareas.md](docs/grupos-tareas.md) | Uso, cálculo y despliegue de grupos. |
+| [frontend-src/components/AssignmentGroupModal.tsx](frontend-src/components/AssignmentGroupModal.tsx) | Grupos, tareas existentes, pesos y traslado de categoría. |
+| [frontend-src/services/assignmentGroups.ts](frontend-src/services/assignmentGroups.ts) | Notas derivadas por criterio/global, exclusión de tareas interiores, colores y orden de bloques. |
+| [frontend-src/services/assignmentGroups.test.ts](frontend-src/services/assignmentGroups.test.ts) | Cálculo ponderado y ausencia de doble cómputo. |
+| [api/app/migrations/0028_assignment_groups.sql](api/app/migrations/0028_assignment_groups.sql) | Configuración de grupos y orden visual PostgreSQL. |
+| [frontend-src/src-tauri/src/migrations/0013_assignment_groups.sql](frontend-src/src-tauri/src/migrations/0013_assignment_groups.sql) | Campos equivalentes SQLite. |
+| [api/tests/test_assignment_groups.py](api/tests/test_assignment_groups.py) | Contratos, serialización y validación de pertenencia/pesos Python. |
 
 Las tablas siguientes cubren los archivos versionados del commit de referencia y los archivos del selector incorporados localmente. Las responsabilidades de componentes especializados se resumen por nombre. Es un índice de localización, no una especificación exhaustiva de cada función. Recursos repetidos se identifican individualmente sin duplicar una explicación larga.
 

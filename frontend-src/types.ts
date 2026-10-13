@@ -250,6 +250,14 @@ export interface Assignment {
   // Explica qué se observa en una ronda de preguntas (p. ej. expresión y
   // razonamiento). Es propio de la actividad, no de una vuelta concreta.
   questionRoundDescription?: string;
+  assignmentGroup?: AssignmentGroup | null;
+  columnOrder?: number | null;
+}
+
+export interface AssignmentGroup {
+  memberIds: string[];
+  color: 'blue' | 'violet' | 'emerald' | 'amber';
+  memberWeights?: Record<string, number>;
 }
 
 export interface QuestionRoundEntry {

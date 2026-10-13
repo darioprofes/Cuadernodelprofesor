@@ -1,9 +1,11 @@
-import type { ClassData, Assignment, Grade, AcademicConfiguration, GradeScaleRule, Category } from '../../types';
+import type { ClassData, Assignment, Grade, AcademicConfiguration, GradeScaleRule, Category, EvaluationCriterion } from '../../types';
 import { getGradeColorClass } from './shared';
+import { deriveGroupGrades, effectiveGroupClass, groupGlobalScore } from '../assignmentGroups';
 
 // Helper to calculate a single assignment score based on its grade data and configuration
 export const calculateSingleAssignmentScore = (assignment: Assignment, grade: Grade | undefined): number | null => {
     if (!grade || !grade.criterionScores) return null;
+    if (assignment.assignmentGroup) return groupGlobalScore(grade);
 
     // 1. Recovery Override (Direct)
     // If this is a recovery task itself and has a specific recovery grade
@@ -49,17 +51,17 @@ export const calculateSingleAssignmentScore = (assignment: Assignment, grade: Gr
     return weightedSum / totalRatio;
 };
 
-export const calculateAssignmentScoresForStudent = (studentId: string, assignments: Assignment[], grades: Grade[]): Map<string, number | null> => {
+export const calculateAssignmentScoresForStudent = (studentId: string, assignments: Assignment[], grades: Grade[], criteria: EvaluationCriterion[] = [], equal = true): Map<string, number | null> => {
     const scores = new Map<string, number | null>();
     const gradesMap = new Map<string, Grade>();
 
-    grades.filter(g => g.studentId === studentId).forEach(grade => {
+    deriveGroupGrades(assignments, grades).filter(g => g.studentId === studentId).forEach(grade => {
       gradesMap.set(grade.assignmentId, grade);
     });
 
     for (const assignment of assignments) {
         const grade = gradesMap.get(assignment.id);
-        const score = calculateSingleAssignmentScore(assignment, grade);
+        const score = assignment.assignmentGroup ? groupGlobalScore(grade, criteria, equal) : calculateSingleAssignmentScore(assignment, grade);
         scores.set(assignment.id, score);
     }
     return scores;
@@ -72,8 +74,8 @@ export const calculateAssignmentScoresForStudent = (studentId: string, assignmen
 // calculateEvaluationPeriodGradeForStudent para poder mostrarla como columna
 // propia en el Cuaderno, no solo usarla internamente para la nota de la
 // evaluación.
-export const calculateCategoryAverageForStudent = (studentId: string, classData: ClassData, category: Category): number | null => {
-    const { assignments, categories, grades } = classData;
+export const calculateCategoryAverageForStudent = (studentId: string, classData: ClassData, category: Category, criteria: EvaluationCriterion[] = [], equal = true): number | null => {
+    const { assignments, categories, grades } = effectiveGroupClass(classData);
 
     // Recuperaciones de esa misma evaluación (pueden afectar a tareas de
     // cualquier categoría normal del periodo, no solo de esta).
@@ -101,7 +103,7 @@ export const calculateCategoryAverageForStudent = (studentId: string, classData:
     const scoredAssignments: { assignment: Assignment; score: number }[] = [];
     assignmentsInCategory.forEach(assignment => {
         const grade = grades.find(g => g.studentId === studentId && g.assignmentId === assignment.id);
-        let score = calculateSingleAssignmentScore(assignment, grade);
+        let score = assignment.assignmentGroup ? groupGlobalScore(grade, criteria, equal) : calculateSingleAssignmentScore(assignment, grade);
         if (recoveryMap.has(assignment.id)) {
             const recoveryScore = recoveryMap.get(assignment.id)!;
             score = score !== null ? Math.max(score, recoveryScore) : recoveryScore;
@@ -130,7 +132,7 @@ export const calculateCategoryAverageForStudent = (studentId: string, classData:
         : scoredAssignments.reduce((sum, s) => sum + s.score, 0) / scoredAssignments.length;
 };
 
-export const calculateEvaluationPeriodGradeForStudent = (studentId: string, classData: ClassData, evaluationPeriodId: string, gradeScale?: GradeScaleRule[]): { grade: number | null; styleClasses: string } => {
+export const calculateEvaluationPeriodGradeForStudent = (studentId: string, classData: ClassData, evaluationPeriodId: string, gradeScale?: GradeScaleRule[], criteria: EvaluationCriterion[] = [], equal = true): { grade: number | null; styleClasses: string } => {
     const { categories } = classData;
 
     const categoriesForPeriod = categories.filter(c => c.evaluationPeriodId === evaluationPeriodId && c.type !== 'recovery');
@@ -139,7 +141,7 @@ export const calculateEvaluationPeriodGradeForStudent = (studentId: string, clas
     let weightedCategorySum = 0;
 
     categoriesForPeriod.forEach(category => {
-        const categoryAverage = calculateCategoryAverageForStudent(studentId, classData, category);
+        const categoryAverage = calculateCategoryAverageForStudent(studentId, classData, category, criteria, equal);
         if (categoryAverage !== null) {
             weightedCategorySum += categoryAverage * category.weight;
             totalCategoryWeight += category.weight;
@@ -156,14 +158,14 @@ export const calculateEvaluationPeriodGradeForStudent = (studentId: string, clas
 };
 
 
-export const calculateOverallFinalGradeForStudent = (studentId: string, classData: ClassData, academicConfiguration: AcademicConfiguration): { grade: string; styleClasses: string } => {
+export const calculateOverallFinalGradeForStudent = (studentId: string, classData: ClassData, academicConfiguration: AcademicConfiguration, criteria: EvaluationCriterion[] = [], equal = true): { grade: string; styleClasses: string } => {
     const { evaluationPeriods, evaluationPeriodWeights = {}, gradeScale } = academicConfiguration;
 
     let totalWeightUsed = 0;
     let weightedSum = 0;
 
     evaluationPeriods.forEach(period => {
-        const periodGradeResult = calculateEvaluationPeriodGradeForStudent(studentId, classData, period.id); // Internal call uses standard or no scale, doesn't matter for numbers
+        const periodGradeResult = calculateEvaluationPeriodGradeForStudent(studentId, classData, period.id, undefined, criteria, equal);
         const periodWeight = evaluationPeriodWeights[period.id];
 
         if (periodGradeResult.grade !== null && periodWeight !== undefined && periodWeight !== null) {

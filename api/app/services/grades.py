@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from psycopg.types.json import Json
+from fastapi import HTTPException
 
 from services.db import get_conn
 from services.schemas import ApiModel
@@ -59,6 +60,11 @@ def put_grade(assignment_id: str, enrollment_id: str, data: GradeInput) -> Grade
 
         with conn.cursor() as cur:
 
+            cur.execute("SELECT c.id FROM classes c JOIN assignments a ON a.class_id = c.id WHERE a.id = %s FOR UPDATE OF c", [assignment_id])
+            cur.execute("SELECT assignment_group FROM assignments WHERE id = %s", [assignment_id])
+            assignment = cur.fetchone()
+            if assignment and assignment["assignment_group"] is not None:
+                raise HTTPException(400, "La nota del grupo se calcula automáticamente; califica sus tareas.")
             cur.execute(
                 f"""
                 INSERT INTO grades (enrollment_id, assignment_id, direct_score, direct_score_raw, recovery_score, tool_results, updated_at)

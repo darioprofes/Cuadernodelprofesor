@@ -60,7 +60,7 @@ fn json_columns(table: &str) -> &'static [&'static str] {
         "academic_years" => &["holidays", "periods"],
         "classes" => &["schedule", "skipped_days", "caracteristicas_grupo"],
         "enrollments" => &["acneae"],
-        "assignments" => &["linked_criteria", "recovers_assignment_ids"],
+        "assignments" => &["linked_criteria", "recovers_assignment_ids", "assignment_group"],
         "grades" => &["tool_results"],
         _ => &[],
     }

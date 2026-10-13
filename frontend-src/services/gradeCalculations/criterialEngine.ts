@@ -1,21 +1,11 @@
-import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, Assignment, Grade, GradeScaleRule, ImportanciaActividad } from '../../types';
-import { getGradeColorClass } from './shared';
+import type { ClassData, EvaluationCriterion, SpecificCompetence, KeyCompetence, Assignment, Grade, GradeScaleRule } from '../../types';
+import { getGradeColorClass, getImportanceFactor } from './shared';
+import { effectiveGroupClass, countedAssignments, deriveGroupGrades } from '../assignmentGroups';
+export { IMPORTANCE_FACTORS, getImportanceFactor } from './shared';
 
 // Motor de evaluación por criterios: factor multiplicador de la importancia
 // de una actividad como evidencia (no es un reparto que deba sumar nada, ya
 // que las evidencias de un criterio se acumulan durante todo el curso).
-export const IMPORTANCE_FACTORS: Record<ImportanciaActividad, number> = {
-    muy_baja: 0.5,
-    baja: 0.75,
-    normal: 1,
-    alta: 1.5,
-    muy_alta: 2,
-};
-
-export const getImportanceFactor = (assignment: Assignment): number => {
-    if (assignment.importanciaPersonalizada != null) return assignment.importanciaPersonalizada;
-    return IMPORTANCE_FACTORS[assignment.importancia ?? 'normal'];
-};
 
 // Ratio de esa actividad concreta para este criterio (LinkedCriterion, ya
 // existente para repartir la nota de una tarea entre sus propios criterios
@@ -29,7 +19,7 @@ export const calculateStudentCriterionGrades = (
     criteria: EvaluationCriterion[],
     evaluationPeriodId?: string,
 ): Map<string, number | null> => {
-    const { assignments, grades, categories } = classData;
+    const { assignments, grades, categories } = effectiveGroupClass(classData);
 
     // 1. Filter assignments and grades for the relevant period and student.
     const relevantAssignments = evaluationPeriodId
@@ -85,7 +75,7 @@ export const calculateStudentCriterionGrades = (
         if (recoveryScore !== null && recoveryScore !== undefined) {
             const recoveredAssignmentIds = new Set(recoveryAssignment.recoversAssignmentIds || []);
 
-            const assignmentsBeingRecovered = assignments.filter(a => recoveredAssignmentIds.has(a.id));
+            const assignmentsBeingRecovered = classData.assignments.filter(a => recoveredAssignmentIds.has(a.id));
 
             const criteriaToRecover = new Set<string>();
             assignmentsBeingRecovered.forEach(a => {
@@ -228,10 +218,10 @@ export const getMobilizedCriteriaForPeriod = (
     evaluationPeriodId: string,
 ): EvaluationCriterion[] => {
     const periodAssignmentIds = new Set(
-        assignments.filter(a => a.evaluationPeriodId === evaluationPeriodId).map(a => a.id)
+        countedAssignments(assignments).filter(a => a.evaluationPeriodId === evaluationPeriodId).map(a => a.id)
     );
     const mobilizedIds = new Set<string>();
-    grades.forEach(g => {
+    deriveGroupGrades(assignments, grades).forEach(g => {
         if (!periodAssignmentIds.has(g.assignmentId)) return;
         Object.entries(g.criterionScores || {}).forEach(([critId, score]) => {
             if (score != null && critId !== 'recovery_grade' && critId !== 'direct_score') {
