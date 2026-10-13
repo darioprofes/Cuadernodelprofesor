@@ -216,6 +216,7 @@ No se han ejecutado builds ni pruebas funcionales para redactar este documento. 
 | [api/app/migrations/0028_assignment_groups.sql](api/app/migrations/0028_assignment_groups.sql) | Configuración de grupos y orden visual PostgreSQL. |
 | [frontend-src/src-tauri/src/migrations/0013_assignment_groups.sql](frontend-src/src-tauri/src/migrations/0013_assignment_groups.sql) | Campos equivalentes SQLite. |
 | [api/tests/test_assignment_groups.py](api/tests/test_assignment_groups.py) | Contratos, serialización y validación de pertenencia/pesos Python. |
+| [api/tests/integration_groups_postgres.py](api/tests/integration_groups_postgres.py) | Ensayo ASGI real y migraciones sobre una base PostgreSQL desechable `profe_groups_test_*`; verifica CRUD, pesos, orden, copias y conservación de notas. |
 
 Las tablas siguientes cubren los archivos versionados del commit de referencia y los archivos del selector incorporados localmente. Las responsabilidades de componentes especializados se resumen por nombre. Es un índice de localización, no una especificación exhaustiva de cada función. Recursos repetidos se identifican individualmente sin duplicar una explicación larga.
 

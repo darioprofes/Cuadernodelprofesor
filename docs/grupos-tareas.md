@@ -45,4 +45,6 @@ El contenedor es un registro `assignments` con `assignment_group` (`memberIds`, 
 
 Pruebas TypeScript: pesos, pendientes, ceros, criterios distintos, separación de alumnos/evaluaciones y ausencia de doble cómputo. Rust: CRUD, copias/restauración, cambios de categoría, orden y creación dentro del grupo sobre SQLite real en memoria. Python: contratos y validaciones sin conexión PostgreSQL.
 
-Esta función requiere actualizar API y frontend; copiar solo los estáticos no basta. La migración PostgreSQL debe ensayarse sobre una base de pruebas antes de producción.
+Esta función requiere actualizar API y frontend; copiar solo los estáticos no basta. El 13 de octubre de 2026 se ensayaron migración, CRUD de grupos, creación interna, orden y exportación/restauración sobre una copia PostgreSQL independiente de producción. El script reproducible es `api/tests/integration_groups_postgres.py` y exige una base `profe_groups_test_*` para evitar ejecutar pruebas sobre la base original.
+
+Para este despliegue se conserva la imagen anterior de la API y una copia completa PostgreSQL/frontend en `/root/backups/profe-groups-20261013/`, con `rollback.sh`. La reconstrucción completa encontró un fallo de paquetes Debian; la imagen de esta versión se construye sobre la imagen anterior verificada, copiando el código nuevo (las dependencias no cambian). Una reversión normal restaura API/frontend y conserva las columnas aditivas para no perder datos posteriores.
