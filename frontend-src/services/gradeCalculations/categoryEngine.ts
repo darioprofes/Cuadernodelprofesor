@@ -3,7 +3,7 @@ import { getGradeColorClass } from './shared';
 import { deriveGroupGrades, effectiveGroupClass, groupGlobalScore } from '../assignmentGroups';
 
 // Helper to calculate a single assignment score based on its grade data and configuration
-export const calculateSingleAssignmentScore = (assignment: Assignment, grade: Grade | undefined): number | null => {
+export const calculateSingleAssignmentScore = (assignment: Assignment, grade: Grade | undefined, criteria: EvaluationCriterion[] = [], equal = true): number | null => {
     if (!grade || !grade.criterionScores) return null;
     if (assignment.assignmentGroup) return groupGlobalScore(grade);
 
@@ -11,6 +11,15 @@ export const calculateSingleAssignmentScore = (assignment: Assignment, grade: Gr
     // If this is a recovery task itself and has a specific recovery grade
     if (grade.criterionScores['recovery_grade'] != null) {
         return grade.criterionScores['recovery_grade'];
+    }
+
+    // El examen resume el logro de los criterios con los pesos de la materia.
+    // Los puntos por pregunta ya se utilizan para obtener cada nota criterial.
+    if (assignment.evaluationMethod === 'criterial_exam') {
+        const criterionScores = criteria.length
+            ? Object.fromEntries(Object.entries(grade.criterionScores).filter(([id]) => criteria.some(c => c.id === id)))
+            : grade.criterionScores;
+        return groupGlobalScore({ ...grade, criterionScores }, criteria, equal);
     }
 
     // 1.5 Direct grade without linked criteria: nota única sin pasar por
@@ -61,7 +70,7 @@ export const calculateAssignmentScoresForStudent = (studentId: string, assignmen
 
     for (const assignment of assignments) {
         const grade = gradesMap.get(assignment.id);
-        const score = assignment.assignmentGroup ? groupGlobalScore(grade, criteria, equal) : calculateSingleAssignmentScore(assignment, grade);
+        const score = assignment.assignmentGroup ? groupGlobalScore(grade, criteria, equal) : calculateSingleAssignmentScore(assignment, grade, criteria, equal);
         scores.set(assignment.id, score);
     }
     return scores;
@@ -103,7 +112,7 @@ export const calculateCategoryAverageForStudent = (studentId: string, classData:
     const scoredAssignments: { assignment: Assignment; score: number }[] = [];
     assignmentsInCategory.forEach(assignment => {
         const grade = grades.find(g => g.studentId === studentId && g.assignmentId === assignment.id);
-        let score = assignment.assignmentGroup ? groupGlobalScore(grade, criteria, equal) : calculateSingleAssignmentScore(assignment, grade);
+        let score = assignment.assignmentGroup ? groupGlobalScore(grade, criteria, equal) : calculateSingleAssignmentScore(assignment, grade, criteria, equal);
         if (recoveryMap.has(assignment.id)) {
             const recoveryScore = recoveryMap.get(assignment.id)!;
             score = score !== null ? Math.max(score, recoveryScore) : recoveryScore;

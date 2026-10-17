@@ -36,7 +36,7 @@ export function explainGrade(studentId: string, data: ClassData, criteria: Evalu
     : periodId ? getMobilizedCriteriaForPeriod(criteria, data.assignments, data.grades, periodId) : criteria;
   const calculated = target ? new Map(Object.entries(gradeFor(target.id)?.criterionScores ?? {})) : calculateStudentCriterionGrades(studentId, data, available, periodId);
   const criterionWeight = (c: EvaluationCriterion) => target
-    ? target.assignmentGroup ? getCriterionWeight(c, criteria, equal)
+    ? target.assignmentGroup || target.evaluationMethod === 'criterial_exam' ? getCriterionWeight(c, criteria, equal)
       : target.evaluationMethod !== 'direct_grade' && target.evaluationToolId ? 1 : ratio(target, c.id)
     : getCriterionWeight(c, criteria, equal);
   const active = available.filter(c => calculated.get(c.id) != null);
@@ -91,7 +91,7 @@ export function explainGrade(studentId: string, data: ClassData, criteria: Evalu
     }
     return { id: c.id, code: c.code, description: c.description, score, weight, share, contribution: score * share, evidence: nodes, recovery };
   });
-  const grade = target ? target.assignmentGroup ? groupGlobalScore(gradeFor(target.id), criteria, equal) : calculateSingleAssignmentScore(target, gradeFor(target.id))
+  const grade = target ? target.assignmentGroup ? groupGlobalScore(gradeFor(target.id), criteria, equal) : calculateSingleAssignmentScore(target, gradeFor(target.id), criteria, equal)
     : total > 0 ? rows.reduce((s, r) => s + r.contribution, 0) : null;
   const owner = target ? owners.get(target.id) : undefined;
   return { grade, criteria: rows, omitted: available.filter(c => calculated.get(c.id) == null).map(c => c.code), note: target ? target.assignmentGroup ? `Las tareas interiores aportan al grupo. El grupo cuenta una sola vez en la evaluación, con importancia ${getImportanceFactor(target)}.` : `Importancia de la tarea: ${getImportanceFactor(target)}. ${owner ? `Aporta al grupo «${owner.name}», que cuenta una sola vez en la evaluación.` : 'Esta importancia se aplica al combinarla con otras evidencias de cada criterio.'}` : 'Los pesos se normalizan entre los criterios con nota de este alumno. Una evidencia única aporta el 100 % de su criterio, aunque su importancia sea baja.' };

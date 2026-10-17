@@ -104,6 +104,24 @@ describe('calculateCriterionScoresFromTool', () => {
 });
 
 describe('calculateSingleAssignmentScore', () => {
+    it('pondera el examen criterial con los pesos de la materia, no por media simple', () => {
+        const assignment = directAssignment({ evaluationMethod: 'criterial_exam', evaluationToolId: 'exam' });
+        const grade: Grade = { studentId: 's1', assignmentId: 'a1', criterionScores: { c1: 4, c2: 9 } };
+        const criteria = [criterion('c1', 80), criterion('c2', 20), criterion('unworked', 50)];
+        expect(calculateSingleAssignmentScore(assignment, grade, criteria, false)).toBe(5);
+        expect(calculateSingleAssignmentScore(assignment, grade, criteria, true)).toBe(6.5);
+        const data = baseClass({ assignments: [assignment], grades: [grade], categories: [{ id: 'cat1', name: 'Exámenes', weight: 100, evaluationPeriodId: 'p1' }] });
+        expect(calculateCategoryAverageForStudent('s1', data, data.categories[0], criteria, false)).toBe(5);
+    });
+
+    it('omite criterios excluidos, ajenos o sin nota y conserva los ceros en el examen', () => {
+        const assignment = directAssignment({ evaluationMethod: 'criterial_exam' });
+        const criteria = [criterion('c1', 80), { ...criterion('c2', 20), excludeFromWeighting: true }, criterion('c3', 10)];
+        const grade: Grade = { studentId: 's1', assignmentId: 'a1', criterionScores: { c1: 0, c2: 9, c3: null, old: 10 } };
+        expect(calculateSingleAssignmentScore(assignment, grade, criteria, false)).toBe(0);
+        expect(calculateSingleAssignmentScore(assignment, { ...grade, criterionScores: { c2: 9 } }, criteria, false)).toBeNull();
+    });
+
     it('returns null when there is no grade', () => {
         expect(calculateSingleAssignmentScore(directAssignment(), undefined)).toBeNull();
     });

@@ -9,6 +9,14 @@ const criteria: EvaluationCriterion[] = [{ id: 'c1', code: '1.1', description: '
 const cls = (assignments: Assignment[], grades: Grade[]): ClassData => ({ id: 'class', courseId: 'course', students: [], categories: [{ id: 'cat', name: 'Trabajo', weight: 100, evaluationPeriodId: 'p', type: 'normal' }], assignments, grades });
 
 describe('explicación de notas', () => {
+  it('el desglose del examen usa los pesos de la materia y sus aportaciones suman la nota mostrada', () => {
+    const data = cls([task('exam', { evaluationMethod: 'criterial_exam', evaluationToolId: 't' })], [grade('exam', { c1: 4, c2: 9 })]);
+    const trace = explainGrade('s', data, criteria, false, [], undefined, 'exam');
+    expect(trace.grade).toBe(5);
+    expect(trace.criteria.map(c => c.share)).toEqual([0.8, 0.2]);
+    expect(trace.criteria.reduce((sum, c) => sum + c.contribution, 0)).toBeCloseTo(trace.grade!);
+    expect(explainGrade('s', data, criteria, true, [], undefined, 'exam').grade).toBe(6.5);
+  });
   it('reconstruye la nota y los pesos finales sin contar miembros dos veces', () => {
     const data = cls([task('a'), task('b', { importanciaPersonalizada: 2 }), task('group', { importancia: 'baja', assignmentGroup: { memberIds: ['a', 'b'], color: 'violet' } }), task('exam', { importanciaPersonalizada: 7 })], [grade('a', { c1: 0, c2: 8 }), grade('b', { c1: 9 }), grade('exam', { c1: 6 })]);
     const trace = explainGrade('s', data, criteria, true, []);
