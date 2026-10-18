@@ -163,6 +163,8 @@ Las herramientas de anonimización se exponen en `routers/ai_tools.py`; el mapa 
 
 En la revisión del anonimizador, `AiToolsView.tsx` permite quitar todos los códigos con `reintegrar` (`services/anonimizadorEdicion.ts`), vaciar el mapa y empezar la selección manual sin repetir el detector. Se descartan las respuestas/resultados posteriores para no reutilizar códigos de un mapa anterior. Con DOCX se ofrece explícitamente pasar a texto plano: se abandona el Blob anonimizado y su formato. Esta acción se ejecuta en memoria en el frontend compartido web/escritorio y no requiere cambios en el backend ni en el auxiliar Python.
 
+`TextoResaltado.tsx` acepta `onAnonimizar` para ofrecer «Anonimizar selección» con botón derecho y Ctrl+Alt+A, exclusivamente para selecciones dentro de su propio texto editable que no incluyan códigos. El menú conserva la selección al tomar el foco y se cierra con Escape, clic fuera, desplazamiento o cambios del texto. Lo conectan `AiToolsView.tsx`, `AdaptarMaterialView.tsx` y `ActaReunionTab.tsx` cuando muestran texto resaltado editable; las vistas de solo lectura y los textarea no capturan el atajo. `AnonimizarSeleccionButton.tsx` conserva el acceso anterior y anuncia las alternativas. El cambio es de frontend compartido y no requiere cambios en el auxiliar Python.
+
 Los servicios frontend `generar*.ts` contienen llamadas HTTP específicas. `useTrabajosIA.ts` está deshabilitado en Tauri. El CRUD compartido no implica disponibilidad automática de la generación remota en escritorio. Revisar las ramas de plataforma de la vista antes de extender una función de IA.
 
 ### Funciones implementadas por plataforma

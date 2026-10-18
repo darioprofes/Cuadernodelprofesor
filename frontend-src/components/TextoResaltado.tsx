@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export const PATRON_CODIGO = /\b(?:PERS|GRUPO)_[0-9A-F]{6}\b/g;
 // Anotaciones de elementos curriculares ([[2.3]]) -- doble corchete a
@@ -31,11 +32,61 @@ const TextoResaltado: React.FC<{
     className?: string;
     editable?: boolean;
     onQuitarCodigo?: (codigo: string) => void;
-}> = ({ texto, mapa, patron = PATRON_CODIGO, extraerCodigo = c => c, className = '', editable = false, onQuitarCodigo }) => {
+    onAnonimizar?: (seleccion: string) => void;
+}> = ({ texto, mapa, patron = PATRON_CODIGO, extraerCodigo = c => c, className = '', editable = false, onQuitarCodigo, onAnonimizar }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const [menu, setMenu] = useState<{ texto: string; x: number; y: number } | null>(null);
+    const seleccionLocal = useCallback(() => {
+        const selection = window.getSelection();
+        if (!selection?.rangeCount || !containerRef.current?.contains(selection.anchorNode) || !containerRef.current.contains(selection.focusNode)) return '';
+        const selected = selection.toString().trim();
+        return new RegExp(PATRON_CODIGO.source).test(selected) ? '' : selected;
+    }, []);
+    useEffect(() => {
+        if (!editable || !onAnonimizar) return;
+        const shortcut = (event: KeyboardEvent) => {
+            if (!event.ctrlKey || !event.altKey || event.metaKey || event.shiftKey || event.key.toLowerCase() !== 'a' || event.repeat) return;
+            const selected = seleccionLocal();
+            if (!selected) return;
+            event.preventDefault();
+            setMenu(null);
+            onAnonimizar(selected);
+            window.getSelection()?.removeAllRanges();
+        };
+        document.addEventListener('keydown', shortcut);
+        return () => document.removeEventListener('keydown', shortcut);
+    }, [editable, onAnonimizar, seleccionLocal]);
+    useEffect(() => { setMenu(null); }, [texto]);
+    useEffect(() => {
+        if (!menu) return;
+        const dismiss = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenu(null); };
+        const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' || event.key === 'Tab') setMenu(null); };
+        const close = () => setMenu(null);
+        document.addEventListener('pointerdown', dismiss);
+        document.addEventListener('keydown', escape);
+        window.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
+        menuRef.current?.querySelector('button')?.focus({ preventScroll: true });
+        return () => {
+            document.removeEventListener('pointerdown', dismiss);
+            document.removeEventListener('keydown', escape);
+            window.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
+        };
+    }, [menu]);
     const partes = texto.split(patron);
     const coincidencias = texto.match(patron) ?? [];
     return (
-        <div className={`font-mono text-sm whitespace-pre-wrap ${className}`}>
+        <div ref={containerRef} className={`font-mono text-sm whitespace-pre-wrap ${className}`}
+            onContextMenu={event => {
+                if (!editable || !onAnonimizar) return;
+                const selected = seleccionLocal();
+                if (!selected) return;
+                event.preventDefault();
+                const rect = window.getSelection()?.getRangeAt(0).getBoundingClientRect();
+                setMenu({ texto: selected, x: Math.max(8, Math.min(event.clientX || rect?.left || 8, window.innerWidth - 288)), y: Math.max(8, Math.min(event.clientY || rect?.bottom || 8, window.innerHeight - 64)) });
+            }}>
             {partes.map((parte, i) => {
                 const coincidencia = coincidencias[i];
                 const codigo = coincidencia ? extraerCodigo(coincidencia) : undefined;
@@ -67,6 +118,13 @@ const TextoResaltado: React.FC<{
                     </React.Fragment>
                 );
             })}
+            {menu && createPortal(<div ref={menuRef} role="menu" aria-label="Acciones sobre el texto seleccionado" className="fixed z-[9999] rounded-lg border border-slate-200 bg-white p-1 shadow-lg w-[280px] max-w-[calc(100vw-16px)]" style={{ left: menu.x, top: menu.y }}>
+                <button type="button" role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-blue-50 focus:bg-blue-50" onMouseDown={e => e.preventDefault()} onClick={() => {
+                    onAnonimizar?.(menu.texto);
+                    setMenu(null);
+                    window.getSelection()?.removeAllRanges();
+                }}>Anonimizar selección <span className="ml-2 text-xs text-slate-500">Ctrl+Alt+A</span></button>
+            </div>, document.body)}
         </div>
     );
 };

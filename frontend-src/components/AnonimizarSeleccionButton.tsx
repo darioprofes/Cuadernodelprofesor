@@ -21,6 +21,7 @@ const AnonimizarSeleccionButton: React.FC<{ onAnonimizar: (seleccion: string) =>
         <Button
             type="button"
             variant="secondary"
+            title="También puedes usar el botón derecho sobre el texto seleccionado o Ctrl+Alt+A."
             disabled={!seleccion.trim()}
             onClick={() => onAnonimizar(window.getSelection()?.toString() ?? '')}
         >

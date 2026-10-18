@@ -544,6 +544,7 @@ const AdaptarMaterialView: React.FC<AdaptarMaterialViewProps> = ({ courses, acad
                                                 className="bg-slate-50 border rounded-lg p-3 max-h-[20rem] overflow-auto"
                                                 editable
                                                 onQuitarCodigo={handleQuitarCodigo}
+                                                onAnonimizar={handleAnonimizarSeleccion}
                                             />
                                         )}
                                         <div className="flex justify-between">

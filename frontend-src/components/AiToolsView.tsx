@@ -351,7 +351,9 @@ const AiToolsView: React.FC = () => {
                             className="flex-1 bg-slate-50 border rounded-lg p-3 overflow-auto"
                             editable={!!resultado}
                             onQuitarCodigo={resultado ? handleQuitarCodigo : undefined}
+                            onAnonimizar={resultado ? handleAnonimizarSeleccion : undefined}
                         />
+                        {resultado && <p className="text-xs text-slate-500">Selecciona un dato y usa el botón derecho → Anonimizar selección, o pulsa Ctrl+Alt+A.</p>}
                         <div className="flex justify-between gap-2 flex-wrap">
                             <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
                             <div className="flex gap-2 flex-wrap">
