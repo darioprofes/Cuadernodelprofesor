@@ -9,7 +9,7 @@ import TextoResaltado, { PATRON_CODIGO } from './TextoResaltado';
 import AnonimizarSeleccionButton from './AnonimizarSeleccionButton';
 import { SparklesIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, CheckCircleIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './Icons';
 import { useAnonimizar } from '../hooks/useAnonimizar';
-import { quitarCodigo, anonimizarManual } from '../services/anonimizadorEdicion';
+import { quitarCodigo, anonimizarManual, reintegrar } from '../services/anonimizadorEdicion';
 import { PAGE_ACCENT } from '../theme/palette';
 
 type Paso = 1 | 2 | 3 | 4;
@@ -134,6 +134,19 @@ const AiToolsView: React.FC = () => {
         if (!resultado) return;
         const res = anonimizarManual(resultado.anonimizado, resultado.mapa, seleccion);
         if (res) setResultado({ anonimizado: res.texto, mapa: res.mapa });
+    };
+
+    const handleEmpezarManualmente = () => {
+        const texto = resultado?.anonimizado ?? resultadoDocxOriginal?.texto;
+        if (texto == null) return;
+        const original = reintegrar(texto, mapaActivo ?? {});
+        setDocumentoOriginal(original);
+        setResultado({ anonimizado: original, mapa: {} });
+        setResultadoDocxOriginal(null);
+        setRespuestaIA('');
+        setDocumentoFinal('');
+        setDocxFinal(null);
+        setErrorRestitucionDocx(null);
     };
 
     // Anonimiza el propio .docx sin pasar por texto en ningún momento --
@@ -339,9 +352,14 @@ const AiToolsView: React.FC = () => {
                             editable={!!resultado}
                             onQuitarCodigo={resultado ? handleQuitarCodigo : undefined}
                         />
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2 flex-wrap">
                             <Button type="button" variant="secondary" onClick={() => setPaso(1)}>Atrás</Button>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 flex-wrap">
+                                <Button type="button" variant="secondary" onClick={handleEmpezarManualmente}
+                                    disabled={!Object.keys(mapaActivo ?? {}).length && !!resultado}
+                                    title={resultadoDocxOriginal ? 'Restaura todos los datos y permite seleccionarlos a mano en texto plano, sin conservar el formato DOCX.' : 'Restaura todos los datos y vacía la lista de elementos anonimizados para empezar la selección manual.'}>
+                                    {resultadoDocxOriginal ? 'Quitar anonimización y editar como texto' : 'Quitar toda la anonimización y empezar a mano'}
+                                </Button>
                                 {resultado && <AnonimizarSeleccionButton onAnonimizar={handleAnonimizarSeleccion} />}
                                 <CopyButton texto={resultadoDocxOriginal ? resultadoDocxOriginal.texto : resultado!.anonimizado} />
                                 {resultadoDocxOriginal && (

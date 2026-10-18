@@ -161,6 +161,8 @@ La sincronización de rescate del escritorio utiliza GitHub y cifrado age. `serv
 
 Las herramientas de anonimización se exponen en `routers/ai_tools.py`; el mapa de reidentificación se devuelve al frontend y no se persiste por esos endpoints. Revisar memoria y transferencia de ese mapa cuando se cambie el flujo.
 
+En la revisión del anonimizador, `AiToolsView.tsx` permite quitar todos los códigos con `reintegrar` (`services/anonimizadorEdicion.ts`), vaciar el mapa y empezar la selección manual sin repetir el detector. Se descartan las respuestas/resultados posteriores para no reutilizar códigos de un mapa anterior. Con DOCX se ofrece explícitamente pasar a texto plano: se abandona el Blob anonimizado y su formato. Esta acción se ejecuta en memoria en el frontend compartido web/escritorio y no requiere cambios en el backend ni en el auxiliar Python.
+
 Los servicios frontend `generar*.ts` contienen llamadas HTTP específicas. `useTrabajosIA.ts` está deshabilitado en Tauri. El CRUD compartido no implica disponibilidad automática de la generación remota en escritorio. Revisar las ramas de plataforma de la vista antes de extender una función de IA.
 
 ### Funciones implementadas por plataforma
