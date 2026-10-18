@@ -3,6 +3,7 @@
 # ==========================================================
 
 from fastapi import FastAPI
+from routers.change_history import router as change_history_router
 
 from routers.health import router as health_router
 from routers.horario import router as horario_router
@@ -73,6 +74,7 @@ def _startup_apply_migrations():
 # ==========================================================
 
 app.include_router(health_router)
+app.include_router(change_history_router)
 app.include_router(horario_router)
 app.include_router(calendario_router)
 app.include_router(photos_router)

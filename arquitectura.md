@@ -52,6 +52,19 @@ El CRUD ordinario comparte contrato JSON entre plataformas. Las importaciones, f
 
 Actualización del 13 de octubre de 2026: los grupos son contenedores en `assignments.assignment_group`, con orden visual en `column_order`. Sus criterios se deducen de las tareas y sus notas se calculan en `services/assignmentGroups.ts`; las tareas interiores no cuentan por separado. Guía: [grupos-tareas.md](docs/grupos-tareas.md).
 
+Actualización del 17 de octubre de 2026: historial persistente y papelera con vista previa en el cuaderno. Guía y límites: [historial-cambios.md](docs/historial-cambios.md).
+
+| Archivo nuevo | Responsabilidad |
+| --- | --- |
+| `api/app/migrations/0029_change_history.sql` | Tabla de versiones y triggers transaccionales PostgreSQL para notas, tareas/grupos, categorías, criterios, instrumentos y materias. |
+| `api/app/services/change_history.py`, `api/app/routers/change_history.py` | Listado paginado por clase/materia, vista previa y restauración atómica con detección de conflictos; rutas autenticadas `GET /classes/{id}/history?page=0`, `GET /history/{batch}`, `POST /history/{batch}/restore`. |
+| `frontend-src/src-tauri/src/migrations/0014_change_history.sql` | Historial equivalente en SQLite y tabla interna `history_context`; el router asigna un lote por petición. |
+| `frontend-src/src-tauri/src/services/change_history.rs` | Lectura/restauración SQLite, comprobación de versiones, dependencias y notas posteriores; pruebas de borrado, copia y restauración. |
+| `frontend-src/components/ChangeHistoryModal.tsx` | Acceso desde `GradebookTable.tsx`, lista/papelera, diferencias antes/después, confirmación concreta e invalidación de cachés tras restaurar. |
+| `api/tests/integration_history_postgres.py` | Ensayo real ASGI en base desechable `profe_history_test_*`, sin datos de producción. |
+
+El historial guarda imágenes anteriores/posteriores de filas en `change_history`, sin claves foráneas para sobrevivir a los borrados. Agrupa cascadas por transacción/petición y restaura padres antes que notas. Deshacer se bloquea si la versión actual difiere o hay notas posteriores a una configuración de tarea/instrumento. Los servicios de copias Python y Rust incluyen el historial y suprimen los triggers durante importaciones/restauraciones; `history_context` es estado operativo SQLite y no se exporta. No interviene el auxiliar Python. Las copias del dominio pasan de 26 a 27 tablas.
+
 - `students` representa personas; `enrollments` representa su matrícula en una clase. Los datos personales y los datos del curso no son intercambiables. `joinStudentEnrollment` en `apiAdapters.ts` los reúne para la interfaz.
 - `courses` representa materias/niveles; `academic_years` representa cursos académicos. `academic_year_courses` los relaciona. `classes` representa los grupos docentes de ese año.
 - Currículo: competencias clave y descriptores, competencias específicas, criterios y saberes. Las unidades de programación y los instrumentos enlazan con esos elementos.

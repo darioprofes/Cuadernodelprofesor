@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import ChangeHistoryModal from './ChangeHistoryModal';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ClassData, Student, Assignment, Grade, EvaluationCriterion, Category, SpecificCompetence, KeyCompetence, ProgrammingUnit, AcademicConfiguration, EvaluationTool, Course } from '../types';
 import { PlusIcon, PencilIcon, TrashIcon, BookOpenIcon, ClipboardDocumentIcon, ArrowUpTrayIcon, DocumentDuplicateIcon, TableCellsIcon, Bars3Icon, MagnifyingGlassIcon, MapIcon, DicesIcon, ChevronDownIcon, ArrowPathIcon, GlobeIcon, PhotoIcon, TagIcon, UserPlusIcon, UserCircleIcon } from './Icons';
@@ -438,6 +439,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
   const [newTaskGroup, setNewTaskGroup] = useState<Assignment | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [gradeExplanation, setGradeExplanation] = useState<{ student: Student; periodId?: string; assignment?: Assignment } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [columnError, setColumnError] = useState('');
   const [orderingColumns, setOrderingColumns] = useState(false);
   const reorderAssignments = useReorderAssignments();
@@ -1207,6 +1209,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
             >
                 <MapIcon className="w-4 h-4" />
             </button>
+            <button type="button" onClick={() => setHistoryOpen(true)} className="px-2 py-1 text-sm rounded-md text-white hover:bg-white/15">Historial / Papelera</button>
             {onOpenJournal && (
                 <button
                     onClick={onOpenJournal}
@@ -1806,6 +1809,7 @@ const GradebookTable: React.FC<GradebookTableProps> = (props) => {
       )}
 
       {groupEditor && <AssignmentGroupModal key={groupEditor.group?.id ?? groupEditor.category.id} group={groupEditor.group} category={groupEditor.category} categories={classData.categories} assignments={classData.assignments} onClose={() => setGroupEditor(null)} onSave={saveGroup} />}
+      {historyOpen && <ChangeHistoryModal classData={classData} criteria={criteria} onClose={() => setHistoryOpen(false)} />}
       {gradeExplanation && <GradeExplanationModal
         data={explainGrade(gradeExplanation.student.id, classData, criteria, repartoIgualCriterios, evaluationTools, gradeExplanation.periodId, gradeExplanation.assignment?.id)}
         studentName={getNombreCompleto(gradeExplanation.student)}

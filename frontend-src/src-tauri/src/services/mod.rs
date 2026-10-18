@@ -15,6 +15,7 @@ pub mod enrollments;
 pub mod categories;
 pub mod assignments;
 pub mod grades;
+pub mod change_history;
 pub mod journal_entries;
 pub mod tasks;
 pub mod meetings;

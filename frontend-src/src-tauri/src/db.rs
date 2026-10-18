@@ -61,6 +61,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("migrations/0012_reuniones_acta.sql"),
     ),
     ("0013_assignment_groups.sql", include_str!("migrations/0013_assignment_groups.sql")),
+    ("0014_change_history.sql", include_str!("migrations/0014_change_history.sql")),
 ];
 
 // Sin la feature "portable" (build normal, el que empaqueta el instalador
@@ -173,8 +174,8 @@ mod tests {
             .unwrap();
         // 24 tablas de dominio del baseline + absences (0002) + educastur_config
         // (0004) + schema_migrations -- 0003 solo añade una columna
-        // (block_name), ninguna tabla nueva.
-        assert_eq!(table_count, 27);
+        // (block_name), ninguna tabla nueva. 0014 añade historial y contexto.
+        assert_eq!(table_count, 29);
 
         // Comprobación de humo de una FK con ON DELETE CASCADE real (no solo
         // que el CREATE TABLE parseara, sino que la restricción funcione).

@@ -56,6 +56,7 @@ _TABLES_IN_DEPENDENCY_ORDER = [
     "tasks",
     "meetings",
     "agenda_notes",
+    "change_history",
 ]
 
 
@@ -189,6 +190,7 @@ def import_all(dump: dict[str, list[Any]]) -> None:
     with get_conn() as conn:
 
         with conn.cursor() as cur:
+            cur.execute("SELECT set_config('profe.history_disabled','on',true)")
 
             quoted_tables = ", ".join(_TABLES_IN_DEPENDENCY_ORDER)
 
@@ -226,6 +228,7 @@ def import_all(dump: dict[str, list[Any]]) -> None:
                     ]
 
                     cur.execute(f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})", values)
+            cur.execute("SELECT setval(pg_get_serial_sequence('change_history','id'), COALESCE((SELECT max(id) FROM change_history),0)+1, false)")
 
 
 def list_pending_restores() -> list[dict[str, Any]]:

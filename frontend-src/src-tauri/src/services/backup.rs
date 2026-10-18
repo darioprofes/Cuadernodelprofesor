@@ -38,6 +38,7 @@ const TABLES_IN_DEPENDENCY_ORDER: &[&str] = &[
     "tasks",
     "meetings",
     "agenda_notes",
+    "change_history",
 ];
 
 // El backend web distingue columnas JSONB con una consulta genérica a
@@ -62,6 +63,7 @@ fn json_columns(table: &str) -> &'static [&'static str] {
         "enrollments" => &["acneae"],
         "assignments" => &["linked_criteria", "recovers_assignment_ids", "assignment_group"],
         "grades" => &["tool_results"],
+        "change_history" => &["before_data", "after_data"],
         _ => &[],
     }
 }
@@ -227,6 +229,7 @@ pub fn import_all(conn: &mut Connection, dump: &Value) -> Result<(), ApiError> {
 
     let result = (|| -> Result<(), ApiError> {
         let tx = conn.transaction()?;
+        tx.execute("UPDATE history_context SET disabled=1 WHERE id=1", [])?;
 
         for table in TABLES_IN_DEPENDENCY_ORDER.iter().rev() {
             tx.execute(&format!("DELETE FROM {table}"), [])?;
@@ -241,6 +244,7 @@ pub fn import_all(conn: &mut Connection, dump: &Value) -> Result<(), ApiError> {
             }
         }
 
+        tx.execute("UPDATE history_context SET disabled=0,batch_id=lower(hex(randomblob(16))) WHERE id=1", [])?;
         tx.commit()?;
         Ok(())
     })();
@@ -306,7 +310,7 @@ mod tests {
     fn tables_in_dependency_order_matches_schema() {
         let conn = db::test_connection();
         let mut stmt = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT IN ('sqlite_sequence', 'schema_migrations') ORDER BY name")
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT IN ('sqlite_sequence', 'schema_migrations', 'history_context') ORDER BY name")
             .unwrap();
         let mut actual: Vec<String> = stmt
             .query_map([], |row| row.get::<_, String>(0))
