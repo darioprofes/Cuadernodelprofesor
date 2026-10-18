@@ -24,6 +24,7 @@ fn found(item: Option<Value>, detail: &str) -> Result<Value, ApiError> {
 // Las rutas nuevas se añaden aquí a medida que cada bloque de la Fase 7
 // migra sus entidades correspondientes.
 pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>) -> Result<Value, ApiError> {
+    crate::services::change_history::maybe_prune(conn)?;
     if method != "GET" {
         conn.execute("UPDATE history_context SET batch_id=?,disabled=0 WHERE id=1", [uuid::Uuid::new_v4().to_string()])?;
     }
@@ -40,6 +41,7 @@ pub fn dispatch(conn: &Connection, method: &str, path: &str, body: Option<Value>
     };
 
     match (method, segments.as_slice()) {
+        ("POST", ["history", "clear"]) => crate::services::change_history::clear(conn, require_body(body)?),
         ("GET", ["classes", class_id, "history"]) => crate::services::change_history::list(conn, class_id, query_param("page").and_then(|p| p.parse().ok()).unwrap_or(0)),
         ("GET", ["history", batch_id]) => crate::services::change_history::preview(conn, batch_id),
         ("POST", ["history", batch_id, "restore"]) => crate::services::change_history::restore(conn, batch_id),

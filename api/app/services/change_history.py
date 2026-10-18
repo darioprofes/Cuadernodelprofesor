@@ -111,3 +111,10 @@ def restore(batch):
             return {'restored': True}
     except IntegrityError:
         raise HTTPException(409, 'Faltan datos relacionados o existe un conflicto. No se ha restaurado nada.')
+
+def clear_history(confirmation):
+    if confirmation != 'BORRAR HISTORIAL':
+        raise HTTPException(400, 'Confirma el borrado de todo el historial.')
+    with get_conn() as conn:
+        deleted = conn.execute('DELETE FROM change_history').rowcount
+        return {'deleted': deleted}

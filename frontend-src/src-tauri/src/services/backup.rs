@@ -244,6 +244,7 @@ pub fn import_all(conn: &mut Connection, dump: &Value) -> Result<(), ApiError> {
             }
         }
 
+        crate::services::change_history::prune_expired(&tx,chrono::Local::now().date_naive())?;
         tx.execute("UPDATE history_context SET disabled=0,batch_id=lower(hex(randomblob(16))) WHERE id=1", [])?;
         tx.commit()?;
         Ok(())

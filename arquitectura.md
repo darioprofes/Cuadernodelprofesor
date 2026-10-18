@@ -54,6 +54,8 @@ Actualización del 13 de octubre de 2026: los grupos son contenedores en `assign
 
 Actualización del 17 de octubre de 2026: historial persistente y papelera con vista previa en el cuaderno. Guía y límites: [historial-cambios.md](docs/historial-cambios.md).
 
+Actualización del 18 de octubre de 2026: retención del curso escolar actual (1 de septiembre–31 de agosto) y vaciado manual global con confirmación exacta `BORRAR HISTORIAL`. `POST /history/clear` en ambos backends solo elimina `change_history`. PostgreSQL limpia al primer acceso diario a base de datos (`services/db.py`); SQLite al abrir la base y al primer uso diario del router (`services/change_history.rs`). Ambos limpian también tras importar una copia y conservan lotes completos que crucen el corte. Migraciones 0030 PostgreSQL y 0015 SQLite: índice temporal y, en SQLite, fecha operativa de última limpieza. `ChangeHistoryModal.tsx` advierte que se pierde la posibilidad de deshacer para todas las clases; las notas y tareas actuales no cambian. El espacio liberado se puede reutilizar, sin compactaciones bloqueantes de la base.
+
 | Archivo nuevo | Responsabilidad |
 | --- | --- |
 | `api/app/migrations/0029_change_history.sql` | Tabla de versiones y triggers transaccionales PostgreSQL para notas, tareas/grupos, categorías, criterios, instrumentos y materias. |

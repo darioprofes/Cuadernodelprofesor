@@ -8,7 +8,7 @@ from typing import Any
 
 from psycopg.types.json import Json
 
-from services.db import get_conn
+from services.db import get_conn, prune_expired_history
 
 # Carpeta del servidor (/root/backups/pre_restore en el host) donde
 # restore_from_desktop.sh deja una copia del estado del servidor justo
@@ -229,6 +229,7 @@ def import_all(dump: dict[str, list[Any]]) -> None:
 
                     cur.execute(f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})", values)
             cur.execute("SELECT setval(pg_get_serial_sequence('change_history','id'), COALESCE((SELECT max(id) FROM change_history),0)+1, false)")
+            prune_expired_history(conn)
 
 
 def list_pending_restores() -> list[dict[str, Any]]:

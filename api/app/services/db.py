@@ -1,5 +1,7 @@
 import os
 import re
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -10,20 +12,40 @@ from psycopg.rows import dict_row
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+_history_pruned_on = None
+
+def history_cutoff(today: date | None = None) -> str:
+    today = today or datetime.now(ZoneInfo('Europe/Madrid')).date()
+    return f'{today.year if today.month >= 9 else today.year - 1}-09-01T00:00:00+02:00'
+
+def prune_expired_history(conn, today: date | None = None) -> int:
+    # Preserve an entire batch if any part belongs to the retained course.
+    return conn.execute('''DELETE FROM change_history h WHERE h.created_at < %s::timestamptz
+        AND NOT EXISTS (SELECT 1 FROM change_history newer WHERE newer.batch_id=h.batch_id
+                        AND newer.created_at >= %s::timestamptz)''', [history_cutoff(today)] * 2).rowcount
 
 _MIGRATION_FILENAME_RE = re.compile(r"^(\d+)_.*\.sql$")
 
 
 @contextmanager
 def get_conn():
+    global _history_pruned_on
 
     conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
     try:
 
+        today = datetime.now(ZoneInfo('Europe/Madrid')).date()
+        pruned = False
+        if _history_pruned_on != today and conn.execute("SELECT to_regclass('public.change_history') AS name").fetchone()['name']:
+            prune_expired_history(conn, today)
+            pruned = True
+
         yield conn
 
         conn.commit()
+        if pruned:
+            _history_pruned_on = today
 
     except Exception:
 

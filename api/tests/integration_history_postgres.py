@@ -96,6 +96,25 @@ async def main():
     await request('PUT',path,{'directScore':5})
     assert await latest()==changed
     await request('POST',f'/history/{changed}/restore',{})
+    # Retention deletes old batches, never part of a batch spanning September 1.
+    from datetime import date
+    assert db.history_cutoff(date(2026,8,31)).startswith('2025-09-01')
+    assert db.history_cutoff(date(2026,9,1)).startswith('2026-09-01')
+    with db.get_conn() as c:
+        for batch,stamp in [('expired','2026-08-31T21:59:59Z'),('mixed','2026-08-31T21:59:59Z'),('mixed','2026-08-31T22:00:00Z')]:
+            c.execute("INSERT INTO change_history(batch_id,table_name,row_key,label,created_at) VALUES (%s,'courses',%s,'Prueba',%s)",[batch,course['id'],stamp])
+        assert db.prune_expired_history(c,date(2026,10,18))==1
+        assert c.execute("SELECT count(*) AS n FROM change_history WHERE batch_id='mixed'").fetchone()['n']==2
+    await request('POST','/history/clear',{'confirmation':'BORRAR HISTORIAL'},401,auth=False)
+    await request('POST','/history/clear',{},400)
+    before=export_all()
+    cleared=await request('POST','/history/clear',{'confirmation':'BORRAR HISTORIAL'})
+    assert cleared['deleted']>0
+    after=export_all()
+    assert not after['change_history']
+    assert {k:v for k,v in before.items() if k!='change_history'}=={k:v for k,v in after.items() if k!='change_history'}
+    await request('PUT',path,{'directScore':6})
+    assert len(await request('GET',f'/classes/{cid}/history'))==1
     print('PostgreSQL: historial, conflictos, recuperación de tareas/notas/grupos/categorías y copias correctos.')
 
 asyncio.run(main())

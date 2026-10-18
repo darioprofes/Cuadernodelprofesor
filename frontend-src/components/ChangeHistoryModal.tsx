@@ -16,10 +16,18 @@ export default function ChangeHistoryModal({ classData, criteria, onClose }: { c
   const [selected, setSelected] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [restored, setRestored] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState('');
+  const [cleared, setCleared] = useState(false);
   const client = useQueryClient();
   const list = useQuery({ queryKey: ['changeHistory', classData.id, page], queryFn: () => api.get<Entry[]>(`/classes/${classData.id}/history?page=${page}`), staleTime: 0 });
   const preview = useQuery({ queryKey: ['changeHistoryPreview', selected], queryFn: () => api.get<Preview>(`/history/${selected}`), enabled: !!selected, staleTime: 0 });
   const restore = useMutation({ mutationFn: () => api.post(`/history/${selected}/restore`, {}), onSuccess: async () => { setRestored(true); setSelected(null); await client.invalidateQueries(); } });
+  const clear = useMutation({ mutationFn: () => api.post('/history/clear', { confirmation }), onSuccess: async () => {
+    setClearOpen(false); setConfirmation(''); setSelected(null); setPage(0); setRestored(false); setCleared(true);
+    client.removeQueries({ queryKey: ['changeHistoryPreview'] });
+    await client.invalidateQueries({ queryKey: ['changeHistory'] });
+  } });
   const describe = (value: unknown): string => {
     if (value == null) return 'Sin valor';
     if (typeof value === 'string') {
@@ -33,13 +41,20 @@ export default function ChangeHistoryModal({ classData, criteria, onClose }: { c
     if (typeof value === 'object') return Object.entries(value).map(([k, v]) => `${criteria.find(c => c.id === k)?.code ?? names[k] ?? k}: ${describe(v)}`).join('\n');
     return String(value);
   };
-  const error = list.error ?? preview.error ?? restore.error;
+  const error = clear.error ?? list.error ?? preview.error ?? restore.error;
   return <Modal isOpen onClose={onClose} title="Historial y papelera del cuaderno" size="4xl">
     <div className="space-y-4">
       <p className="text-sm text-slate-600">Recupera notas, tareas borradas y cambios de criterios, instrumentos o pesos. El historial empieza al instalar esta función. Solo se restaura el cambio seleccionado y sus datos asociados.</p>
+      <p className="text-sm text-slate-600">Se conserva el historial del curso escolar actual (1 de septiembre–31 de agosto). Los cursos anteriores se eliminan automáticamente al utilizar la aplicación.</p>
       {error && <p role="alert" className="text-red-700">{error.message}</p>}
       {restored && <p role="status" className="text-emerald-700">Cambio restaurado. El cuaderno se ha actualizado.</p>}
-      {selected ? <>
+      {cleared && <p role="status" className="text-emerald-700">Historial vaciado. Las notas, tareas y configuración actuales se conservan.</p>}
+      {clearOpen ? <section className="border border-red-200 rounded-lg p-4 space-y-3">
+        <h4 className="font-semibold text-red-800">Vaciar todo el historial de todas las clases</h4>
+        <p className="text-sm">Se borrarán definitivamente las versiones anteriores y la papelera. Ya no podrás deshacer esos cambios ni recuperar las tareas eliminadas. Las notas, tareas y configuración actuales se conservarán. Las copias de seguridad existentes no se modifican.</p>
+        <label className="block text-sm">Escribe BORRAR HISTORIAL para confirmar<input className="block border rounded p-2 mt-1 w-full" value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="off" /></label>
+        <div className="flex gap-2"><Button variant="secondary" disabled={clear.isPending} onClick={() => { setClearOpen(false); setConfirmation(''); clear.reset(); }}>Cancelar</Button><Button disabled={confirmation !== 'BORRAR HISTORIAL' || clear.isPending} className="bg-red-700 text-white" onClick={() => clear.mutate()}>{clear.isPending ? 'Vaciando…' : 'Borrar definitivamente el historial'}</Button></div>
+      </section> : selected ? <>
         <Button variant="secondary" disabled={restore.isPending} onClick={() => { setSelected(null); restore.reset(); }}>Volver al historial</Button>
         {preview.isPending && <p>Cargando vista previa…</p>}
         {preview.data && <>
@@ -62,6 +77,7 @@ export default function ChangeHistoryModal({ classData, criteria, onClose }: { c
         {list.data?.length === 0 && <p>No hay cambios registrados en esta página.</p>}
         <ul className="divide-y">{list.data?.map(entry => <li key={entry.id}><button className="w-full text-left p-3 hover:bg-slate-50 disabled:opacity-60" disabled={!!entry.undoneAt} onClick={() => { setSelected(entry.id); setRestored(false); restore.reset(); }}><span className="block font-medium">{entry.label}</span><span className="text-xs text-slate-500">{new Date(entry.createdAt).toLocaleString('es')} · {entry.changeCount} registros{entry.undoneAt ? ' · Deshecho' : ' · Ver y restaurar'}</span></button></li>)}</ul>
         <div className="flex gap-2"><Button variant="secondary" disabled={page === 0 || list.isFetching} onClick={() => setPage(p => p - 1)}>Más recientes</Button><Button variant="secondary" disabled={(list.data?.length ?? 0) < 200 || list.isFetching} onClick={() => setPage(p => p + 1)}>Más antiguos</Button></div>
+        <Button variant="secondary" onClick={() => { setClearOpen(true); setCleared(false); setRestored(false); clear.reset(); }}>Vaciar todo el historial</Button>
       </>}
     </div>
   </Modal>;

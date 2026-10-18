@@ -62,6 +62,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ),
     ("0013_assignment_groups.sql", include_str!("migrations/0013_assignment_groups.sql")),
     ("0014_change_history.sql", include_str!("migrations/0014_change_history.sql")),
+    ("0015_history_retention.sql", include_str!("migrations/0015_history_retention.sql")),
 ];
 
 // Sin la feature "portable" (build normal, el que empaqueta el instalador
@@ -95,6 +96,7 @@ pub fn open(app: &tauri::AppHandle) -> rusqlite::Result<Connection> {
     let mut conn = Connection::open(dir.join(DB_FILE_NAME))?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     apply_migrations(&mut conn)?;
+    crate::services::change_history::maybe_prune(&conn)?;
     Ok(conn)
 }
 

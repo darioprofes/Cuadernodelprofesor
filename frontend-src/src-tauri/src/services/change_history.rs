@@ -1,6 +1,30 @@
 use rusqlite::{params, types::{Value as SqlValue, ValueRef}, Connection, OptionalExtension};
 use serde_json::{json, Map, Value};
 use crate::{db, error::ApiError};
+use chrono::Datelike;
+
+pub fn history_cutoff(today: chrono::NaiveDate) -> String {
+    format!("{}-09-01T00:00:00+02:00", if today.month() >= 9 { today.year() } else { today.year()-1 })
+}
+pub fn prune_expired(conn: &Connection, today: chrono::NaiveDate) -> rusqlite::Result<usize> {
+    conn.execute("DELETE FROM change_history AS h WHERE julianday(h.created_at)<julianday(?1) AND NOT EXISTS (SELECT 1 FROM change_history newer WHERE newer.batch_id=h.batch_id AND julianday(newer.created_at)>=julianday(?1))", [history_cutoff(today)])
+}
+pub fn maybe_prune(conn: &Connection) -> rusqlite::Result<()> {
+    let today=chrono::Local::now().date_naive();
+    let last: Option<String>=conn.query_row("SELECT last_pruned_on FROM history_context WHERE id=1",[],|r|r.get(0))?;
+    if last.as_deref()!=Some(&today.to_string()) {
+        let tx=conn.unchecked_transaction()?;
+        prune_expired(&tx,today)?;
+        tx.execute("UPDATE history_context SET last_pruned_on=? WHERE id=1",[today.to_string()])?;
+        tx.commit()?;
+    }
+    Ok(())
+}
+pub fn clear(conn: &Connection, body: Value) -> Result<Value,ApiError> {
+    if body["confirmation"]!="BORRAR HISTORIAL" { return Err(ApiError::bad_request("Confirma el borrado de todo el historial.")); }
+    let deleted=conn.execute("DELETE FROM change_history",[])?;
+    Ok(json!({"deleted":deleted}))
+}
 
 const TABLES: &[&str] = &["courses", "evaluation_criteria", "evaluation_tools", "categories", "assignments", "grades"];
 fn conflict(message: &str) -> ApiError { ApiError { status: 409, detail: message.into() } }
@@ -129,6 +153,32 @@ mod tests {
         (conn,task["id"].as_str().unwrap().to_string())
     }
     fn latest(conn: &Connection) -> String { list(conn,"class",0).unwrap()[0]["id"].as_str().unwrap().into() }
+    #[test]
+    fn retention_uses_school_year_and_preserves_complete_batches() {
+        use chrono::NaiveDate;
+        assert_eq!(history_cutoff(NaiveDate::from_ymd_opt(2026,8,31).unwrap()),"2025-09-01T00:00:00+02:00");
+        assert_eq!(history_cutoff(NaiveDate::from_ymd_opt(2026,9,1).unwrap()),"2026-09-01T00:00:00+02:00");
+        let (conn,_)=fixture();
+        for (batch,date) in [("old","2026-08-31T21:59:59Z"),("mixed","2026-08-31T21:59:59Z"),("mixed","2026-08-31T22:00:00Z"),("current","2026-10-01T00:00:00Z")] {
+            conn.execute("INSERT INTO change_history(batch_id,table_name,row_key,label,created_at) VALUES (?,'courses','course','Prueba',?)",params![batch,date]).unwrap();
+        }
+        assert_eq!(prune_expired(&conn,NaiveDate::from_ymd_opt(2026,10,18).unwrap()).unwrap(),1);
+        assert_eq!(conn.query_row("SELECT count(*) FROM change_history",[],|r|r.get::<_,i64>(0)).unwrap(),3);
+        assert_eq!(conn.query_row("SELECT count(*) FROM courses",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+    }
+    #[test]
+    fn manual_clear_requires_confirmation_and_keeps_live_data() {
+        let (conn,id)=fixture();
+        dispatch(&conn,"PUT",&format!("/assignments/{id}/grades/e"),Some(json!({"directScore":7}))).unwrap();
+        assert_eq!(dispatch(&conn,"POST","/history/clear",Some(json!({}))).unwrap_err().status,400);
+        let before=crate::services::backup::export_all(&conn).unwrap();
+        assert_eq!(dispatch(&conn,"POST","/history/clear",Some(json!({"confirmation":"BORRAR HISTORIAL"}))).unwrap()["deleted"],1);
+        let after=crate::services::backup::export_all(&conn).unwrap();
+        for (table,data) in before.as_object().unwrap() { if table!="change_history" { assert_eq!(&after[table],data); } }
+        assert!(list(&conn,"class",0).unwrap().as_array().unwrap().is_empty());
+        dispatch(&conn,"PUT",&format!("/assignments/{id}/grades/e"),Some(json!({"directScore":8}))).unwrap();
+        assert_eq!(list(&conn,"class",0).unwrap().as_array().unwrap().len(),1);
+    }
     #[test]
     fn undo_grade_refuses_newer_change_and_supports_stepwise_undo() {
         let (conn,id)=fixture(); let path=format!("/assignments/{id}/grades/e");
